@@ -1,26 +1,21 @@
-import { supabaseAdmin } from "@/lib/supabase/server"
+import { NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabase/server'
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
-  const id = params.id
-  if (!id) return Response.json({ error: "id requis" }, { status: 400 })
+const BUCKET = 'contracts'
 
-  const { data: row, error: selErr } = await supabaseAdmin
-    .from("prospect_contracts")
-    .select("*")
-    .eq("id", id)
-    .single()
-
-  if (selErr) return Response.json({ error: selErr.message }, { status: 500 })
-  if (!row) return Response.json({ error: "Contrat introuvable" }, { status: 404 })
-
-  // Delete file first (best-effort)
-  await supabaseAdmin.storage.from(row.storage_bucket || "contracts").remove([row.storage_path])
-
-  const { error: delErr } = await supabaseAdmin.from("prospect_contracts").delete().eq("id", id)
-  if (delErr) return Response.json({ error: delErr.message }, { status: 500 })
-
-  return Response.json({ ok: true })
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  try {
+    const supabase = supabaseAdmin()
+    const { data: row, error: getErr } = await supabase.from('contracts').select('*').eq('id', params.id).single()
+    if (getErr) throw getErr
+    if (row?.file_path) {
+      const { error: remErr } = await supabase.storage.from(BUCKET).remove([row.file_path])
+      if (remErr) throw remErr
+    }
+    const { error: delErr } = await supabase.from('contracts').delete().eq('id', params.id)
+    if (delErr) throw delErr
+    return new NextResponse(null, { status: 204 })
+  } catch (e: any) {
+    return new NextResponse(e.message || 'Error', { status: 500 })
+  }
 }

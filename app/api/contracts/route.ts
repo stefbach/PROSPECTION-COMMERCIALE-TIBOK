@@ -1,103 +1,52 @@
-import { supabaseAdmin } from "@/lib/supabase/server"
+import { NextResponse } from 'next/server'
+import { ensureBucket, supabaseAdmin } from '@/lib/supabase/server'
 
-async function ensureContractsBucket() {
-  const { data: buckets, error: lbErr } = await supabaseAdmin.storage.listBuckets()
-  if (lbErr) throw new Error(lbErr.message)
-  const exists = (buckets || []).some((b) => b.name === "contracts")
-  if (!exists) {
-    const { error: cbErr } = await supabaseAdmin.storage.createBucket("contracts", {
-      public: false,
-      fileSizeLimit: "50mb",
-    })
-    if (cbErr && cbErr.message?.includes("already exists") === false) {
-      throw new Error(cbErr.message)
-    }
-  }
-}
+const BUCKET = 'contracts'
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url)
-  const prospectId = searchParams.get("prospectId")
-  if (!prospectId) return Response.json({ error: "prospectId requis" }, { status: 400 })
-
-  const { data, error } = await supabaseAdmin
-    .from("prospect_contracts")
-    .select("*")
-    .eq("prospect_id", prospectId)
-    .order("created_at", { ascending: false })
-
-  if (error) return Response.json({ error: error.message }, { status: 500 })
-
-  // Add signed URLs + revenue to date
-  const enriched = await Promise.all(
-    (data ?? []).map(async (row: any) => {
-      const { data: urlData } = await supabaseAdmin.storage
-        .from(row.storage_bucket || "contracts")
-        .createSignedUrl(row.storage_path, 60 * 60)
-
-      // compute teleconsultations since signed_at
-      let consultationsCount = 0
-      const { data: teleRows } = await supabaseAdmin
-        .from("teleconsultations")
-        .select("count, occurred_at")
-        .eq("prospect_id", row.prospect_id)
-        .gte("occurred_at", row.signed_at ?? "1970-01-01")
-      consultationsCount = (teleRows || []).reduce((acc, r: any) => acc + (Number(r.count) || 0), 0)
-
-      const fee = Number(row.fee_per_consultation_mur || 0)
-      const revenueMur = Number((consultationsCount * fee).toFixed(2))
-
-      return {
-        ...row,
-        signedUrl: urlData?.signedUrl ?? null,
-        consultationsCount,
-        revenueMur,
-      }
-    })
-  )
-
-  return Response.json({ data: enriched })
+  try {
+    const url = new URL(req.url)
+    const prospectId = url.searchParams.get('prospect_id')
+    const supabase = supabaseAdmin()
+    let query = supabase.from('contracts').select('*').order('uploaded_at', { ascending: false })
+    if (prospectId) query = query.eq('prospect_id', Number(prospectId))
+    const { data, error } = await query
+    if (error) throw error
+    return NextResponse.json(data || [])
+  } catch (e: any) {
+    return new NextResponse(e.message || 'Error', { status: 500 })
+  }
 }
 
 export async function POST(req: Request) {
-  const form = await req.formData()
-  const file = form.get("file") as File | null
-  const prospectId = form.get("prospect_id") as string | null
-  const fee = Number(form.get("fee_per_consultation_mur") || 0)
-  if (!file || !prospectId) {
-    return Response.json({ error: "file et prospect_id requis" }, { status: 400 })
+  try {
+    await ensureBucket(BUCKET)
+    const supabase = supabaseAdmin()
+    const form = await req.formData()
+    const prospectId = Number(form.get('prospect_id'))
+    const fee_mur = Number(form.get('fee_mur') || 0)
+    const file = form.get('file') as File | null
+    if (!prospectId || !file) return new NextResponse('prospect_id et file sont requis', { status: 400 })
+
+    const safeName = file.name.replace(/[^\w.\-]+/g, '_')
+    const path = `${prospectId}/${Date.now()}-${safeName}`
+    const arrayBuffer = await file.arrayBuffer()
+    const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, arrayBuffer, {
+      contentType: file.type || 'application/octet-stream',
+      upsert: true,
+    })
+    if (uploadErr) throw uploadErr
+
+    const { data, error: insertErr } = await supabase.from('contracts').insert({
+      prospect_id: prospectId,
+      file_path: path,
+      file_name: safeName,
+      fee_mur: isNaN(fee_mur) ? 0 : fee_mur,
+    }).select().single()
+    if (insertErr) throw insertErr
+
+    return NextResponse.json(data)
+  } catch (e: any) {
+    return new NextResponse(e.message || 'Upload error', { status: 500 })
   }
-
-  await ensureContractsBucket()
-
-  const safeName = file.name.replace(/[^\w.\-]+/g, "_")
-  const path = `${prospectId}/${crypto.randomUUID()}-${safeName}`
-
-  const { error: upErr } = await supabaseAdmin.storage.from("contracts").upload(path, file, {
-    contentType: file.type || "application/octet-stream",
-    upsert: false,
-  })
-  if (upErr) return Response.json({ error: upErr.message }, { status: 500 })
-
-  const insertPayload = {
-    prospect_id: prospectId,
-    file_name: safeName,
-    file_type: file.type || null,
-    storage_bucket: "contracts",
-    storage_path: path,
-    status: "actif",
-    notes: null as string | null,
-    fee_per_consultation_mur: isFinite(fee) ? fee : 0,
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("prospect_contracts")
-    .insert(insertPayload)
-    .select("*")
-    .single()
-  if (error) return Response.json({ error: error.message }, { status: 500 })
-
-  const { data: urlData } = await supabaseAdmin.storage.from("contracts").createSignedUrl(path, 60 * 60)
-
-  return Response.json({ data: { ...data, signedUrl: urlData?.signedUrl ?? null } }, { status: 201 })
 }

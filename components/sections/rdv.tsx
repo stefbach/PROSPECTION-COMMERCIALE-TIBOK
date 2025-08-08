@@ -1,28 +1,16 @@
 "use client"
 
 import * as React from "react"
-import type { Prospect, RdvItem } from "@/app/page"
+import type { Prospect } from "@/lib/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { useToast } from "@/hooks/use-toast"
 
-type Props = {
-  prospects?: Prospect[]
-  rdvs?: RdvItem[]
-  onAddRdv?: (item: Omit<RdvItem, "id">) => void
-  selectedProspectId?: number
-  onResetSelected?: () => void
-}
-
-export default function RdvSection({
-  prospects = [],
-  rdvs = [],
-  onAddRdv = () => {},
-  selectedProspectId,
-  onResetSelected = () => {},
-}: Props) {
-  const todayIso = new Date().toISOString().split("T")[0]
+export default function RdvSection() {
+  const [prospects, setProspects] = React.useState<Prospect[]>([])
+  const [rdvs, setRdvs] = React.useState<any[]>([])
   const [prospectId, setProspectId] = React.useState<number | "">("")
   const [date, setDate] = React.useState("")
   const [time, setTime] = React.useState("")
@@ -31,41 +19,53 @@ export default function RdvSection({
   const [priorite, setPriorite] = React.useState<"normale" | "haute" | "urgente">("normale")
   const [duree, setDuree] = React.useState("60")
   const [notes, setNotes] = React.useState("")
+  const { toast } = useToast()
 
+  const todayIso = new Date().toISOString().split("T")[0]
+
+  async function loadProspects() {
+    const data = await fetch('/api/prospects', { cache: 'no-store' }).then(r => r.json()).catch(() => [])
+    setProspects(Array.isArray(data) ? data : [])
+  }
+  async function loadRdvs() {
+    const data = await fetch('/api/rdv', { cache: 'no-store' }).then(r => r.json()).catch(() => [])
+    setRdvs(Array.isArray(data) ? data : [])
+  }
   React.useEffect(() => {
-    if (selectedProspectId) {
-      setProspectId(selectedProspectId)
-      onResetSelected()
-    }
-  }, [selectedProspectId, onResetSelected])
+    loadProspects()
+    loadRdvs()
+  }, [])
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!prospectId || !date || !time || !commercial) return
     const p = prospects.find(x => x.id === prospectId)
-    const titre = p ? p.nom : "Nouveau RDV"
-    const border: RdvItem["border"] =
-      priorite === "urgente" ? "yellow" : priorite === "haute" ? "blue" : "green"
-
-    onAddRdv({
-      titre,
-      prospectId: typeof prospectId === "number" ? prospectId : undefined,
-      priorite: priorite === "urgente" ? "Urgente" : priorite === "haute" ? "Haute" : "Normale",
-      dateTimeLabel: `${date} ${time} • ${commercial} • ${labelType(typeVisite)}`,
-      description: notes || "RDV nouvellement créé",
-      border,
-      tag: labelType(typeVisite),
-    })
-
-    // reset
-    setProspectId("")
-    setDate("")
-    setTime("")
-    setCommercial("")
-    setTypeVisite("decouverte")
-    setPriorite("normale")
-    setDuree("60")
-    setNotes("")
+    try {
+      const body = {
+        prospect_id: typeof prospectId === 'number' ? prospectId : null,
+        titre: p ? p.nom : 'Nouveau RDV',
+        commercial,
+        date_time: new Date(`${date}T${time}:00Z`).toISOString(),
+        type_visite: typeVisite,
+        priorite,
+        duree_min: Number(duree) || 60,
+        notes: notes || 'RDV nouvellement créé',
+      }
+      const res = await fetch('/api/rdv', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (!res.ok) throw new Error(await res.text())
+      await loadRdvs()
+      toast({ title: 'RDV planifié', description: body.titre })
+      setProspectId("")
+      setDate("")
+      setTime("")
+      setCommercial("")
+      setTypeVisite("decouverte")
+      setPriorite("normale")
+      setDuree("60")
+      setNotes("")
+    } catch (e: any) {
+      toast({ title: 'Erreur RDV', description: e.message })
+    }
   }
 
   return (
@@ -182,49 +182,33 @@ export default function RdvSection({
   )
 }
 
-function RdvItem({ item }: { item: RdvItem }) {
-  const borderColor = {
-    blue: "border-blue-500 bg-blue-50",
-    green: "border-green-500 bg-green-50",
-    yellow: "border-yellow-500 bg-yellow-50",
-  }[item.border]
+function RdvItem({ item }: { item: any }) {
+  const p = item.priorite as 'normale' | 'haute' | 'urgente'
+  const border = p === 'urgente' ? 'border-yellow-500 bg-yellow-50' : p === 'haute' ? 'border-blue-500 bg-blue-50' : 'border-green-500 bg-green-50'
   const tagColor = {
-    Négociation: "bg-blue-100 text-blue-800",
-    Découverte: "bg-green-100 text-green-800",
-    Signature: "bg-purple-100 text-purple-800",
-    Planifié: "bg-green-100 text-green-800",
-  }[item.tag || "Planifié"] || "bg-gray-100 text-gray-800"
+    negociation: "bg-blue-100 text-blue-800",
+    decouverte: "bg-green-100 text-green-800",
+    signature: "bg-purple-100 text-purple-800",
+    suivi: "bg-gray-100 text-gray-800",
+    presentation: "bg-green-100 text-green-800",
+  }[item.type_visite || 'presentation'] || "bg-gray-100 text-gray-800"
+
+  const title = item.titre || 'RDV'
+  const date = new Date(item.date_time).toLocaleString()
 
   return (
-    <div className={`border-l-4 ${borderColor} p-4 rounded-r-lg`}>
+    <div className={`border-l-4 ${border} p-4 rounded-r-lg`}>
       <div className="flex items-center justify-between mb-1">
-        <h4 className="font-semibold text-gray-900">{item.titre}</h4>
-        <span className={`text-xs px-2 py-1 rounded ${item.priorite === "Urgente" ? "bg-yellow-100 text-yellow-800" : item.priorite === "Haute" ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
-          {item.priorite}
+        <h4 className="font-semibold text-gray-900">{title}</h4>
+        <span className={`text-xs px-2 py-1 rounded ${p === "urgente" ? "bg-yellow-100 text-yellow-800" : p === "haute" ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+          {p.charAt(0).toUpperCase() + p.slice(1)}
         </span>
       </div>
-      <p className="text-sm text-gray-600 mb-1">📅 {item.dateTimeLabel}</p>
-      <p className="text-sm text-gray-700">{item.description}</p>
+      <p className="text-sm text-gray-600 mb-1">📅 {date} • {item.commercial}</p>
+      <p className="text-sm text-gray-700">{item.notes}</p>
       <div className="mt-2">
-        <span className={`text-xs px-2 py-1 rounded ${tagColor}`}>{item.tag || "Planifié"}</span>
+        <span className={`text-xs px-2 py-1 rounded ${tagColor}`}>{(item.type_visite || '').charAt(0).toUpperCase() + (item.type_visite || '').slice(1)}</span>
       </div>
     </div>
   )
-}
-
-function labelType(value: string) {
-  switch (value) {
-    case "decouverte":
-      return "Découverte"
-    case "presentation":
-      return "Présentation"
-    case "negociation":
-      return "Négociation"
-    case "signature":
-      return "Signature"
-    case "suivi":
-      return "Suivi"
-    default:
-      return value
-  }
 }

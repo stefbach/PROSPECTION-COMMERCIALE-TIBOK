@@ -1,104 +1,69 @@
--- Fonction trigger pour updated_at
-create or replace function public.trigger_set_timestamp()
-returns trigger as $$
+-- Prospects
+create table if not exists prospects (
+  id serial primary key,
+  nom text not null,
+  secteur secteur_enum not null,
+  ville text not null,
+  statut statut_enum not null default 'nouveau',
+  region region_enum not null,
+  contact text default '',
+  telephone text default '',
+  email text default '',
+  score int not null default 3 check (score between 1 and 5),
+  budget text default '',
+  notes text default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace function trg_set_updated_at() returns trigger as $$
 begin
   new.updated_at = now();
   return new;
 end;
 $$ language plpgsql;
 
--- Table commerciaux (équipe commerciale)
-create table if not exists public.commerciaux (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  full_name text not null,
-  email text,
-  phone text,
-  region text,
-  notes text
+drop trigger if exists prospects_set_updated on prospects;
+create trigger prospects_set_updated
+before update on prospects
+for each row execute procedure trg_set_updated_at();
+
+-- Unique index for upsert
+create unique index if not exists uq_prospects_nom_ville on prospects (lower(nom), lower(ville));
+
+-- Appointments
+create table if not exists appointments (
+  id uuid primary key default uuid_generate_v4(),
+  prospect_id int not null references prospects(id) on delete cascade,
+  titre text not null,
+  commercial text not null,
+  date_time timestamptz not null,
+  type_visite visite_type not null default 'decouverte',
+  priorite rdv_priorite not null default 'normale',
+  duree_min int not null default 60,
+  notes text default '',
+  created_at timestamptz not null default now()
 );
 
-create trigger set_timestamp_commerciaux
-before update on public.commerciaux
-for each row execute function public.trigger_set_timestamp();
-
--- Table prospects (entités cibles)
-create table if not exists public.prospects (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-
-  -- Identité et secteur
-  nom_entite text not null,
-  secteur secteur_type not null,
-
-  -- Contact
-  contact_nom text,
-  contact_fonction text,
-  telephone text,
-  email text,
-  site_web text,
-
-  -- Localisation
-  adresse text,
-  ville text,
-  code_postal text,
-  region text,
-
-  -- Suivi et qualification
-  statut prospect_statut not null default 'nouveau',
-  score_interet int default 3 check (score_interet between 1 and 5),
-  suivi_statut text default 'a_suivre',
-  suivi_score int default 50 check (suivi_score between 0 and 100),
-
-  -- Assignation commerciale
-  commercial_id uuid references public.commerciaux(id) on delete set null,
-
-  -- Divers
-  metadata jsonb not null default '{}'::jsonb
-);
-
-create trigger set_timestamp_prospects
-before update on public.prospects
-for each row execute function public.trigger_set_timestamp();
-
--- Table contracts (métadonnées fichiers stockés dans Supabase Storage, bucket recommandé: 'contracts')
-create table if not exists public.prospect_contracts (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-
-  prospect_id uuid not null references public.prospects(id) on delete cascade,
+-- Contracts metadata (files in storage bucket 'contracts')
+create table if not exists contracts (
+  id uuid primary key default uuid_generate_v4(),
+  prospect_id int not null references prospects(id) on delete cascade,
+  file_path text not null,
   file_name text not null,
-  file_type text,
-  storage_bucket text not null default 'contracts',
-  storage_path text not null, -- ex: contracts/{prospect_id}/{uuid}.pdf
-  status contract_status not null default 'actif',
-  signed_at timestamptz,
-  notes text
+  fee_mur numeric(12,2),
+  uploaded_at timestamptz not null default now()
 );
 
-create trigger set_timestamp_prospect_contracts
-before update on public.prospect_contracts
-for each row execute function public.trigger_set_timestamp();
-
--- Table des téléconsultations (événements) pour suivi par prospect
-create table if not exists public.teleconsultations (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  prospect_id uuid not null references public.prospects(id) on delete cascade,
-  occurred_at timestamptz not null default now(),
-  count int not null default 1 check (count > 0),
-  source text,
-  metadata jsonb not null default '{}'::jsonb
+-- Consultation logs (for revenue MUR)
+create table if not exists consultation_logs (
+  id uuid primary key default uuid_generate_v4(),
+  contract_id uuid references contracts(id) on delete set null,
+  date date not null,
+  fee_mur numeric(12,2) not null default 0
 );
 
--- Index utiles
-create index if not exists idx_prospects_nom on public.prospects using gin (to_tsvector('simple', coalesce(nom_entite,'')));
-create index if not exists idx_prospects_region on public.prospects(region);
-create index if not exists idx_prospects_statut on public.prospects(statut);
-create index if not exists idx_prospects_commercial on public.prospects(commercial_id);
-
-create index if not exists idx_teleconsultations_prospect_time on public.teleconsultations(prospect_id, occurred_at desc);
-create index if not exists idx_contracts_prospect on public.prospect_contracts(prospect_id);
+-- Helpful indexes
+create index if not exists idx_appointments_prospect on appointments(prospect_id);
+create index if not exists idx_contracts_prospect on contracts(prospect_id);
+create index if not exists idx_consultations_date on consultation_logs(date);

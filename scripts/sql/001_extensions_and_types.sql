@@ -1,27 +1,24 @@
--- Extensions utiles
-create extension if not exists pgcrypto;
+-- Enable needed extensions
+create extension if not exists "uuid-ossp";
+create extension if not exists "pgcrypto";
 
--- Types énumérés
-do $$
-begin
-  if not exists (select 1 from pg_type where typname = 'secteur_type') then
-    create type secteur_type as enum ('clinique','ehpad','medecin','hopital','maison_retraite');
-  end if;
-end
-$$;
+-- Basic enums
+do $$ begin
+  create type secteur_enum as enum ('clinique','ehpad','medecin','hopital','maison-retraite');
+exception when duplicate_object then null; end $$;
 
-do $$
-begin
-  if not exists (select 1 from pg_type where typname = 'prospect_statut') then
-    create type prospect_statut as enum ('nouveau','qualifie','rdv_planifie','en_negociation','signe');
-  end if;
-end
-$$;
+do $$ begin
+  create type region_enum as enum ('ile-de-france','paca','aura','grand-est','occitanie');
+exception when duplicate_object then null; end $$;
 
-do $$
-begin
-  if not exists (select 1 from pg_type where typname = 'contract_status') then
-    create type contract_status as enum ('brouillon','actif','resilie','expire');
-  end if;
-end
-$$;
+do $$ begin
+  create type statut_enum as enum ('nouveau','qualifie','rdv-planifie','en-negociation','signe');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type rdv_priorite as enum ('normale','haute','urgente');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type visite_type as enum ('decouverte','presentation','negociation','signature','suivi');
+exception when duplicate_object then null; end $$;
