@@ -10,15 +10,9 @@ import {
   ChartLegendContent,
 } from "@/components/ui/chart"
 import { Line, LineChart, CartesianGrid, XAxis, YAxis, Pie, PieChart, Cell, ResponsiveContainer } from "recharts"
+import { useToast } from "@/hooks/use-toast"
 
-const lineData = [
-  { mois: "Jan", qualifies: 45, rdv: 12, contrats: 3 },
-  { mois: "Fév", qualifies: 52, rdv: 18, contrats: 5 },
-  { mois: "Mar", qualifies: 48, rdv: 15, contrats: 4 },
-  { mois: "Avr", qualifies: 61, rdv: 23, contrats: 8 },
-  { mois: "Mai", qualifies: 55, rdv: 19, contrats: 6 },
-  { mois: "Jun", qualifies: 67, rdv: 27, contrats: 11 },
-]
+type Monthly = { month: string; total_mur: number }
 
 const donutData = [
   { name: "Cliniques", value: 35, color: "hsl(217 91% 60%)" },
@@ -28,74 +22,68 @@ const donutData = [
   { name: "Maisons Retraite", value: 5, color: "hsl(262 83% 58%)" },
 ]
 
-const chartConfig = {
-  qualifies: { label: "Prospects Qualifiés", color: "hsl(217 91% 60%)" },
-  rdv: { label: "RDV Obtenus", color: "hsl(160 84% 39%)" },
-  contrats: { label: "Contrats Signés", color: "hsl(42 95% 55%)" },
-} as const
-
 export default function DashboardSection() {
-  const formatMUR = (v: number) => {
-    try {
-      return new Intl.NumberFormat("fr-MU", { style: "currency", currency: "MUR", maximumFractionDigits: 0 }).format(v)
-    } catch {
-      return `MUR ${Math.round(v).toLocaleString("fr-FR")}`
-    }
-  }
-  const [revenueMur, setRevenueMur] = React.useState<number>(0)
+  const [totalMur, setTotalMur] = React.useState<number>(0)
+  const [monthly, setMonthly] = React.useState<Monthly[]>([])
+  const { toast } = useToast()
 
   React.useEffect(() => {
-    let alive = true
     ;(async () => {
       try {
-        const res = await fetch("/api/metrics")
-        const json = await res.json()
-        if (alive && res.ok) {
-          setRevenueMur(Number(json?.data?.revenueMur || 0))
-        }
-      } catch {}
+        const t = await fetch('/api/metrics/revenue-total', { cache: 'no-store' }).then(r => r.json())
+        setTotalMur(t?.total_mur || 0)
+      } catch {
+        toast({ title: 'Info', description: 'KPI MUR indisponible (aucune donnée encore)' })
+      }
+      try {
+        const m = await fetch('/api/metrics/revenue-monthly', { cache: 'no-store' }).then(r => r.json())
+        setMonthly(Array.isArray(m) ? m : [])
+      } catch {
+        // ignore
+      }
     })()
-    return () => { alive = false }
-  }, [])
+  }, [toast])
+
+  const kpiCards = [
+    { title: "Chiffre d'Affaires (MUR)", value: `MUR ${totalMur.toLocaleString()}`, trend: "", color: "purple" as const, icon: "₨" },
+    { title: "Contrats Signés", value: "—", trend: "", color: "yellow" as const, icon: "🖊️" },
+    { title: "Prospects Actifs", value: "—", trend: "", color: "blue" as const, icon: "🏥" },
+    { title: "RDV Programmés", value: "—", trend: "", color: "green" as const, icon: "📅" },
+  ]
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">Tableau de Bord</h2>
-        <p className="text-gray-600">Vue d'ensemble de votre activité de prospection télémédecine</p>
+        <p className="text-gray-600">Vue d'ensemble de votre activité</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard title="Prospects Actifs" value="2,847" trend="+12%" color="blue" icon="🏥" />
-        <KpiCard title="RDV Programmés" value="127" trend="+8%" color="green" icon="📅" />
-        <KpiCard title="Contrats Signés" value="43" trend="+15%" color="yellow" icon="🖊️" />
-        <KpiCard title="CA Généré (MUR)" value={formatMUR(revenueMur)} trend="+22%" color="purple" icon="₨" />
+        {kpiCards.map((k, i) => (
+          <KpiCard key={i} title={k.title} value={k.value} trend={k.trend} color={k.color} icon={k.icon} />
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="h-[360px]">
           <CardHeader>
-            <CardTitle className="text-base">Évolution des Performances</CardTitle>
+            <CardTitle className="text-base">Revenu Mensuel (MUR)</CardTitle>
           </CardHeader>
           <CardContent className="h-[280px]">
             <ChartContainer
               config={{
-                qualifies: { label: "Prospects Qualifiés", color: chartConfig.qualifies.color },
-                rdv: { label: "RDV Obtenus", color: chartConfig.rdv.color },
-                contrats: { label: "Contrats Signés", color: chartConfig.contrats.color },
+                mur: { label: "Recettes (MUR)", color: "hsl(262 83% 58%)" },
               }}
               className="h-full w-full"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={lineData}>
+                <LineChart data={monthly.map((m) => ({ mois: m.month, mur: m.total_mur }))}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="mois" />
                   <YAxis />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <ChartLegend content={<ChartLegendContent />} />
-                  <Line type="monotone" dataKey="qualifies" stroke={chartConfig.qualifies.color} strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="rdv" stroke={chartConfig.rdv.color} strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="contrats" stroke={chartConfig.contrats.color} strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="mur" stroke="hsl(262 83% 58%)" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
@@ -123,17 +111,6 @@ export default function DashboardSection() {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Activité Récente</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <ActivityItem tone="green" title="Contrat signé - Clinique Saint-Martin" meta="Il y a 2 heures • Commercial: M. Dupont" />
-          <ActivityItem tone="blue" title="Nouveau RDV planifié - EHPAD Les Roses" meta="Il y a 3 heures • Téléprospecteur: Mme Martin" />
-          <ActivityItem tone="yellow" title="Appel qualifié - Cabinet Dr. Lambert" meta="Il y a 4 heures • Téléprospecteur: M. Roux" />
-        </CardContent>
-      </Card>
     </div>
   )
 }
@@ -178,41 +155,5 @@ function KpiCard({
         </div>
       </CardContent>
     </Card>
-  )
-}
-
-function ActivityItem({
-  tone = "green",
-  title = "Événement",
-  meta = "Il y a X • Auteur",
-}: {
-  tone?: "green" | "blue" | "yellow"
-  title?: string
-  meta?: string
-}) {
-  const bg = {
-    green: "bg-green-50",
-    blue: "bg-blue-50",
-    yellow: "bg-yellow-50",
-  }[tone]
-  const icon = {
-    green: "✅",
-    blue: "📅",
-    yellow: "📞",
-  }[tone]
-  const textColor = {
-    green: "text-green-600",
-    blue: "text-blue-600",
-    yellow: "text-yellow-600",
-  }[tone]
-
-  return (
-    <div className={`flex items-center p-3 rounded-lg ${bg}`}>
-      <div className={`mr-3 ${textColor}`} aria-hidden>{icon}</div>
-      <div>
-        <p className="font-medium text-gray-900">{title}</p>
-        <p className="text-sm text-gray-600">{meta}</p>
-      </div>
-    </div>
   )
 }
