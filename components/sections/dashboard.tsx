@@ -35,6 +35,29 @@ const chartConfig = {
 } as const
 
 export default function DashboardSection() {
+  const formatMUR = (v: number) => {
+    try {
+      return new Intl.NumberFormat("fr-MU", { style: "currency", currency: "MUR", maximumFractionDigits: 0 }).format(v)
+    } catch {
+      return `MUR ${Math.round(v).toLocaleString("fr-FR")}`
+    }
+  }
+  const [revenueMur, setRevenueMur] = React.useState<number>(0)
+
+  React.useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const res = await fetch("/api/metrics")
+        const json = await res.json()
+        if (alive && res.ok) {
+          setRevenueMur(Number(json?.data?.revenueMur || 0))
+        }
+      } catch {}
+    })()
+    return () => { alive = false }
+  }, [])
+
   return (
     <div className="space-y-6">
       <div>
@@ -46,7 +69,7 @@ export default function DashboardSection() {
         <KpiCard title="Prospects Actifs" value="2,847" trend="+12%" color="blue" icon="🏥" />
         <KpiCard title="RDV Programmés" value="127" trend="+8%" color="green" icon="📅" />
         <KpiCard title="Contrats Signés" value="43" trend="+15%" color="yellow" icon="🖊️" />
-        <KpiCard title="CA Généré" value="€187K" trend="+22%" color="purple" icon="€" />
+        <KpiCard title="CA Généré (MUR)" value={formatMUR(revenueMur)} trend="+22%" color="purple" icon="₨" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

@@ -157,8 +157,8 @@ export default function Page() {
     setSection(next)
   }
 
-  function planifierRdvFromProspect(id: number) {
-    setSelectedProspectId(id)
+  function planifierRdvFromProspect(_id?: any) {
+    setSelectedProspectId(undefined)
     setSection("rdv")
   }
 
@@ -209,11 +209,7 @@ export default function Page() {
           {section === "dashboard" && <DashboardSection />}
           {section === "prospects" && (
             <ProspectsSection
-              prospects={prospects}
-              onAddProspect={addProspect}
-              onCall={(id) => toast({ title: "Appel en cours", description: `Prospect #${id}` })}
               onPlanifierRdv={planifierRdvFromProspect}
-              onEdit={(id) => toast({ title: "Édition", description: `Prospect #${id}` })}
             />
           )}
           {section === "rdv" && (
