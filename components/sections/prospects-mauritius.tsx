@@ -294,7 +294,7 @@ export default function MauritiusProspectsSection() {
             </Button>
 
             <div className="flex gap-2">
-              <MauritiusExcelImporter onImportComplete={loadProspects} />
+              <ImportAnalyzer onImportComplete={loadProspects} />
               <AddProspectDialog onAdd={addProspect} />
             </div>
           </div>
@@ -617,3 +617,4 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
     </Dialog>
   )
 }
+// Rebuild forced at Sam  9 aoû 2025 23:42:37 CEST
