@@ -30,7 +30,8 @@ import {
   Info
 } from 'lucide-react'
 import { Commercial, COMMERCIAL_CONFIG } from '@/lib/commercial-system'
-import { MAURITIUS_CONFIG, District, Secteur } from '@/lib/mauritius-config'import { useToast } from '@/hooks/use-toast'
+import { MAURITIUS_CONFIG, District, Secteur } from '@/lib/mauritius-config'
+import { useToast } from '@/hooks/use-toast'
 import { PERMISSIONS, AUDIT_ACTIONS, logAction } from '@/lib/auth-system'
 import { useAuth, ProtectedRoute, Can } from '@/lib/auth-components'
 
