@@ -14,11 +14,11 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import { Building2, CalendarPlus, ClipboardCheck, LayoutDashboard, Route } from 'lucide-react'
+import { Building2, CalendarPlus, ClipboardCheck, LayoutDashboard, Route, Brain } from 'lucide-react'
 
 type Props = {
-  onNavigate?: (key: "dashboard" | "prospects" | "rdv" | "qualification" | "planning") => void
-  current?: "dashboard" | "prospects" | "rdv" | "qualification" | "planning"
+  onNavigate?: (key: "dashboard" | "prospects" | "rdv" | "qualification" | "planning" | "ai") => void
+  current?: "dashboard" | "prospects" | "rdv" | "qualification" | "planning" | "ai"
 }
 
 export function AppSidebar({ onNavigate = () => {}, current = "dashboard" }: Props) {
@@ -28,6 +28,7 @@ export function AppSidebar({ onNavigate = () => {}, current = "dashboard" }: Pro
     { key: "rdv", title: "Prise de RDV", icon: CalendarPlus },
     { key: "qualification", title: "Qualification", icon: ClipboardCheck },
     { key: "planning", title: "Planning", icon: Route },
+    { key: "ai", title: "Intelligence IA", icon: Brain, badge: "NEW" },
   ] as const
 
   return (
@@ -49,7 +50,14 @@ export function AppSidebar({ onNavigate = () => {}, current = "dashboard" }: Pro
                     aria-current={current === item.key ? "page" : undefined}
                   >
                     <item.icon />
-                    <span>{item.title}</span>
+                    <span className="flex items-center gap-2">
+                      {item.title}
+                      {item.badge && (
+                        <span className="text-xs bg-gradient-to-r from-purple-500 to-blue-500 text-white px-1.5 py-0.5 rounded">
+                          {item.badge}
+                        </span>
+                      )}
+                    </span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -58,7 +66,9 @@ export function AppSidebar({ onNavigate = () => {}, current = "dashboard" }: Pro
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <div className="px-2 py-1 text-xs text-sidebar-foreground/60">Cmd/Ctrl+b pour basculer</div>
+        <div className="px-2 py-1 text-xs text-sidebar-foreground/60">
+          🤖 Propulsé par GPT-4
+        </div>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
@@ -66,3 +76,4 @@ export function AppSidebar({ onNavigate = () => {}, current = "dashboard" }: Pro
 }
 
 export default AppSidebar
+
