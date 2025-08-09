@@ -14,7 +14,7 @@ import {
   Edit,
   Trash2,
   Mail,
-  Phone  MapPin,
+  Phone,  MapPin,
   Car,
   Calendar,
   Target,
