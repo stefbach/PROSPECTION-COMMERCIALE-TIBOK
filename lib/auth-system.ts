@@ -194,96 +194,21 @@ export async function checkAuth(request: Request): Promise<{
   }
 }
 
-// ===== HOOK REACT POUR LES PERMISSIONS =====
+// ===== TYPES POUR LE CONTEXTE AUTH =====
 
-import * as React from 'react'
+export interface AuthUser {
+  id: string
+  email: string
+  role: UserRole
+  commercialId?: string
+}
 
-interface AuthContext {
-  user: {
-    id: string
-    email: string
-    role: UserRole
-    commercialId?: string
-  } | null
+export interface AuthContextType {
+  user: AuthUser | null
   hasPermission: (permission: Permission) => boolean
   hasAnyPermission: (permissions: Permission[]) => boolean
   hasAllPermissions: (permissions: Permission[]) => boolean
   canAccessRoute: (route: string) => boolean
-}
-
-const AuthContext = React.createContext<AuthContext>({
-  user: null,
-  hasPermission: () => false,
-  hasAnyPermission: () => false,
-  hasAllPermissions: () => false,
-  canAccessRoute: () => false
-})
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = React.useState<AuthContext['user']>(null)
-  
-  React.useEffect(() => {
-    // Charger l'utilisateur depuis le localStorage ou API
-    const loadUser = async () => {
-      try {
-        // Simuler le chargement
-        const userData = {
-          id: 'user-123',
-          email: 'admin@crm.mu',
-          role: 'admin' as UserRole
-        }
-        setUser(userData)
-      } catch (error) {
-        console.error('Erreur chargement utilisateur:', error)
-      }
-    }
-    
-    loadUser()
-  }, [])
-  
-  const contextValue: AuthContext = {
-    user,
-    hasPermission: (permission) => user ? hasPermission(user.role, permission) : false,
-    hasAnyPermission: (permissions) => user ? hasAnyPermission(user.role, permissions) : false,
-    hasAllPermissions: (permissions) => user ? hasAllPermissions(user.role, permissions) : false,
-    canAccessRoute: (route) => user ? canAccessRoute(user.role, route) : false
-  }
-  
-  return (
-    <AuthContext.Provider value={contextValue}>
-      {children}
-    </AuthContext.Provider>
-  )
-}
-
-export function useAuth() {
-  const context = React.useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth doit être utilisé dans un AuthProvider')
-  }
-  return context
-}
-
-// ===== COMPOSANT DE PROTECTION =====
-
-export function ProtectedRoute({ 
-  children, 
-  permission,
-  fallback = <div>Accès non autorisé</div>
-}: { 
-  children: React.ReactNode
-  permission?: Permission | Permission[]
-  fallback?: React.ReactNode
-}) {
-  const { hasPermission, hasAnyPermission } = useAuth()
-  
-  const hasAccess = permission
-    ? Array.isArray(permission)
-      ? hasAnyPermission(permission)
-      : hasPermission(permission)
-    : true
-  
-  return hasAccess ? <>{children}</> : <>{fallback}</>
 }
 
 // ===== AUDIT LOG =====
