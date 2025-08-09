@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Bell, Brain } from 'lucide-react'
 import DashboardSection from "@/components/sections/dashboard"
-import ProspectsSection from @/components/sections/prospects-mauritius"
+import ProspectsSection from "@/components/sections/prospects-mauritius"
 import RdvSection from "@/components/sections/rdv"
 import QualificationSection from "@/components/sections/qualification"
 import PlanningSection from "@/components/sections/planning"
