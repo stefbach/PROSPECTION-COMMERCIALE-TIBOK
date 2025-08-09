@@ -9,6 +9,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
 import { 
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { 
   Users, 
   TrendingUp, 
   MapPin,
@@ -31,11 +41,16 @@ import {
   Edit,
   Trash2,
   Mail,
-  Phone
+  Phone,
+  X,
+  CheckCircle,
+  UserCheck
 } from 'lucide-react'
 import { Commercial, CommercialStats, Affectation, COMMERCIAL_CONFIG } from '@/lib/commercial-system'
 import { MAURITIUS_CONFIG } from '@/lib/mauritius-config'
 import { useToast } from '@/hooks/use-toast'
+// Import du composant AffectationProspects si disponible
+// import { AffectationProspects } from '@/components/affectation-prospects'
 
 // Données mockées pour démonstration
 const mockCommerciaux: Commercial[] = [
@@ -133,11 +148,342 @@ const mockCommerciaux: Commercial[] = [
   }
 ]
 
+// Composant Modal pour voir les détails d'un commercial
+function CommercialDetailsModal({ 
+  commercial, 
+  isOpen, 
+  onClose 
+}: { 
+  commercial: Commercial | null, 
+  isOpen: boolean, 
+  onClose: () => void 
+}) {
+  if (!commercial) return null
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>
+            {commercial.prenom} {commercial.nom}
+          </DialogTitle>
+          <DialogDescription>
+            Détails et performances du commercial
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          {/* Informations personnelles */}
+          <div>
+            <h3 className="font-semibold mb-2">Informations</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div>Email: {commercial.email}</div>
+              <div>Téléphone: {commercial.telephone}</div>
+              <div>Adresse: {commercial.adresse.rue}, {commercial.adresse.ville}</div>
+              <div>District: {MAURITIUS_CONFIG.districts[commercial.adresse.district].label}</div>
+              <div>Date d'embauche: {new Date(commercial.dateEmbauche).toLocaleDateString()}</div>
+              <div>Statut: <Badge>{commercial.statut}</Badge></div>
+            </div>
+          </div>
+          
+          {/* Véhicule */}
+          {commercial.vehicule && (
+            <div>
+              <h3 className="font-semibold mb-2">Véhicule</h3>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>Type: {commercial.vehicule.type}</div>
+                <div>Modèle: {commercial.vehicule.marque} {commercial.vehicule.modele}</div>
+                <div>Immatriculation: {commercial.vehicule.immatriculation}</div>
+                <div>Taux/km: Rs {commercial.vehicule.tauxKm}</div>
+              </div>
+            </div>
+          )}
+          
+          {/* Zones et secteurs */}
+          <div>
+            <h3 className="font-semibold mb-2">Couverture</h3>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Zones:</span>
+                {commercial.zones.map(zone => (
+                  <Badge key={zone} variant="outline">
+                    {MAURITIUS_CONFIG.districts[zone].label}
+                  </Badge>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Secteurs:</span>
+                {commercial.secteurs.map(secteur => (
+                  <Badge key={secteur} variant="secondary">
+                    {MAURITIUS_CONFIG.secteurs[secteur].icon} {MAURITIUS_CONFIG.secteurs[secteur].label}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          {/* Statistiques */}
+          {commercial.stats && (
+            <div>
+              <h3 className="font-semibold mb-2">Performances du mois</h3>
+              <div className="grid grid-cols-3 gap-3">
+                <Card>
+                  <CardContent className="p-3">
+                    <div className="text-2xl font-bold">Rs {(commercial.stats.caGenere / 1000).toFixed(0)}k</div>
+                    <div className="text-xs text-muted-foreground">CA généré</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3">
+                    <div className="text-2xl font-bold">{commercial.stats.tauxConversion.toFixed(1)}%</div>
+                    <div className="text-xs text-muted-foreground">Taux conversion</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3">
+                    <div className="text-2xl font-bold">#{commercial.stats.ranking}</div>
+                    <div className="text-xs text-muted-foreground">Classement</div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+        </div>
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Fermer</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Composant Modal pour créer un commercial
+function CreateCommercialModal({ 
+  isOpen, 
+  onClose,
+  onCreate
+}: { 
+  isOpen: boolean, 
+  onClose: () => void,
+  onCreate: (commercial: Partial<Commercial>) => void
+}) {
+  const [formData, setFormData] = React.useState({
+    nom: '',
+    prenom: '',
+    email: '',
+    telephone: '',
+    district: '',
+    zones: [] as string[],
+    secteurs: [] as string[]
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    onCreate(formData)
+    onClose()
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Nouveau Commercial</DialogTitle>
+          <DialogDescription>
+            Ajouter un nouveau membre à l'équipe commerciale
+          </DialogDescription>
+        </DialogHeader>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="nom">Nom</Label>
+              <Input 
+                id="nom"
+                value={formData.nom}
+                onChange={(e) => setFormData({...formData, nom: e.target.value})}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="prenom">Prénom</Label>
+              <Input 
+                id="prenom"
+                value={formData.prenom}
+                onChange={(e) => setFormData({...formData, prenom: e.target.value})}
+                required
+              />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="email">Email</Label>
+              <Input 
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="telephone">Téléphone</Label>
+              <Input 
+                id="telephone"
+                value={formData.telephone}
+                onChange={(e) => setFormData({...formData, telephone: e.target.value})}
+                required
+              />
+            </div>
+          </div>
+          
+          <div>
+            <Label htmlFor="district">District</Label>
+            <Select 
+              value={formData.district}
+              onValueChange={(value) => setFormData({...formData, district: value})}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Sélectionner un district" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(MAURITIUS_CONFIG.districts).map(([key, config]) => (
+                  <SelectItem key={key} value={key}>
+                    {config.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <div>
+            <Label>Zones d'intervention</Label>
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              {Object.entries(MAURITIUS_CONFIG.districts).map(([key, config]) => (
+                <label key={key} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.zones.includes(key)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setFormData({...formData, zones: [...formData.zones, key]})
+                      } else {
+                        setFormData({...formData, zones: formData.zones.filter(z => z !== key)})
+                      }
+                    }}
+                  />
+                  <span className="text-sm">{config.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          
+          <div>
+            <Label>Secteurs d'expertise</Label>
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, config]) => (
+                <label key={key} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.secteurs.includes(key)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setFormData({...formData, secteurs: [...formData.secteurs, key]})
+                      } else {
+                        setFormData({...formData, secteurs: formData.secteurs.filter(s => s !== key)})
+                      }
+                    }}
+                  />
+                  <span className="text-sm">
+                    {config.icon} {config.label}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Annuler
+            </Button>
+            <Button type="submit">
+              Créer le commercial
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Composant Modal pour l'affectation
+function AffectationModal({ 
+  isOpen, 
+  onClose,
+  commerciaux
+}: { 
+  isOpen: boolean, 
+  onClose: () => void,
+  commerciaux: Commercial[]
+}) {
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Affectation des Prospects</DialogTitle>
+          <DialogDescription>
+            Assigner les prospects non affectés aux commerciaux
+          </DialogDescription>
+        </DialogHeader>
+        
+        {/* Si vous avez le composant AffectationProspects, décommentez cette ligne */}
+        {/* <AffectationProspects 
+          commerciaux={commerciaux}
+          onAffectation={(affectations) => {
+            console.log('Affectations:', affectations)
+            onClose()
+          }}
+        /> */}
+        
+        {/* Version simplifiée si le composant n'est pas disponible */}
+        <div className="py-4">
+          <Alert>
+            <UserCheck className="h-4 w-4" />
+            <AlertDescription>
+              Le module d'affectation intelligente permettra d'assigner automatiquement 
+              les prospects selon les zones, secteurs et capacités de chaque commercial.
+            </AlertDescription>
+          </Alert>
+          
+          <div className="mt-4 space-y-4">
+            <Card>
+              <CardContent className="p-4">
+                <div className="text-center py-8">
+                  <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">
+                    Module d'affectation en cours de développement
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Fermer</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function AdminDashboard() {
   const [commerciaux, setCommerciaux] = React.useState<Commercial[]>(mockCommerciaux)
   const [selectedCommercial, setSelectedCommercial] = React.useState<Commercial | null>(null)
   const [showCreateForm, setShowCreateForm] = React.useState(false)
   const [affectationMode, setAffectationMode] = React.useState(false)
+  const [showDetailsModal, setShowDetailsModal] = React.useState(false)
   const { toast } = useToast()
 
   // Calculer les statistiques globales
@@ -164,6 +510,21 @@ export default function AdminDashboard() {
     }
   }, [commerciaux])
 
+  // Gérer l'ouverture des détails
+  const handleViewDetails = (commercial: Commercial) => {
+    setSelectedCommercial(commercial)
+    setShowDetailsModal(true)
+  }
+
+  // Gérer la création d'un commercial
+  const handleCreateCommercial = (data: Partial<Commercial>) => {
+    toast({
+      title: 'Commercial créé',
+      description: `${data.prenom} ${data.nom} a été ajouté à l'équipe`
+    })
+    // Ici vous ajouteriez la logique pour créer réellement le commercial
+  }
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
@@ -176,6 +537,13 @@ export default function AdminDashboard() {
         </div>
         
         <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            onClick={() => setAffectationMode(true)}
+          >
+            <UserCheck className="mr-2 h-4 w-4" />
+            Affectation
+          </Button>
           <Button variant="outline">
             <FileSpreadsheet className="mr-2 h-4 w-4" />
             Export
@@ -364,7 +732,7 @@ export default function AdminDashboard() {
                           <Button 
                             size="sm" 
                             variant="outline"
-                            onClick={() => setSelectedCommercial(commercial)}
+                            onClick={() => handleViewDetails(commercial)}
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
@@ -659,10 +1027,33 @@ export default function AdminDashboard() {
                     </tr>
                   </tbody>
                 </table>
-              </CardContent>
-            </Card>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Modals */}
+      <CommercialDetailsModal 
+        commercial={selectedCommercial}
+        isOpen={showDetailsModal}
+        onClose={() => {
+          setShowDetailsModal(false)
+          setSelectedCommercial(null)
+        }}
+      />
+      
+      <CreateCommercialModal 
+        isOpen={showCreateForm}
+        onClose={() => setShowCreateForm(false)}
+        onCreate={handleCreateCommercial}
+      />
+      
+      <AffectationModal 
+        isOpen={affectationMode}
+        onClose={() => setAffectationMode(false)}
+        commerciaux={commerciaux}
+      />
     </div>
   )
 }
