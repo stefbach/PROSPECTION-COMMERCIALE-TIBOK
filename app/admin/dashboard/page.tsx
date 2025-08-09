@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
+import { PERMISSIONS } from '@/lib/auth-system'
+import { useAuth, Can } from '@/lib/auth-components'
 import { 
   Dialog,
   DialogContent,

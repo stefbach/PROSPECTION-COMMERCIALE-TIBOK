@@ -14,8 +14,7 @@ import {
   Edit,
   Trash2,
   Mail,
-  Phone,
-  MapPin,
+  Phone  MapPin,
   Car,
   Calendar,
   Target,
@@ -31,9 +30,9 @@ import {
   Info
 } from 'lucide-react'
 import { Commercial, COMMERCIAL_CONFIG } from '@/lib/commercial-system'
-import { MAURITIUS_CONFIG, District, Secteur } from '@/lib/mauritius-config'
-import { useToast } from '@/hooks/use-toast'
-import { useAuth, PERMISSIONS } from '@/lib/auth-system'
+import { MAURITIUS_CONFIG, District, Secteur } from '@/lib/mauritius-config'import { useToast } from '@/hooks/use-toast'
+import { PERMISSIONS, AUDIT_ACTIONS, logAction } from '@/lib/auth-system'
+import { useAuth, ProtectedRoute, Can } from '@/lib/auth-components'
 
 interface CommercialForm {
   nom: string
