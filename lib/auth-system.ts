@@ -354,3 +354,4 @@ export function checkRateLimit(userId: string, action: string): {
     remaining: config.maxRequests - current.count,
     resetTime: current.resetTime
   }
+}
