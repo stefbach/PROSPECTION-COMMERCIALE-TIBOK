@@ -1,4 +1,3 @@
-// app/page.tsx (mise à jour)
 "use client"
 
 import * as React from "react"
