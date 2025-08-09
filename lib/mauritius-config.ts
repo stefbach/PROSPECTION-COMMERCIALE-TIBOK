@@ -31,7 +31,14 @@ export const MAURITIUS_CONFIG = {
     'technologie': { label: 'IT/Tech', icon: '💻' },
     'autre': { label: 'Autre', icon: '🏢' }
   },
-
+// Régions de Maurice
+  regions: {
+    centre: { label: 'Centre', districts: ['port-louis', 'plaines-wilhems', 'moka'] },
+    nord: { label: 'Nord', districts: ['pamplemousses', 'riviere-du-rempart'] },
+    est: { label: 'Est', districts: ['flacq', 'grand-port'] },
+    sud: { label: 'Sud', districts: ['savanne'] },
+    ouest: { label: 'Ouest', districts: ['black-river'] }
+  },
   // Statuts
   statuts: {
     'nouveau': { label: 'Nouveau', color: 'gray' },
