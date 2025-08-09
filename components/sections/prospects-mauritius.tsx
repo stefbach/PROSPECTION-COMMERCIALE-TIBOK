@@ -192,16 +192,76 @@ export default function MauritiusProspectsSection() {
                 value={filters.statut} 
                 onChange={(e) => setFilters({...filters, statut: e.target.value})} 
                 className="w-full border rounded-md px-3 py-2"
+              >{/* Filtre Secteur */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Secteur</label>
+              <select
+                value={filters.secteur} 
+                onChange={(e) => setFilters({...filters, secteur: e.target.value})} 
+                className="w-full border rounded-md px-3 py-2"
               >
+                <option value="">Tous les secteurs</option> 
+                {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, config]) => ( 
+                  <option key={key} value={key}>
+                    {config.icon} {config.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filtre District */}
+            <div>
+              <label className="block text-sm font-medium mb-2">District</label>
+              <select
+                value={filters.district} 
+                onChange={(e) => setFilters({...filters, district: e.target.value})} 
+                className="w-full border rounded-md px-3 py-2"
+              >
+                <option value="">Tous les districts</option> 
+                {Object.entries(MAURITIUS_CONFIG.districts).map(([key, config]) => ( 
+                  <option key={key} value={key}>{config.label}</option>
+                ))}
+              </select>
+            </div>
                 <option value="">Tous les statuts</option>
                 {Object.entries(MAURITIUS_CONFIG.statuts).map(([key, config]) => (
                   <option key={key} value={key}>{config.label}</option>
                 ))}
               </select>
             </div>
-
-            {/* Recherche */}
+{/* Filtre Secteur */}
             <div>
+              <label className="block text-sm font-medium mb-2">Secteur</label>
+              <select
+                value={filters.secteur || ''} 
+                onChange={(e) => setFilters({...filters, secteur: e.target.value})} 
+                className="w-full border rounded-md px-3 py-2"
+              >
+                <option value="">Tous les secteurs</option> 
+                {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, config]) => ( 
+                  <option key={key} value={key}>
+                    {config.icon} {config.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filtre District */}
+            <div>
+              <label className="block text-sm font-medium mb-2">District</label>
+              <select
+                value={filters.district || ''} 
+                onChange={(e) => setFilters({...filters, district: e.target.value})} 
+                className="w-full border rounded-md px-3 py-2"
+              >
+                <option value="">Tous les districts</option> 
+                {Object.entries(MAURITIUS_CONFIG.districts).map(([key, config]) => ( 
+                  <option key={key} value={key}>{config.label}</option>
+                ))}
+              </select>
+            </div>
+            {/* Recherche */}
+                        <div>
               <label className="block text-sm font-medium mb-2">Recherche</label>
               <Input 
                 value={filters.search} 
