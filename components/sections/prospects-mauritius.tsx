@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { CalendarPlus, Phone, Plus, Search, Mail, Globe, MapPin, Building2 } from 'lucide-react'
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
-import { MauritiusExcelImporter } from "@/components/mauritius-excel-importer"
+import { ImportAnalyzer } from '@/components/import-analyzer'
 
 export default function MauritiusProspectsSection() {
   const [loading, setLoading] = React.useState(false)
