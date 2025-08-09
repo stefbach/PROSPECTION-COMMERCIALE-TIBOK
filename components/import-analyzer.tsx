@@ -18,14 +18,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+// ScrollArea et Select remplacés par des alternatives simples
 import { useToast } from '@/hooks/use-toast'
 import { 
   FileSpreadsheet, 
@@ -623,47 +616,39 @@ export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => 
                   </label>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                                  <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium">Secteur par défaut</label>
-                    <Select
+                    <select
                       value={options.defaultSector}
-                      onValueChange={(value) => 
-                        setOptions({...options, defaultSector: value})
+                      onChange={(e) => 
+                        setOptions({...options, defaultSector: e.target.value})
                       }
+                      className="w-full border rounded-md px-3 py-2 text-sm"
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, config]) => (
-                          <SelectItem key={key} value={key}>
-                            {config.icon} {config.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, config]) => (
+                        <option key={key} value={key}>
+                          {config.icon} {config.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   
                   <div>
                     <label className="text-sm font-medium">District par défaut</label>
-                    <Select
+                    <select
                       value={options.defaultDistrict}
-                      onValueChange={(value) => 
-                        setOptions({...options, defaultDistrict: value})
+                      onChange={(e) => 
+                        setOptions({...options, defaultDistrict: e.target.value})
                       }
+                      className="w-full border rounded-md px-3 py-2 text-sm"
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(MAURITIUS_CONFIG.districts).map(([key, config]) => (
-                          <SelectItem key={key} value={key}>
-                            {config.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      {Object.entries(MAURITIUS_CONFIG.districts).map(([key, config]) => (
+                        <option key={key} value={key}>
+                          {config.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </CardContent>
@@ -712,7 +697,7 @@ export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => 
                     <CardTitle className="text-sm">Analyse des colonnes</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ScrollArea className="h-[300px]">
+                    <div className="h-[300px] overflow-y-auto">
                       <div className="space-y-3">
                         {analysis.columns.map((col, i) => (
                           <div key={i} className="border rounded-lg p-3">
@@ -734,7 +719,7 @@ export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => 
                           </div>
                         ))}
                       </div>
-                    </ScrollArea>
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -794,7 +779,7 @@ export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => 
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ScrollArea className="h-[400px]">
+                  <div className="h-[400px] overflow-y-auto">
                     <div className="space-y-3">
                       {analysis.columns.map((col) => (
                         <div key={col.name} className="flex items-center gap-4">
@@ -805,34 +790,30 @@ export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => 
                             </div>
                           </div>
                           <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                          <Select
+                          <select
                             value={columnMappings[col.name] || ''}
-                            onValueChange={(value) => 
-                              setColumnMappings({...columnMappings, [col.name]: value})
+                            onChange={(e) => 
+                              setColumnMappings({...columnMappings, [col.name]: e.target.value})
                             }
+                            className="w-[200px] border rounded-md px-3 py-2 text-sm"
                           >
-                            <SelectTrigger className="w-[200px]">
-                              <SelectValue placeholder="Ignorer" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="">Ignorer</SelectItem>
-                              <SelectItem value="nom">Nom</SelectItem>
-                              <SelectItem value="secteur">Secteur</SelectItem>
-                              <SelectItem value="ville">Ville</SelectItem>
-                              <SelectItem value="district">District</SelectItem>
-                              <SelectItem value="contact">Contact</SelectItem>
-                              <SelectItem value="telephone">Téléphone</SelectItem>
-                              <SelectItem value="email">Email</SelectItem>
-                              <SelectItem value="adresse">Adresse</SelectItem>
-                              <SelectItem value="website">Site web</SelectItem>
-                              <SelectItem value="budget">Budget</SelectItem>
-                              <SelectItem value="notes">Notes</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            <option value="">Ignorer</option>
+                            <option value="nom">Nom</option>
+                            <option value="secteur">Secteur</option>
+                            <option value="ville">Ville</option>
+                            <option value="district">District</option>
+                            <option value="contact">Contact</option>
+                            <option value="telephone">Téléphone</option>
+                            <option value="email">Email</option>
+                            <option value="adresse">Adresse</option>
+                            <option value="website">Site web</option>
+                            <option value="budget">Budget</option>
+                            <option value="notes">Notes</option>
+                          </select>
                         </div>
                       ))}
                     </div>
-                  </ScrollArea>
+                  </div>
                   
                   <div className="mt-4 flex justify-end">
                     <Button
@@ -893,9 +874,9 @@ export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => 
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ScrollArea className="h-[350px]">
+                    <div className="h-[350px] overflow-y-auto">
                       <table className="w-full text-sm">
-                        <thead className="border-b">
+                        <thead className="border-b sticky top-0 bg-white">
                           <tr>
                             <th className="text-left p-2">Nom</th>
                             <th className="text-left p-2">Secteur</th>
@@ -930,7 +911,7 @@ export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => 
                           ))}
                         </tbody>
                       </table>
-                    </ScrollArea>
+                    </div>
                   </CardContent>
                 </Card>
 
