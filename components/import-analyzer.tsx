@@ -417,7 +417,7 @@ export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => 
     } finally {
       setImporting(false)
     }
-  }
+
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
