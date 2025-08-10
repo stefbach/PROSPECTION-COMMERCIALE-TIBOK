@@ -44,7 +44,27 @@ import {
 
 export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () => void }) {
   // ... états existants ...
+  const [open, setOpen] = React.useState(false)
+  const [file, setFile] = React.useState<File | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [analyzing, setAnalyzing] = React.useState(false)
+  const [importing, setImporting] = React.useState(false)
   
+  const [rawData, setRawData] = React.useState<any[]>([])
+  const [analysis, setAnalysis] = React.useState<any>(null)
+  const [transformedData, setTransformedData] = React.useState<any>(null)
+  const [columnMappings, setColumnMappings] = React.useState<Record<string, string>>({})
+  
+  const [options, setOptions] = React.useState({
+    skipDuplicates: true,
+    updateExisting: false,
+    autoDetectSector: true,
+    autoDetectDistrict: true,
+    defaultSector: 'autre',
+    defaultDistrict: 'port-louis'
+  })
+  
+  const { toast } = useToast()
   const [importMode, setImportMode] = React.useState<'standard' | 'outscraper'>('standard')
   const [gpsStats, setGpsStats] = React.useState({
     withCoordinates: 0,
