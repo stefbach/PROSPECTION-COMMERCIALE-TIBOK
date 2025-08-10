@@ -1,54 +1,227 @@
-// =====================================
 // app/api/prospects/route.ts
-// =====================================
+// API avec 4000+ prospects mauriciens
 
 import { NextRequest, NextResponse } from 'next/server'
 
-// Simuler une base de données en mémoire (à remplacer par votre vraie DB)
-let prospects = [
-  {
-    id: 1,
-    nom: "Clinique Saint-Martin",
-    email: "contact@clinique-st-martin.fr",
-    telephone: "+33 1 45 67 89 00",
-    adresse: "45 rue de la Santé",
-    ville: "Paris",
-    code_postal: "75014",
-    pays: "France",
-    secteur: "Santé",
-    statut: "nouveau",
-    notes: "Très intéressés par notre solution",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 2,
-    nom: "EHPAD Les Jardins",
-    email: "direction@ehpad-jardins.fr",
-    telephone: "+33 4 78 90 12 34",
-    adresse: "12 avenue des Roses",
-    ville: "Lyon",
-    code_postal: "69003",
-    pays: "France",
-    secteur: "Senior",
-    statut: "qualifie",
-    notes: "Besoin urgent de modernisation",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
-]
+// Types pour Maurice
+type District = 'port-louis' | 'pamplemousses' | 'riviere-du-rempart' | 'flacq' | 
+                'grand-port' | 'savanne' | 'plaines-wilhems' | 'moka' | 'riviere-noire'
 
-// GET - Récupérer tous les prospects
+type Secteur = 'hotel' | 'restaurant' | 'retail' | 'clinique' | 'pharmacie' | 
+               'wellness' | 'spa' | 'tourisme' | 'immobilier' | 'autre'
+
+type Statut = 'nouveau' | 'contacte' | 'qualifie' | 'en-negociation' | 'signe' | 'perdu'
+
+interface Prospect {
+  id: number
+  nom: string
+  email: string
+  telephone: string
+  adresse?: string
+  ville: string
+  district: District
+  secteur: Secteur
+  statut: Statut
+  contact?: string
+  budget?: string
+  notes?: string
+  website?: string
+  score: 1 | 2 | 3 | 4 | 5
+  priority?: 'Haute' | 'Moyenne' | 'Basse'
+  quality_score?: number
+  created_at: string
+  updated_at: string
+}
+
+// Configuration pour générer des données réalistes
+const MAURITIUS_DATA = {
+  districts: {
+    'port-louis': ['Port Louis', 'Caudan', 'Chinatown', 'Plaine Verte'],
+    'pamplemousses': ['Pamplemousses', 'Arsenal', 'Calebasses', 'Morcellement Saint André'],
+    'riviere-du-rempart': ['Rivière du Rempart', 'Goodlands', 'Poudre dOr', 'Grand Gaube'],
+    'flacq': ['Centre de Flacq', 'Poste de Flacq', 'Belle Mare', 'Trou dEau Douce'],
+    'grand-port': ['Mahébourg', 'Rose Belle', 'Plaine Magnien', 'Blue Bay'],
+    'savanne': ['Souillac', 'Surinam', 'Rivière des Anguilles', 'Baie du Cap'],
+    'plaines-wilhems': ['Curepipe', 'Vacoas', 'Phoenix', 'Quatre Bornes', 'Rose Hill'],
+    'moka': ['Moka', 'Quartier Militaire', 'Saint Pierre', 'Reduit'],
+    'riviere-noire': ['Tamarin', 'Flic en Flac', 'Le Morne', 'La Gaulette']
+  },
+  
+  companyPrefixes: [
+    'Hotel', 'Restaurant', 'Boutique', 'Clinique', 'Pharmacie', 'Spa', 'Resort',
+    'Villa', 'Guest House', 'Beach Resort', 'Medical Center', 'Wellness Center',
+    'Super U', 'Winners', 'Jumbo', 'Intermart', 'Dream Price', 'La Croisette'
+  ],
+  
+  companySuffixes: [
+    'Paradise', 'Tropical', 'Island', 'Ocean View', 'Beach', 'Lagoon', 'Coral',
+    'Blue Bay', 'Grand Baie', 'Belle Mare', 'Le Morne', 'Tamarin', 'Flic en Flac'
+  ],
+  
+  contactNames: [
+    'Kumar Patel', 'Marie Duval', 'Jean-Pierre Martin', 'Anita Ramgoolam',
+    'David Chen', 'Sophie Laurent', 'Raj Sharma', 'Michelle Dupont',
+    'Kevin Li', 'Priya Naidoo', 'François Bernard', 'Lisa Wong'
+  ]
+}
+
+// Générateur de prospects mauriciens
+function generateMauritianProspects(count: number = 4500): Prospect[] {
+  const prospects: Prospect[] = []
+  
+  for (let i = 1; i <= count; i++) {
+    const districtKey = Object.keys(MAURITIUS_DATA.districts)[
+      Math.floor(Math.random() * Object.keys(MAURITIUS_DATA.districts).length)
+    ] as District
+    
+    const cities = MAURITIUS_DATA.districts[districtKey]
+    const city = cities[Math.floor(Math.random() * cities.length)]
+    
+    const secteurs: Secteur[] = ['hotel', 'restaurant', 'retail', 'clinique', 'pharmacie', 
+                                  'wellness', 'spa', 'tourisme', 'immobilier', 'autre']
+    const secteur = secteurs[Math.floor(Math.random() * secteurs.length)]
+    
+    const statuts: Statut[] = ['nouveau', 'contacte', 'qualifie', 'en-negociation', 'signe', 'perdu']
+    // Biais vers les nouveaux et qualifiés
+    const statutWeights = [0.35, 0.25, 0.20, 0.10, 0.05, 0.05]
+    const randomStatut = Math.random()
+    let statut: Statut = 'nouveau'
+    let cumulativeWeight = 0
+    for (let j = 0; j < statuts.length; j++) {
+      cumulativeWeight += statutWeights[j]
+      if (randomStatut <= cumulativeWeight) {
+        statut = statuts[j]
+        break
+      }
+    }
+    
+    const companyPrefix = MAURITIUS_DATA.companyPrefixes[
+      Math.floor(Math.random() * MAURITIUS_DATA.companyPrefixes.length)
+    ]
+    const companySuffix = MAURITIUS_DATA.companySuffixes[
+      Math.floor(Math.random() * MAURITIUS_DATA.companySuffixes.length)
+    ]
+    
+    const contactName = MAURITIUS_DATA.contactNames[
+      Math.floor(Math.random() * MAURITIUS_DATA.contactNames.length)
+    ]
+    
+    const score = Math.floor(Math.random() * 5) + 1 as 1 | 2 | 3 | 4 | 5
+    const quality_score = Math.floor(Math.random() * 40) + 60 // 60-100
+    
+    const priorities = ['Haute', 'Moyenne', 'Basse']
+    const priority = Math.random() > 0.8 ? priorities[0] : 
+                    Math.random() > 0.5 ? priorities[1] : priorities[2]
+    
+    const budgets = ['Rs 50k', 'Rs 100k', 'Rs 250k', 'Rs 500k', 'Rs 1M', 'Rs 2M+']
+    const budget = Math.random() > 0.3 ? budgets[Math.floor(Math.random() * budgets.length)] : undefined
+    
+    prospects.push({
+      id: i,
+      nom: `${companyPrefix} ${companySuffix} ${i}`,
+      email: `contact${i}@${companyPrefix.toLowerCase().replace(/\s/g, '')}.mu`,
+      telephone: `+230 5${Math.floor(Math.random() * 900 + 100)} ${Math.floor(Math.random() * 9000 + 1000)}`,
+      adresse: `${Math.floor(Math.random() * 999) + 1} Royal Road`,
+      ville: city,
+      district: districtKey,
+      secteur: secteur,
+      statut: statut,
+      contact: contactName,
+      budget: budget,
+      notes: Math.random() > 0.5 ? `Prospect intéressant. ${secteur === 'hotel' ? 'Établissement de prestige.' : 
+                                    secteur === 'restaurant' ? 'Forte affluence touristique.' :
+                                    secteur === 'clinique' ? 'Besoin urgent de modernisation.' :
+                                    'À recontacter rapidement.'}` : undefined,
+      website: Math.random() > 0.4 ? `https://www.${companyPrefix.toLowerCase().replace(/\s/g, '')}.mu` : undefined,
+      score: score,
+      priority: priority as 'Haute' | 'Moyenne' | 'Basse',
+      quality_score: quality_score,
+      created_at: new Date(Date.now() - Math.floor(Math.random() * 90 * 24 * 60 * 60 * 1000)).toISOString(),
+      updated_at: new Date().toISOString()
+    })
+  }
+  
+  return prospects
+}
+
+// Générer les données une seule fois au démarrage
+let allProspects: Prospect[] = []
+
+// Fonction pour initialiser les données
+function initializeData() {
+  if (allProspects.length === 0) {
+    console.log('🚀 Génération de 4500 prospects mauriciens...')
+    allProspects = generateMauritianProspects(4500)
+    console.log('✅ Base de données initialisée avec', allProspects.length, 'prospects')
+  }
+}
+
+// GET - Récupérer les prospects avec pagination et filtres
 export async function GET(request: NextRequest) {
   try {
-    console.log('API GET /prospects - Nombre de prospects:', prospects.length)
+    // Initialiser les données si nécessaire
+    initializeData()
     
-    // Si vous avez une vraie base de données, remplacez par :
-    // const prospects = await db.prospect.findMany()
+    const { searchParams } = new URL(request.url)
     
-    return NextResponse.json(prospects)
+    // Récupérer les paramètres
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const secteur = searchParams.get('secteur')
+    const district = searchParams.get('district')
+    const statut = searchParams.get('statut')
+    const search = searchParams.get('q')
+    const country = searchParams.get('country')
+    
+    console.log(`📋 GET /prospects - Page: ${page}, Limit: ${limit}, Total: ${allProspects.length}`)
+    
+    // Filtrer les prospects
+    let filtered = [...allProspects]
+    
+    if (secteur) {
+      filtered = filtered.filter(p => p.secteur === secteur)
+    }
+    
+    if (district) {
+      filtered = filtered.filter(p => p.district === district)
+    }
+    
+    if (statut) {
+      filtered = filtered.filter(p => p.statut === statut)
+    }
+    
+    if (search) {
+      const searchLower = search.toLowerCase()
+      filtered = filtered.filter(p => 
+        p.nom.toLowerCase().includes(searchLower) ||
+        p.ville.toLowerCase().includes(searchLower) ||
+        (p.contact && p.contact.toLowerCase().includes(searchLower)) ||
+        p.email.toLowerCase().includes(searchLower)
+      )
+    }
+    
+    // Calculer la pagination
+    const total = filtered.length
+    const totalPages = Math.ceil(total / limit)
+    const offset = (page - 1) * limit
+    const paginatedData = filtered.slice(offset, offset + limit)
+    
+    console.log(`📊 Résultats: ${paginatedData.length} prospects (page ${page}/${totalPages}, total filtré: ${total})`)
+    
+    // Retourner avec les métadonnées de pagination
+    return NextResponse.json({
+      data: paginatedData,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasMore: page < totalPages
+      }
+    })
+    
   } catch (error) {
-    console.error('Erreur GET /api/prospects:', error)
+    console.error('❌ Erreur GET /api/prospects:', error)
     return NextResponse.json(
       { error: 'Erreur lors de la récupération des prospects' },
       { status: 500 }
@@ -59,10 +232,12 @@ export async function GET(request: NextRequest) {
 // POST - Créer un nouveau prospect
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    console.log('API POST /prospects - Données reçues:', body)
+    initializeData()
     
-    // Validation des données
+    const body = await request.json()
+    console.log('📝 POST /prospects - Données reçues:', body)
+    
+    // Validation
     if (!body.nom || !body.email || !body.telephone) {
       return NextResponse.json(
         { error: 'Données manquantes: nom, email et téléphone sont requis' },
@@ -71,24 +246,34 @@ export async function POST(request: NextRequest) {
     }
     
     // Créer le nouveau prospect
-    const newProspect = {
-      id: Date.now(), // ID temporaire, remplacer par auto-increment DB
-      ...body,
+    const newProspect: Prospect = {
+      id: allProspects.length + 1,
+      nom: body.nom,
+      email: body.email,
+      telephone: body.telephone,
+      adresse: body.adresse || '',
+      ville: body.ville || 'Port Louis',
+      district: body.district || 'port-louis',
+      secteur: body.secteur || 'autre',
       statut: body.statut || 'nouveau',
+      contact: body.contact,
+      budget: body.budget,
+      notes: body.notes,
+      website: body.website,
+      score: body.score || 3,
+      priority: body.priority,
+      quality_score: body.quality_score,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
     
-    // Ajouter à la "base de données"
-    prospects.push(newProspect)
+    // Ajouter à la liste
+    allProspects.unshift(newProspect)
     
-    // Si vous avez une vraie base de données :
-    // const newProspect = await db.prospect.create({ data: body })
-    
-    console.log('Prospect créé:', newProspect)
+    console.log('✅ Prospect créé:', newProspect.nom)
     return NextResponse.json(newProspect, { status: 201 })
   } catch (error) {
-    console.error('Erreur POST /api/prospects:', error)
+    console.error('❌ Erreur POST /api/prospects:', error)
     return NextResponse.json(
       { error: 'Erreur lors de la création du prospect' },
       { status: 500 }
@@ -96,306 +281,5 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// =====================================
-// app/api/prospects/[id]/route.ts
-// =====================================
-
-// import { NextRequest, NextResponse } from 'next/server'
-
-// PATCH - Mettre à jour un prospect
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const id = parseInt(params.id)
-    const body = await request.json()
-    
-    console.log(`API PATCH /prospects/${id} - Données:`, body)
-    
-    // Trouver et mettre à jour le prospect
-    const index = prospects.findIndex(p => p.id === id)
-    if (index === -1) {
-      return NextResponse.json(
-        { error: 'Prospect non trouvé' },
-        { status: 404 }
-      )
-    }
-    
-    prospects[index] = {
-      ...prospects[index],
-      ...body,
-      updated_at: new Date().toISOString()
-    }
-    
-    // Si vous avez une vraie base de données :
-    // const updated = await db.prospect.update({
-    //   where: { id },
-    //   data: body
-    // })
-    
-    return NextResponse.json(prospects[index])
-  } catch (error) {
-    console.error('Erreur PATCH /api/prospects/[id]:', error)
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour' },
-      { status: 500 }
-    )
-  }
-}
-
-// DELETE - Supprimer un prospect
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const id = parseInt(params.id)
-    
-    console.log(`API DELETE /prospects/${id}`)
-    
-    // Filtrer pour supprimer
-    const initialLength = prospects.length
-    prospects = prospects.filter(p => p.id !== id)
-    
-    if (prospects.length === initialLength) {
-      return NextResponse.json(
-        { error: 'Prospect non trouvé' },
-        { status: 404 }
-      )
-    }
-    
-    // Si vous avez une vraie base de données :
-    // await db.prospect.delete({ where: { id } })
-    
-    return NextResponse.json({ success: true, message: 'Prospect supprimé' })
-  } catch (error) {
-    console.error('Erreur DELETE /api/prospects/[id]:', error)
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression' },
-      { status: 500 }
-    )
-  }
-}
-
-// =====================================
-// app/api/rdv/route.ts
-// =====================================
-
-// import { NextRequest, NextResponse } from 'next/server'
-
-// Simuler une base de données en mémoire pour les RDV
-let rdvs: any[] = []
-
-// GET - Récupérer tous les RDV
-export async function GET_RDV(request: NextRequest) {
-  try {
-    console.log('API GET /rdv - Nombre de RDV:', rdvs.length)
-    
-    // Si vous avez une vraie base de données :
-    // const rdvs = await db.rdv.findMany()
-    
-    return NextResponse.json(rdvs)
-  } catch (error) {
-    console.error('Erreur GET /api/rdv:', error)
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des RDV' },
-      { status: 500 }
-    )
-  }
-}
-
-// POST - Créer un nouveau RDV
-export async function POST_RDV(request: NextRequest) {
-  try {
-    const body = await request.json()
-    console.log('API POST /rdv - Données reçues:', body)
-    
-    // Validation des données
-    if (!body.prospect_id || !body.commercial || !body.date_time) {
-      return NextResponse.json(
-        { error: 'Données manquantes: prospect_id, commercial et date_time sont requis' },
-        { status: 400 }
-      )
-    }
-    
-    // Créer le nouveau RDV
-    const newRdv = {
-      id: Date.now(), // ID temporaire
-      prospect_id: body.prospect_id,
-      titre: body.titre || 'Nouveau RDV',
-      commercial: body.commercial,
-      date_time: body.date_time,
-      type_visite: body.type_visite || 'decouverte',
-      priorite: body.priorite || 'normale',
-      duree_min: body.duree_min || 60,
-      notes: body.notes || '',
-      statut: body.statut || 'planifie',
-      created_at: new Date().toISOString()
-    }
-    
-    // Ajouter à la "base de données"
-    rdvs.push(newRdv)
-    
-    // Si vous avez une vraie base de données :
-    // const newRdv = await db.rdv.create({ data: body })
-    
-    console.log('RDV créé:', newRdv)
-    return NextResponse.json(newRdv, { status: 201 })
-  } catch (error) {
-    console.error('Erreur POST /api/rdv:', error)
-    return NextResponse.json(
-      { error: 'Erreur lors de la création du RDV' },
-      { status: 500 }
-    )
-  }
-}
-
-// PATCH - Mettre à jour un RDV
-export async function PATCH_RDV(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { id, ...updateData } = body
-    
-    console.log(`API PATCH /rdv/${id} - Données:`, updateData)
-    
-    if (!id) {
-      return NextResponse.json(
-        { error: 'ID du RDV manquant' },
-        { status: 400 }
-      )
-    }
-    
-    // Trouver et mettre à jour le RDV
-    const index = rdvs.findIndex(r => r.id === id)
-    if (index === -1) {
-      return NextResponse.json(
-        { error: 'RDV non trouvé' },
-        { status: 404 }
-      )
-    }
-    
-    rdvs[index] = {
-      ...rdvs[index],
-      ...updateData,
-      updated_at: new Date().toISOString()
-    }
-    
-    // Si vous avez une vraie base de données :
-    // const updated = await db.rdv.update({
-    //   where: { id },
-    //   data: updateData
-    // })
-    
-    return NextResponse.json(rdvs[index])
-  } catch (error) {
-    console.error('Erreur PATCH /api/rdv:', error)
-    return NextResponse.json(
-      { error: 'Erreur lors de la mise à jour du RDV' },
-      { status: 500 }
-    )
-  }
-}
-
-// DELETE - Supprimer un RDV
-export async function DELETE_RDV(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
-    
-    console.log(`API DELETE /rdv?id=${id}`)
-    
-    if (!id) {
-      return NextResponse.json(
-        { error: 'ID du RDV manquant' },
-        { status: 400 }
-      )
-    }
-    
-    // Filtrer pour supprimer
-    const initialLength = rdvs.length
-    rdvs = rdvs.filter(r => r.id !== parseInt(id))
-    
-    if (rdvs.length === initialLength) {
-      return NextResponse.json(
-        { error: 'RDV non trouvé' },
-        { status: 404 }
-      )
-    }
-    
-    // Si vous avez une vraie base de données :
-    // await db.rdv.delete({ where: { id: parseInt(id) } })
-    
-    return NextResponse.json({ 
-      success: true, 
-      message: 'RDV supprimé avec succès' 
-    })
-  } catch (error) {
-    console.error('Erreur DELETE /api/rdv:', error)
-    return NextResponse.json(
-      { error: 'Erreur lors de la suppression du RDV' },
-      { status: 500 }
-    )
-  }
-}
-
-// =====================================
-// NOTES D'IMPLÉMENTATION
-// =====================================
-/*
-Pour connecter à une vraie base de données (ex: Prisma), remplacez les tableaux en mémoire par :
-
-1. Installer Prisma:
-   npm install prisma @prisma/client
-
-2. Créer le schéma Prisma (prisma/schema.prisma):
-   
-   model Prospect {
-     id          Int      @id @default(autoincrement())
-     nom         String
-     email       String
-     telephone   String
-     adresse     String
-     ville       String
-     code_postal String?
-     pays        String   @default("France")
-     secteur     String
-     statut      String   @default("nouveau")
-     notes       String?
-     created_at  DateTime @default(now())
-     updated_at  DateTime @updatedAt
-     rdvs        Rdv[]
-   }
-   
-   model Rdv {
-     id           Int      @id @default(autoincrement())
-     prospect_id  Int
-     prospect     Prospect @relation(fields: [prospect_id], references: [id])
-     titre        String
-     commercial   String
-     date_time    DateTime
-     type_visite  String
-     priorite     String
-     duree_min    Int
-     notes        String?
-     statut       String   @default("planifie")
-     created_at   DateTime @default(now())
-     updated_at   DateTime @updatedAt
-   }
-
-3. Initialiser Prisma:
-   npx prisma init
-   npx prisma db push
-
-4. Remplacer les tableaux par des appels Prisma:
-   import { PrismaClient } from '@prisma/client'
-   const prisma = new PrismaClient()
-   
-   // GET prospects
-   const prospects = await prisma.prospect.findMany()
-   
-   // POST prospect
-   const newProspect = await prisma.prospect.create({ data: body })
-   
-   // etc...
-*/
+// PATCH - Mettre à jour un prospect (à implémenter dans [id]/route.ts)
+// DELETE - Supprimer un prospect (à implémenter dans [id]/route.ts)
