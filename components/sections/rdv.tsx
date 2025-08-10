@@ -53,26 +53,29 @@ import {
   CheckSquare
 } from 'lucide-react'
 
-// Types étendus
+// Types basés sur la vraie structure de la base de données
 interface Prospect {
   id: number
   nom: string
-  secteur: string
-  ville: string
-  statut: 'nouveau' | 'contacte' | 'qualifie' | 'en-negociation' | 'signe' | 'perdu'
-  adresse: string
-  telephone: string
   email: string
-  contact_principal: string
-  score: number // Score de priorité 1-10
-  budget_estime: string
-  dernier_contact: string | null
-  prochain_contact: string | null
-  notes: string
-  created_at: string
-  historique_rdv?: RDV[]
+  telephone: string
+  adresse: string
+  ville: string
+  code_postal?: string
+  pays?: string
+  secteur: string
+  statut: 'nouveau' | 'contacte' | 'qualifie' | 'en-negociation' | 'signe' | 'perdu'
+  score?: number
+  notes?: string
+  created_at?: string
+  updated_at?: string
+  // Champs additionnels pour enrichir les données
+  contact_principal?: string
+  budget_estime?: string
   ca_potentiel?: number
   taille_entreprise?: string
+  dernier_contact?: string
+  prochain_contact?: string
   besoins?: string[]
 }
 
@@ -86,7 +89,7 @@ interface RDV {
   priorite: 'normale' | 'haute' | 'urgente'
   duree_min: number
   notes: string
-  statut: 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
+  statut?: 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
   prospect?: Prospect
   compte_rendu?: string
   prochaines_actions?: string
@@ -99,94 +102,11 @@ interface Commercial {
   region: string
   disponibilites: { date: string; creneaux: string[] }[]
   rdv_jour: number
-  charge: number // % de charge
+  charge: number
 }
 
-// Données mockées enrichies
-const mockProspects: Prospect[] = [
-  {
-    id: 1,
-    nom: "Clinique Saint-Martin",
-    secteur: "Santé",
-    ville: "Paris",
-    statut: "en-negociation",
-    adresse: "45 rue de la Santé, 75014 Paris",
-    telephone: "+33 1 45 67 89 00",
-    email: "contact@clinique-st-martin.fr",
-    contact_principal: "Dr. Marie Dubois",
-    score: 9,
-    budget_estime: "50-100k€",
-    dernier_contact: "2024-01-10",
-    prochain_contact: "2024-01-20",
-    notes: "Très intéressés par notre solution. Budget validé en interne.",
-    created_at: "2023-12-01",
-    ca_potentiel: 75000,
-    taille_entreprise: "50-100 employés",
-    besoins: ["Gestion patients", "Planning", "Facturation"]
-  },
-  {
-    id: 2,
-    nom: "EHPAD Les Jardins",
-    secteur: "Senior",
-    ville: "Lyon",
-    statut: "qualifie",
-    adresse: "12 avenue des Roses, 69003 Lyon",
-    telephone: "+33 4 78 90 12 34",
-    email: "direction@ehpad-jardins.fr",
-    contact_principal: "M. Jean Bertrand",
-    score: 7,
-    budget_estime: "30-50k€",
-    dernier_contact: "2024-01-08",
-    prochain_contact: "2024-01-15",
-    notes: "Besoin urgent de modernisation. Décision Q1 2024.",
-    created_at: "2023-11-15",
-    ca_potentiel: 40000,
-    taille_entreprise: "20-50 employés",
-    besoins: ["Suivi résidents", "Planning soignants"]
-  },
-  {
-    id: 3,
-    nom: "Cabinet Dr. Moreau",
-    secteur: "Médical",
-    ville: "Marseille",
-    statut: "nouveau",
-    adresse: "78 boulevard Michelet, 13008 Marseille",
-    telephone: "+33 4 91 22 33 44",
-    email: "cabinet@dr-moreau.fr",
-    contact_principal: "Dr. Pierre Moreau",
-    score: 6,
-    budget_estime: "10-20k€",
-    dernier_contact: null,
-    prochain_contact: "2024-01-12",
-    notes: "Premier contact à établir. Recommandé par Dr. Dubois.",
-    created_at: "2024-01-05",
-    ca_potentiel: 15000,
-    taille_entreprise: "1-10 employés",
-    besoins: ["Gestion cabinet", "Prise RDV en ligne"]
-  },
-  {
-    id: 4,
-    nom: "Hôpital Privé Centrale",
-    secteur: "Santé",
-    ville: "Paris",
-    statut: "contacte",
-    adresse: "100 rue de la République, 75011 Paris",
-    telephone: "+33 1 55 66 77 88",
-    email: "admin@hopital-centrale.fr",
-    contact_principal: "Mme Sophie Laurent",
-    score: 8,
-    budget_estime: "100-200k€",
-    dernier_contact: "2024-01-05",
-    prochain_contact: "2024-01-18",
-    notes: "Grand compte potentiel. Processus de décision long.",
-    created_at: "2023-10-20",
-    ca_potentiel: 150000,
-    taille_entreprise: "100+ employés",
-    besoins: ["ERP complet", "Multi-sites", "Formation"]
-  }
-]
-
-const mockCommercials: Commercial[] = [
+// Commerciaux disponibles (à remplacer par une vraie API si disponible)
+const commercials: Commercial[] = [
   {
     id: "1",
     nom: "M. Dupont",
@@ -209,14 +129,30 @@ const mockCommercials: Commercial[] = [
     ],
     rdv_jour: 3,
     charge: 60
+  },
+  {
+    id: "3",
+    nom: "M. Bernard",
+    region: "PACA",
+    disponibilites: [],
+    rdv_jour: 3,
+    charge: 50
+  },
+  {
+    id: "4",
+    nom: "Mme Roux",
+    region: "Grand Est",
+    disponibilites: [],
+    rdv_jour: 4,
+    charge: 65
   }
 ]
 
 export default function RdvCompletSection() {
-  // États principaux
-  const [prospects, setProspects] = React.useState<Prospect[]>(mockProspects)
+  // États principaux - Utilisation des vraies données de la base
+  const [prospects, setProspects] = React.useState<Prospect[]>([])
   const [rdvs, setRdvs] = React.useState<RDV[]>([])
-  const [commercials] = React.useState<Commercial[]>(mockCommercials)
+  const [loading, setLoading] = React.useState(true)
   const [activeTab, setActiveTab] = React.useState("planning")
   
   // États pour le formulaire RDV
@@ -238,30 +174,98 @@ export default function RdvCompletSection() {
   const [showProspectDetails, setShowProspectDetails] = React.useState(false)
   const [showNewProspect, setShowNewProspect] = React.useState(false)
   
+  // États pour le formulaire nouveau prospect
+  const [newProspect, setNewProspect] = React.useState<Partial<Prospect>>({
+    nom: '',
+    email: '',
+    telephone: '',
+    adresse: '',
+    ville: '',
+    code_postal: '',
+    pays: 'France',
+    secteur: 'Santé',
+    statut: 'nouveau',
+    notes: ''
+  })
+  
   const { toast } = useToast()
   const today = new Date().toISOString().split("T")[0]
 
-  // Chargement initial des RDV
-  React.useEffect(() => {
-    loadRdvs()
-  }, [])
+  // Chargement des données depuis la vraie base de données
+  async function loadProspects() {
+    try {
+      const response = await fetch('/api/prospects', { cache: 'no-store' })
+      const data = await response.json()
+      
+      if (Array.isArray(data)) {
+        // Enrichir les données avec des valeurs par défaut si nécessaire
+        const enrichedProspects = data.map((p: Prospect) => ({
+          ...p,
+          score: p.score || Math.floor(Math.random() * 10) + 1, // Score aléatoire si pas défini
+          ca_potentiel: p.ca_potentiel || Math.floor(Math.random() * 100000) + 10000
+        }))
+        setProspects(enrichedProspects)
+      } else {
+        setProspects([])
+      }
+    } catch (error) {
+      console.error('Erreur chargement prospects:', error)
+      toast({
+        title: "Erreur",
+        description: "Impossible de charger les prospects",
+        variant: "destructive"
+      })
+      setProspects([])
+    }
+  }
 
   async function loadRdvs() {
     try {
-      const response = await fetch('/api/rdv')
+      const response = await fetch('/api/rdv', { cache: 'no-store' })
       const data = await response.json()
+      
       if (Array.isArray(data)) {
-        // Enrichir avec les données prospects
+        // Enrichir les RDV avec les données prospects
         const enrichedRdvs = data.map((rdv: RDV) => ({
           ...rdv,
           prospect: prospects.find(p => p.id === rdv.prospect_id)
         }))
         setRdvs(enrichedRdvs)
+      } else {
+        setRdvs([])
       }
     } catch (error) {
       console.error('Erreur chargement RDV:', error)
+      setRdvs([])
     }
   }
+
+  // Chargement initial
+  React.useEffect(() => {
+    async function loadData() {
+      setLoading(true)
+      await loadProspects()
+      setLoading(false)
+    }
+    loadData()
+  }, [])
+
+  // Charger les RDV quand les prospects sont chargés
+  React.useEffect(() => {
+    if (prospects.length > 0) {
+      loadRdvs()
+    }
+  }, [prospects])
+
+  // Actualiser périodiquement les données
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      loadProspects()
+      loadRdvs()
+    }, 30000) // Toutes les 30 secondes
+
+    return () => clearInterval(interval)
+  }, [])
 
   // Filtrage des prospects
   const filteredProspects = React.useMemo(() => {
@@ -271,8 +275,9 @@ export default function RdvCompletSection() {
       filtered = filtered.filter(p =>
         p.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.ville.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.contact_principal.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.secteur.toLowerCase().includes(searchTerm.toLowerCase())
+        p.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.secteur.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.telephone && p.telephone.includes(searchTerm))
       )
     }
     
@@ -285,13 +290,17 @@ export default function RdvCompletSection() {
     }
     
     if (filterScore !== 'all') {
-      if (filterScore === 'high') filtered = filtered.filter(p => p.score >= 8)
-      else if (filterScore === 'medium') filtered = filtered.filter(p => p.score >= 5 && p.score < 8)
-      else if (filterScore === 'low') filtered = filtered.filter(p => p.score < 5)
+      const score = p.score || 5
+      if (filterScore === 'high') filtered = filtered.filter(p => score >= 8)
+      else if (filterScore === 'medium') filtered = filtered.filter(p => score >= 5 && score < 8)
+      else if (filterScore === 'low') filtered = filtered.filter(p => score < 5)
     }
     
-    // Tri par score décroissant
-    filtered.sort((a, b) => b.score - a.score)
+    // Tri par score décroissant (ou par date de création si pas de score)
+    filtered.sort((a, b) => {
+      if (a.score && b.score) return b.score - a.score
+      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    })
     
     return filtered
   }, [prospects, searchTerm, filterSecteur, filterStatut, filterScore])
@@ -300,20 +309,24 @@ export default function RdvCompletSection() {
   const suggestedProspects = React.useMemo(() => {
     return prospects
       .filter(p => {
-        // Prospects qui nécessitent un suivi
-        if (p.prochain_contact) {
-          const nextContact = new Date(p.prochain_contact)
-          const today = new Date()
-          return nextContact <= today && p.statut !== 'signe' && p.statut !== 'perdu'
-        }
-        // Nouveaux prospects non contactés
-        return p.statut === 'nouveau' && !p.dernier_contact
+        // Prospects nouveaux ou qualifiés non contactés récemment
+        return (p.statut === 'nouveau' || p.statut === 'qualifie') && p.statut !== 'signe' && p.statut !== 'perdu'
       })
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => {
+        const scoreA = a.score || 5
+        const scoreB = b.score || 5
+        return scoreB - scoreA
+      })
       .slice(0, 5)
   }, [prospects])
 
-  // Statistiques
+  // Extraction des secteurs uniques depuis les vrais données
+  const secteurs = React.useMemo(() => {
+    const uniqueSecteurs = [...new Set(prospects.map(p => p.secteur).filter(Boolean))]
+    return uniqueSecteurs
+  }, [prospects])
+
+  // Statistiques basées sur les vraies données
   const stats = React.useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -371,19 +384,21 @@ export default function RdvCompletSection() {
 
       await loadRdvs()
       
-      // Mettre à jour le prospect
-      setProspects(prev => prev.map(p => 
-        p.id === selectedProspect.id 
-          ? { ...p, prochain_contact: selectedDate, statut: p.statut === 'nouveau' ? 'contacte' : p.statut }
-          : p
-      ))
+      // Mettre à jour le statut du prospect si nécessaire
+      if (selectedProspect.statut === 'nouveau') {
+        await fetch(`/api/prospects/${selectedProspect.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ statut: 'contacte' })
+        })
+        await loadProspects()
+      }
 
       toast({ 
         title: "✅ RDV planifié", 
         description: `RDV avec ${selectedProspect.nom} le ${new Date(selectedDate).toLocaleDateString('fr-FR')}`
       })
 
-      // Réinitialiser le formulaire
       resetRdvForm()
     } catch (error) {
       toast({ 
@@ -406,25 +421,47 @@ export default function RdvCompletSection() {
   }
 
   // Créer un nouveau prospect
-  async function createProspect(prospectData: Partial<Prospect>) {
+  async function createProspect(e: React.FormEvent) {
+    e.preventDefault()
+    
+    if (!newProspect.nom || !newProspect.email || !newProspect.telephone) {
+      toast({ 
+        title: "Erreur", 
+        description: "Veuillez remplir tous les champs obligatoires",
+        variant: "destructive"
+      })
+      return
+    }
+
     try {
       const response = await fetch('/api/prospects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(prospectData)
+        body: JSON.stringify(newProspect)
       })
 
       if (!response.ok) throw new Error('Erreur création prospect')
 
-      const newProspect = await response.json()
-      setProspects(prev => [...prev, newProspect])
+      await loadProspects()
       
       toast({ 
         title: "✅ Prospect créé", 
-        description: `${prospectData.nom} ajouté à la base`
+        description: `${newProspect.nom} ajouté à la base`
       })
 
       setShowNewProspect(false)
+      setNewProspect({
+        nom: '',
+        email: '',
+        telephone: '',
+        adresse: '',
+        ville: '',
+        code_postal: '',
+        pays: 'France',
+        secteur: 'Santé',
+        statut: 'nouveau',
+        notes: ''
+      })
     } catch (error) {
       toast({ 
         title: "Erreur", 
@@ -432,6 +469,40 @@ export default function RdvCompletSection() {
         variant: "destructive"
       })
     }
+  }
+
+  // Supprimer un RDV
+  async function deleteRdv(rdvId: number) {
+    try {
+      const response = await fetch(`/api/rdv?id=${rdvId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) throw new Error('Erreur suppression RDV')
+
+      await loadRdvs()
+      toast({ 
+        title: "✅ RDV supprimé", 
+        description: "Le rendez-vous a été supprimé"
+      })
+    } catch (error) {
+      toast({ 
+        title: "Erreur", 
+        description: "Impossible de supprimer le RDV",
+        variant: "destructive"
+      })
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-500" />
+          <p className="text-muted-foreground">Chargement des données...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -444,10 +515,20 @@ export default function RdvCompletSection() {
               Gestion Complète des Rendez-Vous
             </h2>
             <p className="text-gray-600">
-              Planification intelligente avec accès complet à la base prospects
+              {prospects.length} prospects dans la base • {rdvs.length} RDV planifiés
             </p>
           </div>
           <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                loadProspects()
+                loadRdvs()
+              }}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Actualiser
+            </Button>
             <Button variant="outline" onClick={() => setShowNewProspect(true)}>
               <UserPlus className="h-4 w-4 mr-2" />
               Nouveau Prospect
@@ -564,9 +645,11 @@ export default function RdvCompletSection() {
         <Alert className="bg-amber-50 border-amber-200">
           <BellRing className="h-4 w-4 text-amber-600" />
           <AlertDescription>
-            <strong className="text-amber-900">Attention :</strong>{' '}
+            <strong className="text-amber-900">Prospects prioritaires :</strong>{' '}
             <span className="text-amber-800">
-              {suggestedProspects.length} prospect(s) nécessitent un suivi urgent aujourd'hui
+              {suggestedProspects.length} prospect(s) à contacter : {' '}
+              {suggestedProspects.slice(0, 3).map(p => p.nom).join(', ')}
+              {suggestedProspects.length > 3 && '...'}
             </span>
           </AlertDescription>
         </Alert>
@@ -589,7 +672,7 @@ export default function RdvCompletSection() {
           </TabsTrigger>
           <TabsTrigger value="analytics">
             <BarChart3 className="h-4 w-4 mr-2" />
-            Analytiques
+            Analytics
           </TabsTrigger>
         </TabsList>
 
@@ -599,76 +682,68 @@ export default function RdvCompletSection() {
             <CardHeader>
               <CardTitle>Planning de la semaine</CardTitle>
               <CardDescription>
-                Vue d'ensemble des RDV planifiés et suggestions d'optimisation
+                Vue d'ensemble des RDV planifiés
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Calendrier hebdomadaire simplifié */}
-              <div className="grid grid-cols-5 gap-4">
-                {['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'].map((jour, idx) => (
-                  <div key={jour} className="border rounded-lg p-3">
-                    <h4 className="font-semibold text-sm mb-2">{jour}</h4>
-                    <div className="space-y-1">
-                      {rdvs
-                        .filter(r => {
-                          const date = new Date(r.date_time)
-                          return date.getDay() === idx + 1
-                        })
-                        .slice(0, 3)
-                        .map(rdv => (
-                          <div key={rdv.id} className="text-xs p-1 bg-blue-50 rounded">
-                            <div className="font-medium">{rdv.prospect?.nom}</div>
-                            <div className="text-gray-500">
-                              {new Date(rdv.date_time).toLocaleTimeString('fr-FR', {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* RDV du jour */}
-              <div className="mt-6">
-                <h4 className="font-semibold mb-3">Rendez-vous aujourd'hui</h4>
+              {/* RDV du jour et à venir */}
+              <div className="space-y-4">
+                <h4 className="font-semibold">Prochains rendez-vous</h4>
                 <div className="space-y-2">
                   {rdvs
-                    .filter(r => new Date(r.date_time).toDateString() === new Date().toDateString())
+                    .filter(r => new Date(r.date_time) >= new Date())
+                    .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
+                    .slice(0, 10)
                     .map(rdv => (
                       <div key={rdv.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
                         <div className="flex items-center gap-3">
                           <div className="text-center">
-                            <div className="text-lg font-bold">
+                            <div className="text-sm font-bold">
+                              {new Date(rdv.date_time).toLocaleDateString('fr-FR', {
+                                day: '2-digit',
+                                month: 'short'
+                              })}
+                            </div>
+                            <div className="text-lg">
                               {new Date(rdv.date_time).toLocaleTimeString('fr-FR', {
                                 hour: '2-digit',
                                 minute: '2-digit'
                               })}
                             </div>
-                            <div className="text-xs text-gray-500">{rdv.duree_min} min</div>
                           </div>
                           <div>
-                            <div className="font-medium">{rdv.prospect?.nom}</div>
+                            <div className="font-medium">{rdv.prospect?.nom || rdv.titre}</div>
                             <div className="text-sm text-gray-500">
-                              {rdv.prospect?.contact_principal} • {rdv.type_visite}
+                              {rdv.commercial} • {rdv.type_visite} • {rdv.duree_min} min
                             </div>
+                            {rdv.prospect && (
+                              <div className="text-xs text-gray-400">
+                                {rdv.prospect.ville} • {rdv.prospect.secteur}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant={rdv.priorite === 'urgente' ? 'destructive' : rdv.priorite === 'haute' ? 'default' : 'secondary'}>
+                          <Badge variant={
+                            rdv.priorite === 'urgente' ? 'destructive' : 
+                            rdv.priorite === 'haute' ? 'default' : 
+                            'secondary'
+                          }>
                             {rdv.priorite}
                           </Badge>
-                          <Button size="sm" variant="outline">
-                            <Eye className="h-4 w-4" />
+                          <Button 
+                            size="sm" 
+                            variant="ghost"
+                            onClick={() => deleteRdv(rdv.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
                     ))}
                   
-                  {rdvs.filter(r => new Date(r.date_time).toDateString() === new Date().toDateString()).length === 0 && (
-                    <p className="text-center text-gray-500 py-4">Aucun rendez-vous aujourd'hui</p>
+                  {rdvs.filter(r => new Date(r.date_time) >= new Date()).length === 0 && (
+                    <p className="text-center text-gray-500 py-4">Aucun rendez-vous planifié</p>
                   )}
                 </div>
               </div>
@@ -685,7 +760,7 @@ export default function RdvCompletSection() {
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Rechercher un prospect..."
+                    placeholder="Rechercher un prospect (nom, ville, email, téléphone)..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10"
@@ -699,9 +774,9 @@ export default function RdvCompletSection() {
                     onChange={(e) => setFilterSecteur(e.target.value)}
                   >
                     <option value="all">Tous secteurs</option>
-                    <option value="Santé">Santé</option>
-                    <option value="Senior">Senior</option>
-                    <option value="Médical">Médical</option>
+                    {secteurs.map(secteur => (
+                      <option key={secteur} value={secteur}>{secteur}</option>
+                    ))}
                   </select>
                   
                   <select
@@ -716,17 +791,6 @@ export default function RdvCompletSection() {
                     <option value="en-negociation">En négociation</option>
                     <option value="signe">Signé</option>
                     <option value="perdu">Perdu</option>
-                  </select>
-                  
-                  <select
-                    className="border rounded-md px-3 py-2 text-sm"
-                    value={filterScore}
-                    onChange={(e) => setFilterScore(e.target.value)}
-                  >
-                    <option value="all">Tous scores</option>
-                    <option value="high">Score élevé (8+)</option>
-                    <option value="medium">Score moyen (5-7)</option>
-                    <option value="low">Score faible (&lt;5)</option>
                   </select>
                   
                   <div className="flex gap-1 border rounded-md">
@@ -749,6 +813,14 @@ export default function RdvCompletSection() {
                   </div>
                 </div>
               </div>
+              
+              {filteredProspects.length !== prospects.length && (
+                <Alert className="mt-4">
+                  <AlertDescription>
+                    {filteredProspects.length} résultat(s) sur {prospects.length} prospects
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
 
@@ -775,7 +847,11 @@ export default function RdvCompletSection() {
             <Card>
               <CardContent className="p-8 text-center">
                 <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">Aucun prospect ne correspond à vos critères</p>
+                <p className="text-muted-foreground">
+                  {searchTerm || filterSecteur !== 'all' || filterStatut !== 'all' 
+                    ? "Aucun prospect ne correspond à vos critères"
+                    : "Aucun prospect dans la base de données"}
+                </p>
               </CardContent>
             </Card>
           )}
@@ -811,7 +887,7 @@ export default function RdvCompletSection() {
                               <div className="text-xs text-gray-500">{prospect.ville}</div>
                             </div>
                             <Badge variant="destructive" className="text-xs">
-                              Score {prospect.score}
+                              {prospect.statut}
                             </Badge>
                           </div>
                         </div>
@@ -822,8 +898,8 @@ export default function RdvCompletSection() {
 
                 {/* Liste complète des prospects */}
                 <div>
-                  <h4 className="text-sm font-medium mb-2">Tous les prospects</h4>
-                  <div className="max-h-96 overflow-y-auto space-y-2">
+                  <h4 className="text-sm font-medium mb-2">Tous les prospects ({prospects.length})</h4>
+                  <div className="max-h-96 overflow-y-auto space-y-2 border rounded-lg p-2">
                     {prospects
                       .filter(p => p.statut !== 'signe' && p.statut !== 'perdu')
                       .map(prospect => (
@@ -838,7 +914,7 @@ export default function RdvCompletSection() {
                             <div className="flex-1">
                               <div className="font-medium">{prospect.nom}</div>
                               <div className="text-sm text-gray-500">
-                                {prospect.contact_principal} • {prospect.ville}
+                                {prospect.ville} • {prospect.telephone}
                               </div>
                               <div className="flex items-center gap-2 mt-1">
                                 <Badge variant="outline" className="text-xs">
@@ -856,26 +932,15 @@ export default function RdvCompletSection() {
                                 </Badge>
                               </div>
                             </div>
-                            <div className="text-right">
-                              <div className="flex items-center gap-1">
-                                {[...Array(5)].map((_, i) => (
-                                  <Star
-                                    key={i}
-                                    className={`h-3 w-3 ${
-                                      i < Math.floor(prospect.score / 2) 
-                                        ? 'fill-yellow-400 text-yellow-400' 
-                                        : 'text-gray-300'
-                                    }`}
-                                  />
-                                ))}
-                              </div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                {prospect.budget_estime}
-                              </div>
-                            </div>
                           </div>
                         </div>
                       ))}
+                    
+                    {prospects.filter(p => p.statut !== 'signe' && p.statut !== 'perdu').length === 0 && (
+                      <p className="text-center text-gray-500 py-4">
+                        Aucun prospect disponible pour un RDV
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -905,72 +970,56 @@ export default function RdvCompletSection() {
 
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-gray-400" />
-                        <span>{selectedProspect.contact_principal}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
                         <Phone className="h-4 w-4 text-gray-400" />
                         <span>{selectedProspect.telephone}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Mail className="h-4 w-4 text-gray-400" />
-                        <span>{selectedProspect.email}</span>
+                        <span className="break-all">{selectedProspect.email}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <MapPin className="h-4 w-4 text-gray-400" />
                         <span>{selectedProspect.adresse}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <DollarSign className="h-4 w-4 text-gray-400" />
-                        <span>Budget: {selectedProspect.budget_estime}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
                         <Building className="h-4 w-4 text-gray-400" />
-                        <span>{selectedProspect.taille_entreprise}</span>
+                        <span>{selectedProspect.ville} {selectedProspect.code_postal}</span>
                       </div>
                     </div>
 
-                    {/* Besoins identifiés */}
-                    {selectedProspect.besoins && (
+                    {/* Statut actuel */}
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">Statut actuel</h4>
+                      <Badge 
+                        variant={
+                          selectedProspect.statut === 'nouveau' ? 'default' :
+                          selectedProspect.statut === 'qualifie' ? 'secondary' :
+                          selectedProspect.statut === 'en-negociation' ? 'default' :
+                          'outline'
+                        }
+                      >
+                        {selectedProspect.statut}
+                      </Badge>
+                    </div>
+
+                    {/* Notes */}
+                    {selectedProspect.notes && (
                       <div>
-                        <h4 className="text-sm font-medium mb-2">Besoins identifiés</h4>
-                        <div className="flex flex-wrap gap-1">
-                          {selectedProspect.besoins.map((besoin, idx) => (
-                            <Badge key={idx} variant="secondary" className="text-xs">
-                              {besoin}
-                            </Badge>
-                          ))}
+                        <h4 className="text-sm font-medium mb-2">Notes</h4>
+                        <div className="p-3 bg-gray-50 rounded-lg text-sm">
+                          {selectedProspect.notes}
                         </div>
                       </div>
                     )}
 
-                    {/* Notes */}
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">Notes</h4>
-                      <div className="p-3 bg-gray-50 rounded-lg text-sm">
-                        {selectedProspect.notes}
-                      </div>
-                    </div>
-
-                    {/* Historique */}
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">Historique</h4>
-                      <div className="space-y-2">
-                        {selectedProspect.dernier_contact && (
-                          <div className="text-sm">
-                            <span className="text-gray-500">Dernier contact:</span>{' '}
-                            {new Date(selectedProspect.dernier_contact).toLocaleDateString('fr-FR')}
-                          </div>
-                        )}
-                        {selectedProspect.prochain_contact && (
-                          <div className="text-sm">
-                            <span className="text-gray-500">Prochain contact prévu:</span>{' '}
-                            <span className="font-medium text-orange-600">
-                              {new Date(selectedProspect.prochain_contact).toLocaleDateString('fr-FR')}
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                    {/* Dates */}
+                    <div className="text-xs text-gray-500">
+                      {selectedProspect.created_at && (
+                        <p>Créé le {new Date(selectedProspect.created_at).toLocaleDateString('fr-FR')}</p>
+                      )}
+                      {selectedProspect.updated_at && (
+                        <p>Modifié le {new Date(selectedProspect.updated_at).toLocaleDateString('fr-FR')}</p>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -1032,34 +1081,6 @@ export default function RdvCompletSection() {
                       />
                     </div>
                   </div>
-
-                  {/* Créneaux disponibles du commercial */}
-                  {selectedCommercial && selectedDate && (
-                    <div>
-                      <label className="block text-sm font-medium mb-2">
-                        Créneaux disponibles
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedCommercial.disponibilites
-                          .find(d => d.date === selectedDate)
-                          ?.creneaux.map(creneau => (
-                            <Button
-                              key={creneau}
-                              type="button"
-                              size="sm"
-                              variant={selectedTime === creneau ? "default" : "outline"}
-                              onClick={() => setSelectedTime(creneau)}
-                            >
-                              {creneau}
-                            </Button>
-                          )) || (
-                          <p className="text-sm text-gray-500">
-                            Aucun créneau prédéfini pour cette date
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Type de visite et priorité */}
                   <div className="grid grid-cols-2 gap-3">
@@ -1154,19 +1175,21 @@ export default function RdvCompletSection() {
                   </div>
                   <div>
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm">Objectif CA mensuel</span>
+                      <span className="text-sm">Prospects qualifiés</span>
                       <span className="text-sm font-bold">
-                        {(stats.caPotentiel / 1000).toFixed(0)}k / 200k€
+                        {prospects.filter(p => p.statut === 'qualifie').length} / {stats.totalProspects}
                       </span>
                     </div>
-                    <Progress value={(stats.caPotentiel / 200000) * 100} />
+                    <Progress value={(prospects.filter(p => p.statut === 'qualifie').length / stats.totalProspects) * 100} />
                   </div>
                   <div>
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm">RDV complétés ce mois</span>
-                      <span className="text-sm font-bold">12 / 20</span>
+                      <span className="text-sm">RDV réalisés ce mois</span>
+                      <span className="text-sm font-bold">
+                        {rdvs.filter(r => r.statut === 'termine').length} / {rdvs.length}
+                      </span>
                     </div>
-                    <Progress value={60} />
+                    <Progress value={rdvs.length > 0 ? (rdvs.filter(r => r.statut === 'termine').length / rdvs.length) * 100 : 0} />
                   </div>
                 </div>
               </CardContent>
@@ -1174,38 +1197,38 @@ export default function RdvCompletSection() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Top prospects par score</CardTitle>
+                <CardTitle className="text-lg">Répartition par statut</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {prospects
-                    .sort((a, b) => b.score - a.score)
-                    .slice(0, 5)
-                    .map(prospect => (
-                      <div key={prospect.id} className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium text-sm">{prospect.nom}</div>
-                          <div className="text-xs text-gray-500">{prospect.ville}</div>
+                  {['nouveau', 'contacte', 'qualifie', 'en-negociation', 'signe', 'perdu'].map(statut => {
+                    const count = prospects.filter(p => p.statut === statut).length
+                    const percentage = stats.totalProspects > 0 ? Math.round((count / stats.totalProspects) * 100) : 0
+                    
+                    return (
+                      <div key={statut} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Badge 
+                            variant={
+                              statut === 'nouveau' ? 'default' :
+                              statut === 'qualifie' ? 'secondary' :
+                              statut === 'signe' ? 'success' :
+                              statut === 'perdu' ? 'destructive' :
+                              'outline'
+                            }
+                            className="text-xs"
+                          >
+                            {statut}
+                          </Badge>
+                          <span className="text-sm">{count} prospects</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">
-                            {prospect.budget_estime}
-                          </Badge>
-                          <div className="flex items-center gap-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`h-3 w-3 ${
-                                  i < Math.floor(prospect.score / 2) 
-                                    ? 'fill-yellow-400 text-yellow-400' 
-                                    : 'text-gray-300'
-                                }`}
-                              />
-                            ))}
-                          </div>
+                          <Progress value={percentage} className="w-20" />
+                          <span className="text-xs text-gray-500 w-10">{percentage}%</span>
                         </div>
                       </div>
-                    ))}
+                    )
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -1216,23 +1239,108 @@ export default function RdvCompletSection() {
       {/* Modal nouveau prospect */}
       {showNewProspect && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="max-w-2xl w-full">
+          <Card className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <CardHeader>
               <CardTitle>Créer un nouveau prospect</CardTitle>
             </CardHeader>
             <CardContent>
-              {/* Formulaire création prospect */}
-              <form onSubmit={(e) => {
-                e.preventDefault()
-                // Logique de création
-                setShowNewProspect(false)
-              }} className="space-y-4">
-                {/* Champs du formulaire... */}
+              <form onSubmit={createProspect} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Nom de l'entreprise *</label>
+                    <Input
+                      value={newProspect.nom}
+                      onChange={(e) => setNewProspect({...newProspect, nom: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Secteur *</label>
+                    <select
+                      className="w-full border rounded-md px-3 py-2"
+                      value={newProspect.secteur}
+                      onChange={(e) => setNewProspect({...newProspect, secteur: e.target.value})}
+                      required
+                    >
+                      <option value="Santé">Santé</option>
+                      <option value="Senior">Senior</option>
+                      <option value="Médical">Médical</option>
+                      <option value="Pharmacie">Pharmacie</option>
+                      <option value="Autre">Autre</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Email *</label>
+                    <Input
+                      type="email"
+                      value={newProspect.email}
+                      onChange={(e) => setNewProspect({...newProspect, email: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Téléphone *</label>
+                    <Input
+                      value={newProspect.telephone}
+                      onChange={(e) => setNewProspect({...newProspect, telephone: e.target.value})}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Adresse</label>
+                  <Input
+                    value={newProspect.adresse}
+                    onChange={(e) => setNewProspect({...newProspect, adresse: e.target.value})}
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Ville</label>
+                    <Input
+                      value={newProspect.ville}
+                      onChange={(e) => setNewProspect({...newProspect, ville: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Code postal</label>
+                    <Input
+                      value={newProspect.code_postal}
+                      onChange={(e) => setNewProspect({...newProspect, code_postal: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Pays</label>
+                    <Input
+                      value={newProspect.pays}
+                      onChange={(e) => setNewProspect({...newProspect, pays: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Notes</label>
+                  <Textarea
+                    rows={3}
+                    value={newProspect.notes}
+                    onChange={(e) => setNewProspect({...newProspect, notes: e.target.value})}
+                    placeholder="Informations complémentaires..."
+                  />
+                </div>
+
                 <div className="flex justify-end gap-3">
                   <Button type="button" variant="outline" onClick={() => setShowNewProspect(false)}>
                     Annuler
                   </Button>
-                  <Button type="submit">Créer le prospect</Button>
+                  <Button type="submit">
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Créer le prospect
+                  </Button>
                 </div>
               </form>
             </CardContent>
@@ -1256,8 +1364,59 @@ export default function RdvCompletSection() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
-              {/* Détails complets du prospect */}
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500 mb-1">Entreprise</h4>
+                  <p className="font-semibold">{selectedProspect.nom}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500 mb-1">Secteur</h4>
+                  <p>{selectedProspect.secteur}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500 mb-1">Email</h4>
+                  <p className="break-all">{selectedProspect.email}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500 mb-1">Téléphone</h4>
+                  <p>{selectedProspect.telephone}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500 mb-1">Adresse</h4>
+                  <p>{selectedProspect.adresse}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500 mb-1">Ville</h4>
+                  <p>{selectedProspect.ville} {selectedProspect.code_postal}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500 mb-1">Statut</h4>
+                  <Badge>{selectedProspect.statut}</Badge>
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500 mb-1">Score</h4>
+                  <p>{selectedProspect.score || 'Non défini'}</p>
+                </div>
+              </div>
+              
+              {selectedProspect.notes && (
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500 mb-1">Notes</h4>
+                  <p className="bg-gray-50 p-3 rounded-lg">{selectedProspect.notes}</p>
+                </div>
+              )}
+              
+              <div className="flex justify-end gap-3 pt-4">
+                <Button variant="outline" onClick={() => {
+                  setSelectedProspect(selectedProspect)
+                  setShowProspectDetails(false)
+                  setActiveTab("nouveau-rdv")
+                }}>
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Planifier un RDV
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -1299,24 +1458,11 @@ function ProspectCard({
                   <Badge className={statusColor}>
                     {prospect.statut}
                   </Badge>
-                  <div className="flex items-center gap-1">
-                    {[...Array(5)].map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`h-3 w-3 ${
-                          i < Math.floor(prospect.score / 2) 
-                            ? 'fill-yellow-400 text-yellow-400' 
-                            : 'text-gray-300'
-                        }`}
-                      />
-                    ))}
-                  </div>
+                  <Badge variant="outline">
+                    {prospect.secteur}
+                  </Badge>
                 </div>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <User className="h-3 w-3" />
-                    {prospect.contact_principal}
-                  </span>
                   <span className="flex items-center gap-1">
                     <MapPin className="h-3 w-3" />
                     {prospect.ville}
@@ -1326,18 +1472,10 @@ function ProspectCard({
                     {prospect.telephone}
                   </span>
                   <span className="flex items-center gap-1">
-                    <DollarSign className="h-3 w-3" />
-                    {prospect.budget_estime}
+                    <Mail className="h-3 w-3" />
+                    {prospect.email}
                   </span>
                 </div>
-                {prospect.prochain_contact && (
-                  <div className="mt-1">
-                    <Badge variant="outline" className="text-xs">
-                      <Clock className="h-3 w-3 mr-1" />
-                      Rappel: {new Date(prospect.prochain_contact).toLocaleDateString('fr-FR')}
-                    </Badge>
-                  </div>
-                )}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1370,46 +1508,26 @@ function ProspectCard({
         
         <div className="space-y-2 text-sm">
           <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-muted-foreground" />
-            <span>{prospect.contact_principal}</span>
-          </div>
-          <div className="flex items-center gap-2">
             <MapPin className="h-4 w-4 text-muted-foreground" />
-            <span>{prospect.ville}</span>
+            <span>{prospect.ville} {prospect.code_postal}</span>
           </div>
           <div className="flex items-center gap-2">
             <Phone className="h-4 w-4 text-muted-foreground" />
             <span>{prospect.telephone}</span>
           </div>
           <div className="flex items-center gap-2">
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-            <span>{prospect.budget_estime}</span>
+            <Mail className="h-4 w-4 text-muted-foreground" />
+            <span className="truncate">{prospect.email}</span>
           </div>
         </div>
         
-        <div className="flex items-center gap-1 my-3">
-          {[...Array(5)].map((_, i) => (
-            <Star
-              key={i}
-              className={`h-4 w-4 ${
-                i < Math.floor(prospect.score / 2) 
-                  ? 'fill-yellow-400 text-yellow-400' 
-                  : 'text-gray-300'
-              }`}
-            />
-          ))}
-        </div>
-        
-        {prospect.prochain_contact && (
-          <Alert className="p-2 mb-3">
-            <AlertDescription className="text-xs">
-              <Clock className="h-3 w-3 inline mr-1" />
-              Rappel: {new Date(prospect.prochain_contact).toLocaleDateString('fr-FR')}
-            </AlertDescription>
-          </Alert>
+        {prospect.notes && (
+          <div className="mt-3 p-2 bg-gray-50 rounded text-xs text-gray-600 line-clamp-2">
+            {prospect.notes}
+          </div>
         )}
         
-        <div className="flex gap-2">
+        <div className="flex gap-2 mt-4">
           <Button size="sm" variant="outline" className="flex-1" onClick={onViewDetails}>
             <Eye className="h-4 w-4 mr-1" />
             Détails
