@@ -9,11 +9,10 @@ import { Bell, Brain } from 'lucide-react'
 import DashboardSection from "@/components/sections/dashboard"
 import ProspectsSection from "@/components/sections/prospects-mauritius"
 import RdvSection from "@/components/sections/rdv"
-import QualificationSection from "@/components/sections/qualification"
 import PlanningSection from "@/components/sections/planning"
 import { AIDashboard } from "@/components/ai-dashboard"
 
-type SectionKey = "dashboard" | "prospects" | "rdv" | "qualification" | "planning" | "ai"
+type SectionKey = "dashboard" | "prospects" | "rdv" | "planning" | "ai"
 
 export default function Page() {
   const [section, setSection] = React.useState<SectionKey>("dashboard")
@@ -97,34 +96,6 @@ export default function Page() {
             <ProspectsSection onPlanifierRdv={() => setSection("rdv")} />
           )}
           {section === "rdv" && <RdvSection />}
-          {section === "qualification" && (
-            <QualificationSection
-              onQualify={async (id, statut) => {
-                try {
-                  const res = await fetch(`/api/prospects/${id}`, { 
-                    method: 'PATCH', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ statut }) 
-                  })
-                  if (!res.ok) throw new Error(await res.text())
-                  
-                  // Déclencher une analyse IA après qualification
-                  if (statut === 'qualifie') {
-                    fetch('/api/ai/analyze-prospect', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ prospectId: id })
-                    })
-                  }
-                  
-                  toast({ title: 'Qualifié', description: `Prospect #${id} → ${statut}` })
-                } catch (e: any) {
-                  toast({ title: 'Erreur', description: e.message })
-                }
-              }}
-              onPlanifierRdv={() => setSection("rdv")}
-            />
-          )}
           {section === "planning" && <PlanningSection />}
           {section === "ai" && (
             <AIDashboard commercial={currentCommercial} />
@@ -134,4 +105,3 @@ export default function Page() {
     </SidebarProvider>
   )
 }
-
