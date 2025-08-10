@@ -17,6 +17,7 @@ import { ImportAnalyzer } from '@/components/import-analyzer'
 
 export default function MauritiusProspectsSection() {
   const [loading, setLoading] = React.useState(false)
+  const [loadingMessage, setLoadingMessage] = React.useState('')
   const [prospects, setProspects] = React.useState<Prospect[]>([])
   const [allProspects, setAllProspects] = React.useState<Prospect[]>([])
   const [viewMode, setViewMode] = React.useState<'paginated' | 'all'>('paginated')
@@ -75,10 +76,12 @@ export default function MauritiusProspectsSection() {
     }
   }
 
-  // Charger TOUS les prospects
+  // Charger TOUS les prospects (avec pagination si nécessaire)
   async function loadAllProspects() {
     setLoading(true)
     setViewMode('all')
+    console.log('=== Début du chargement complet des prospects ===')
+    
     try {
       const params = new URLSearchParams()
       if (filters.secteur) params.set('secteur', filters.secteur)
@@ -86,28 +89,122 @@ export default function MauritiusProspectsSection() {
       if (filters.statut) params.set('statut', filters.statut)
       if (filters.search) params.set('q', filters.search)
       
-      params.set('limit', '100000')
+      // Stratégie : charger par lots de 1000 pour contourner les limites de l'API
+      let allData: Prospect[] = []
+      let page = 1
+      let hasMore = true
+      const batchSize = 1000
+      
+      setLoadingMessage('Chargement des prospects...')
+      
+      // Essayer d'abord avec une grosse limite pour voir si l'API la supporte
+      params.set('limit', '10000')
       params.set('page', '1')
       
-      const res = await fetch(`/api/prospects?${params.toString()}`, { cache: 'no-store' })
-      const result = await res.json()
+      console.log('Test avec limite de 10000...')
+      const testRes = await fetch(`/api/prospects?${params.toString()}`, { cache: 'no-store' })
+      const testResult = await testRes.json()
       
-      const data = result.data || result || []
-      setAllProspects(Array.isArray(data) ? data : [])
+      if (testResult.data && testResult.data.length > 1000) {
+        // L'API supporte plus de 1000, on peut tout charger d'un coup
+        allData = testResult.data
+        console.log(`✅ API supporte les grandes limites: ${allData.length} prospects chargés`)
+      } else {
+        // L'API limite à 1000 ou moins, on doit paginer
+        const initialCount = testResult.data ? testResult.data.length : 0
+        console.log(`⚠️ API limitée à ${initialCount} résultats, chargement par pagination...`)
+        
+        // Réinitialiser et charger page par page
+        allData = []
+        page = 1
+        
+        while (hasMore) {
+          params.set('limit', batchSize.toString())
+          params.set('page', page.toString())
+          
+          setLoadingMessage(`Chargement page ${page}... ${allData.length} prospects récupérés`)
+          
+          const res = await fetch(`/api/prospects?${params.toString()}`, { cache: 'no-store' })
+          const result = await res.json()
+          
+          if (result.data && result.data.length > 0) {
+            allData = [...allData, ...result.data]
+            console.log(`📄 Page ${page}: ${result.data.length} prospects ajoutés, total: ${allData.length}`)
+            
+            // Si on a moins que la limite demandée, on a tout récupéré
+            if (result.data.length < batchSize) {
+              console.log(`✅ Dernière page atteinte (moins de ${batchSize} résultats)`)
+              hasMore = false
+            }
+            
+            // Vérifier aussi le total si disponible
+            if (result.pagination && result.pagination.total) {
+              console.log(`📊 Total dans la base: ${result.pagination.total}`)
+              if (allData.length >= result.pagination.total) {
+                console.log('✅ Tous les prospects ont été chargés')
+                hasMore = false
+              }
+            }
+            
+            page++
+          } else if (result.pagination && result.pagination.totalPages) {
+            // Si l'API nous donne le nombre total de pages
+            console.log(`📑 Pages totales: ${result.pagination.totalPages}`)
+            if (page >= result.pagination.totalPages) {
+              hasMore = false
+            } else {
+              page++
+            }
+          } else {
+            console.log('❌ Aucune donnée retournée, fin du chargement')
+            hasMore = false
+          }
+          
+          // Limite de sécurité pour éviter une boucle infinie (20 pages = 20000 prospects max)
+          if (page > 20) {
+            console.warn('⚠️ Limite de sécurité atteinte (20 pages)')
+            hasMore = false
+          }
+        }
+      }
       
-      toast({
-        title: 'Chargement complet',
-        description: `${data.length} prospects chargés en mémoire`
-      })
+      setAllProspects(allData)
+      setLoadingMessage('')
+      
+      console.log(`=== Chargement terminé: ${allData.length} prospects totaux ===`)
+      
+      // Vérifier si on semble avoir atteint une limite
+      if (allData.length === 1000 || allData.length === 2000 || allData.length === 3000) {
+        toast({
+          title: 'Attention',
+          description: `${allData.length} prospects chargés. Si vous pensez qu'il en manque, vérifiez que votre API backend ne limite pas les résultats.`,
+        })
+        console.warn(`
+⚠️ ATTENTION: Nombre de prospects suspect (${allData.length})
+Cela pourrait indiquer une limite côté API.
+Vérifiez votre backend API:
+1. La limite maximale par requête
+2. La limite totale de pagination
+3. Les logs du serveur pour voir les requêtes
+        `)
+      } else {
+        toast({
+          title: 'Chargement complet',
+          description: `${allData.length} prospects chargés en mémoire`
+        })
+      }
     } catch (error) {
+      console.error('❌ Erreur lors du chargement complet:', error)
       toast({
         title: 'Erreur',
         description: 'Impossible de charger tous les prospects',
         variant: 'destructive'
       })
       setViewMode('paginated')
+      setLoadingMessage('')
     } finally {
       setLoading(false)
+      setLoadingMessage('')
     }
   }
 
@@ -426,12 +523,13 @@ export default function MauritiusProspectsSection() {
                     loadProspects(1)
                   }
                 }}
+                disabled={loading}
                 className={viewMode === 'all' ? 
                   "bg-purple-600 text-white hover:bg-purple-700" : 
                   "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
                 }
               >
-                {viewMode === 'all' ? '✓ Vue complète' : 'Charger tout'}
+                {loading ? 'Chargement...' : viewMode === 'all' ? '✓ Vue complète' : 'Charger tout'}
               </Button>
             </div>
 
@@ -465,6 +563,9 @@ export default function MauritiusProspectsSection() {
                   <option value="100">100 par page</option>
                   <option value="250">250 par page</option>
                   <option value="500">500 par page</option>
+                  <option value="1000">1000 par page</option>
+                  <option value="2000">2000 par page</option>
+                  <option value="5000">5000 par page</option>
                 </select>
               </div>
 
@@ -550,11 +651,23 @@ export default function MauritiusProspectsSection() {
         <Card className="bg-yellow-50 border-yellow-200">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Eye className="h-5 w-5 text-yellow-600" />
-                <span className="text-sm text-yellow-800">
-                  Mode vue complète activé • {filtered.length} prospects affichés sans pagination
-                </span>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Eye className="h-5 w-5 text-yellow-600" />
+                  <span className="text-sm text-yellow-800">
+                    Mode vue complète activé • {allProspects.length} prospects chargés • {filtered.length} affichés après filtres
+                  </span>
+                </div>
+                {allProspects.length >= 1000 && allProspects.length % 1000 === 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => loadAllProspects()}
+                    className="bg-white text-yellow-700 border-yellow-300 hover:bg-yellow-50"
+                  >
+                    Charger plus
+                  </Button>
+                )}
               </div>
               <Button
                 size="sm"
@@ -590,7 +703,10 @@ export default function MauritiusProspectsSection() {
         )}
         {loading && (
           <div className="col-span-full text-center py-8 text-gray-600 bg-white rounded-lg border border-gray-200">
-            Chargement des prospects...
+            <div className="space-y-2">
+              <div className="animate-spin inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+              <div>{loadingMessage || 'Chargement des prospects...'}</div>
+            </div>
           </div>
         )}
       </div>
