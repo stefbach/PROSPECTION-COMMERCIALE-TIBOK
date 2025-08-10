@@ -1,10 +1,33 @@
 // app/api/import/outscraper/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
-import { db } from '@/lib/db' // Adapter selon votre config
-import { sql } from '@vercel/postgres' // ou votre ORM
 
-// Types pour Outscraper
+// ============================================
+// ADAPTEZ CES IMPORTS À VOTRE CONFIGURATION
+// ============================================
+
+// Option 1: Si vous utilisez Prisma
+// import { prisma } from '@/lib/prisma'
+
+// Option 2: Si vous utilisez pg directement
+// import { Pool } from 'pg'
+// const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+
+// Option 3: Si vous utilisez Drizzle
+// import { db } from '@/lib/db'
+
+// Pour cet exemple, j'utilise pg directement
+import { Pool } from 'pg'
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+})
+
+// ============================================
+// TYPES
+// ============================================
+
 interface OutscraperRow {
   name?: string
   site?: string
@@ -54,12 +77,16 @@ interface OutscraperRow {
   youtube?: string
   whatsapp?: string
   
-  // Et tous les autres champs...
   [key: string]: any
 }
 
-// Fonction principale d'import
+// ============================================
+// FONCTION PRINCIPALE D'IMPORT
+// ============================================
+
 export async function POST(request: NextRequest) {
+  const client = await pool.connect()
+  
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -77,9 +104,12 @@ export async function POST(request: NextRequest) {
     
     console.log(`📊 Import de ${rawData.length} lignes depuis ${file.name}`)
     
+    // Démarrer une transaction
+    await client.query('BEGIN')
+    
     // Créer un batch d'import
     const batchId = `outscraper_${Date.now()}`
-    const importBatch = await createImportBatch(batchId, file.name, rawData.length)
+    await createImportBatch(client, batchId, file.name, rawData.length)
     
     // Statistiques
     const stats = {
@@ -87,7 +117,7 @@ export async function POST(request: NextRequest) {
       imported: 0,
       skipped: 0,
       errors: 0,
-      duplicates: []
+      duplicates: [] as any[]
     }
     
     // Traiter par chunks pour éviter timeout
@@ -96,7 +126,7 @@ export async function POST(request: NextRequest) {
       const chunk = rawData.slice(i, i + CHUNK_SIZE)
       
       try {
-        const results = await processChunk(chunk, batchId, options)
+        const results = await processChunk(client, chunk, batchId, options)
         stats.imported += results.imported
         stats.skipped += results.skipped
         stats.duplicates.push(...results.duplicates)
@@ -106,14 +136,17 @@ export async function POST(request: NextRequest) {
       }
       
       // Mettre à jour la progression
-      await updateImportProgress(batchId, stats)
+      await updateImportProgress(client, batchId, stats)
     }
     
     // Finaliser l'import
-    await finalizeImport(batchId, stats)
+    await finalizeImport(client, batchId, stats)
+    
+    // Commit la transaction
+    await client.query('COMMIT')
     
     // Rafraîchir la vue matérialisée
-    await sql`REFRESH MATERIALIZED VIEW CONCURRENTLY prospect_full_view`
+    await client.query('REFRESH MATERIALIZED VIEW prospect_full_view')
     
     return NextResponse.json({
       success: true,
@@ -122,17 +155,24 @@ export async function POST(request: NextRequest) {
       message: `Import terminé: ${stats.imported} prospects importés, ${stats.skipped} ignorés`
     })
     
-  } catch (error) {
+  } catch (error: any) {
+    await client.query('ROLLBACK')
     console.error('Erreur import:', error)
     return NextResponse.json(
       { error: 'Erreur lors de l\'import', details: error.message },
       { status: 500 }
     )
+  } finally {
+    client.release()
   }
 }
 
-// Traiter un chunk de données
+// ============================================
+// FONCTIONS DE TRAITEMENT
+// ============================================
+
 async function processChunk(
+  client: any,
   chunk: OutscraperRow[],
   batchId: string,
   options: any
@@ -143,12 +183,12 @@ async function processChunk(
     try {
       // 1. Vérifier les doublons
       if (options.skipDuplicates) {
-        const duplicate = await checkDuplicate(row)
+        const duplicate = await checkDuplicate(client, row)
         if (duplicate) {
           results.duplicates.push({
             name: row.name,
-            matchedWith: duplicate.id,
-            score: duplicate.score
+            matchedWith: duplicate.prospect_id,
+            score: duplicate.match_score
           })
           results.skipped++
           continue
@@ -159,24 +199,23 @@ async function processChunk(
       const prospectData = transformOutscraperData(row, batchId)
       
       // 3. Insérer le prospect principal
-      const prospect = await insertProspect(prospectData)
+      const prospect = await insertProspect(client, prospectData)
       
       if (prospect) {
         // 4. Insérer les données relationnelles
         await Promise.all([
-          insertEmails(prospect.id, row),
-          insertPhones(prospect.id, row),
-          insertSocialMedia(prospect.id, row),
-          insertMetrics(prospect.id, row),
-          insertEnrichmentData(prospect.id, row)
+          insertEmails(client, prospect.id, row),
+          insertPhones(client, prospect.id, row),
+          insertSocialMedia(client, prospect.id, row),
+          insertMetrics(client, prospect.id, row),
+          insertEnrichmentData(client, prospect.id, row)
         ])
         
         // 5. Calculer le score de qualité
-        await sql`
-          UPDATE prospects 
-          SET quality_score = calculate_quality_score(${prospect.id})
-          WHERE id = ${prospect.id}
-        `
+        await client.query(
+          'UPDATE prospects SET quality_score = calculate_quality_score($1) WHERE id = $1',
+          [prospect.id]
+        )
         
         results.imported++
       }
@@ -200,13 +239,11 @@ function transformOutscraperData(row: OutscraperRow, batchId: string) {
     contact: extractMainContact(row),
     telephone: row.phone || row.phone_1 || '',
     email: row.email_1 || '',
-    score: 3, // Score initial
+    score: 3,
     budget: 'À définir',
     notes: `Import Outscraper ${new Date().toLocaleDateString('fr-FR')}`,
     adresse: row.full_address || '',
     website: row.site || '',
-    
-    // Nouvelles colonnes
     latitude: row.latitude ? parseFloat(String(row.latitude)) : null,
     longitude: row.longitude ? parseFloat(String(row.longitude)) : null,
     google_place_id: row.place_id || null,
@@ -219,24 +256,30 @@ function transformOutscraperData(row: OutscraperRow, batchId: string) {
 }
 
 // Insérer le prospect principal
-async function insertProspect(data: any) {
+async function insertProspect(client: any, data: any) {
   try {
-    const result = await sql`
+    const query = `
       INSERT INTO prospects (
         nom, secteur, ville, district, statut, contact, 
         telephone, email, score, budget, notes, adresse, website,
         latitude, longitude, google_place_id, google_cid,
         business_status, data_source, import_batch_id, is_verified
       ) VALUES (
-        ${data.nom}, ${data.secteur}, ${data.ville}, ${data.district}, 
-        ${data.statut}, ${data.contact}, ${data.telephone}, ${data.email},
-        ${data.score}, ${data.budget}, ${data.notes}, ${data.adresse}, 
-        ${data.website}, ${data.latitude}, ${data.longitude},
-        ${data.google_place_id}, ${data.google_cid}, ${data.business_status},
-        ${data.data_source}, ${data.import_batch_id}, ${data.is_verified}
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+        $14, $15, $16, $17, $18, $19, $20, $21
       )
       RETURNING id, nom
     `
+    
+    const values = [
+      data.nom, data.secteur, data.ville, data.district, data.statut,
+      data.contact, data.telephone, data.email, data.score, data.budget,
+      data.notes, data.adresse, data.website, data.latitude, data.longitude,
+      data.google_place_id, data.google_cid, data.business_status,
+      data.data_source, data.import_batch_id, data.is_verified
+    ]
+    
+    const result = await client.query(query, values)
     return result.rows[0]
   } catch (error) {
     console.error('Erreur insertion prospect:', error)
@@ -245,7 +288,7 @@ async function insertProspect(data: any) {
 }
 
 // Insérer les emails
-async function insertEmails(prospectId: number, row: OutscraperRow) {
+async function insertEmails(client: any, prospectId: number, row: OutscraperRow) {
   const emails = []
   
   // Email 1
@@ -295,20 +338,22 @@ async function insertEmails(prospectId: number, row: OutscraperRow) {
   
   for (const emailData of emails) {
     try {
-      await sql`
+      const query = `
         INSERT INTO prospect_emails (
           prospect_id, email, email_type, is_valid, validation_status,
           validation_details, full_name, first_name, last_name, 
           job_title, priority, is_active
-        ) VALUES (
-          ${emailData.prospect_id}, ${emailData.email}, ${emailData.email_type},
-          ${emailData.is_valid}, ${emailData.validation_status},
-          ${emailData.validation_details || null}, ${emailData.full_name || null},
-          ${emailData.first_name || null}, ${emailData.last_name || null},
-          ${emailData.job_title || null}, ${emailData.priority}, ${emailData.is_active}
-        )
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (prospect_id, email) DO NOTHING
       `
+      
+      await client.query(query, [
+        emailData.prospect_id, emailData.email, emailData.email_type,
+        emailData.is_valid, emailData.validation_status,
+        emailData.validation_details || null, emailData.full_name || null,
+        emailData.first_name || null, emailData.last_name || null,
+        emailData.job_title || null, emailData.priority, emailData.is_active
+      ])
     } catch (error) {
       console.error('Erreur insertion email:', error)
     }
@@ -316,7 +361,7 @@ async function insertEmails(prospectId: number, row: OutscraperRow) {
 }
 
 // Insérer les téléphones
-async function insertPhones(prospectId: number, row: OutscraperRow) {
+async function insertPhones(client: any, prospectId: number, row: OutscraperRow) {
   const phones = []
   
   // Téléphone principal
@@ -356,18 +401,20 @@ async function insertPhones(prospectId: number, row: OutscraperRow) {
   
   for (const phoneData of phones) {
     try {
-      await sql`
+      const query = `
         INSERT INTO prospect_phones (
           prospect_id, phone_number, phone_type, formatted_number,
           carrier_name, carrier_type, is_whatsapp, is_valid, priority
-        ) VALUES (
-          ${phoneData.prospect_id}, ${phoneData.phone_number}, 
-          ${phoneData.phone_type}, ${formatMauritianPhone(phoneData.phone_number)},
-          ${phoneData.carrier_name || null}, ${phoneData.carrier_type || null},
-          ${phoneData.carrier_type === 'mobile'}, true, ${phoneData.priority}
-        )
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (prospect_id, phone_number) DO NOTHING
       `
+      
+      await client.query(query, [
+        phoneData.prospect_id, phoneData.phone_number, phoneData.phone_type,
+        formatMauritianPhone(phoneData.phone_number),
+        phoneData.carrier_name || null, phoneData.carrier_type || null,
+        phoneData.carrier_type === 'mobile', true, phoneData.priority
+      ])
     } catch (error) {
       console.error('Erreur insertion téléphone:', error)
     }
@@ -375,7 +422,7 @@ async function insertPhones(prospectId: number, row: OutscraperRow) {
 }
 
 // Insérer les réseaux sociaux
-async function insertSocialMedia(prospectId: number, row: OutscraperRow) {
+async function insertSocialMedia(client: any, prospectId: number, row: OutscraperRow) {
   const platforms = [
     { platform: 'facebook', url: row.facebook },
     { platform: 'instagram', url: row.instagram },
@@ -388,14 +435,12 @@ async function insertSocialMedia(prospectId: number, row: OutscraperRow) {
   for (const social of platforms) {
     if (social.url) {
       try {
-        await sql`
-          INSERT INTO prospect_social_media (
-            prospect_id, platform, url
-          ) VALUES (
-            ${prospectId}, ${social.platform}, ${social.url}
-          )
+        const query = `
+          INSERT INTO prospect_social_media (prospect_id, platform, url)
+          VALUES ($1, $2, $3)
           ON CONFLICT (prospect_id, platform) DO NOTHING
         `
+        await client.query(query, [prospectId, social.platform, social.url])
       } catch (error) {
         console.error('Erreur insertion réseau social:', error)
       }
@@ -404,20 +449,14 @@ async function insertSocialMedia(prospectId: number, row: OutscraperRow) {
 }
 
 // Insérer les métriques
-async function insertMetrics(prospectId: number, row: OutscraperRow) {
+async function insertMetrics(client: any, prospectId: number, row: OutscraperRow) {
   if (row.rating || row.reviews) {
     try {
-      await sql`
+      const query = `
         INSERT INTO prospect_metrics (
           prospect_id, source, rating, reviews_count, 
           reviews_link, photos_count
-        ) VALUES (
-          ${prospectId}, 'google',
-          ${row.rating ? parseFloat(row.rating) : null},
-          ${row.reviews ? parseInt(row.reviews) : 0},
-          ${row.reviews_link || null},
-          ${row.photos_count ? parseInt(row.photos_count) : 0}
-        )
+        ) VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (prospect_id, source) 
         DO UPDATE SET
           rating = EXCLUDED.rating,
@@ -425,6 +464,14 @@ async function insertMetrics(prospectId: number, row: OutscraperRow) {
           photos_count = EXCLUDED.photos_count,
           updated_at = CURRENT_TIMESTAMP
       `
+      
+      await client.query(query, [
+        prospectId, 'google',
+        row.rating ? parseFloat(row.rating) : null,
+        row.reviews ? parseInt(row.reviews) : 0,
+        row.reviews_link || null,
+        row.photos_count ? parseInt(row.photos_count) : 0
+      ])
     } catch (error) {
       console.error('Erreur insertion métriques:', error)
     }
@@ -432,35 +479,38 @@ async function insertMetrics(prospectId: number, row: OutscraperRow) {
 }
 
 // Insérer les données d'enrichissement brutes
-async function insertEnrichmentData(prospectId: number, row: OutscraperRow) {
+async function insertEnrichmentData(client: any, prospectId: number, row: OutscraperRow) {
   try {
-    // Stocker toutes les données brutes pour référence future
-    await sql`
+    const query = `
       INSERT INTO prospect_enrichment_data (
         prospect_id, source, data_type, raw_data, processed
-      ) VALUES (
-        ${prospectId}, 'outscraper', 'full_data', 
-        ${JSON.stringify(row)}, true
-      )
+      ) VALUES ($1, $2, $3, $4, $5)
     `
+    
+    await client.query(query, [
+      prospectId, 'outscraper', 'full_data',
+      JSON.stringify(row), true
+    ])
   } catch (error) {
     console.error('Erreur insertion enrichment data:', error)
   }
 }
 
 // Vérifier les doublons
-async function checkDuplicate(row: OutscraperRow) {
+async function checkDuplicate(client: any, row: OutscraperRow) {
   try {
-    const result = await sql`
-      SELECT * FROM find_duplicates(
-        ${row.email_1 || null},
-        ${row.phone || row.phone_1 || null},
-        ${row.google_id || row.cid || null},
-        ${row.name || null},
-        ${row.latitude ? parseFloat(String(row.latitude)) : null},
-        ${row.longitude ? parseFloat(String(row.longitude)) : null}
-      ) LIMIT 1
+    const query = `
+      SELECT * FROM find_duplicates($1, $2, $3, $4, $5, $6) LIMIT 1
     `
+    
+    const result = await client.query(query, [
+      row.email_1 || null,
+      row.phone || row.phone_1 || null,
+      row.google_id || row.cid || null,
+      row.name || null,
+      row.latitude ? parseFloat(String(row.latitude)) : null,
+      row.longitude ? parseFloat(String(row.longitude)) : null
+    ])
     
     return result.rows[0] || null
   } catch (error) {
@@ -470,46 +520,56 @@ async function checkDuplicate(row: OutscraperRow) {
 }
 
 // Créer un batch d'import
-async function createImportBatch(id: string, filename: string, totalRows: number) {
-  await sql`
+async function createImportBatch(client: any, id: string, filename: string, totalRows: number) {
+  const query = `
     INSERT INTO import_batches (
       id, filename, file_type, source, total_rows, 
       status, started_at
-    ) VALUES (
-      ${id}, ${filename}, 'xlsx', 'outscraper', ${totalRows},
-      'processing', CURRENT_TIMESTAMP
-    )
+    ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
   `
-  return id
+  
+  await client.query(query, [
+    id, filename, 'xlsx', 'outscraper', totalRows, 'processing'
+  ])
 }
 
 // Mettre à jour la progression
-async function updateImportProgress(batchId: string, stats: any) {
-  await sql`
+async function updateImportProgress(client: any, batchId: string, stats: any) {
+  const query = `
     UPDATE import_batches
     SET 
-      imported_rows = ${stats.imported},
-      skipped_rows = ${stats.skipped},
-      error_rows = ${stats.errors}
-    WHERE id = ${batchId}
+      imported_rows = $2,
+      skipped_rows = $3,
+      error_rows = $4
+    WHERE id = $1
   `
+  
+  await client.query(query, [
+    batchId, stats.imported, stats.skipped, stats.errors
+  ])
 }
 
 // Finaliser l'import
-async function finalizeImport(batchId: string, stats: any) {
-  await sql`
+async function finalizeImport(client: any, batchId: string, stats: any) {
+  const query = `
     UPDATE import_batches
     SET 
       status = 'completed',
       completed_at = CURRENT_TIMESTAMP,
-      imported_rows = ${stats.imported},
-      skipped_rows = ${stats.skipped},
-      error_rows = ${stats.errors}
-    WHERE id = ${batchId}
+      imported_rows = $2,
+      skipped_rows = $3,
+      error_rows = $4
+    WHERE id = $1
   `
+  
+  await client.query(query, [
+    batchId, stats.imported, stats.skipped, stats.errors
+  ])
 }
 
-// === FONCTIONS UTILITAIRES ===
+// ============================================
+// FONCTIONS UTILITAIRES
+// ============================================
 
 function detectSector(name: string): string {
   const n = name.toLowerCase()
