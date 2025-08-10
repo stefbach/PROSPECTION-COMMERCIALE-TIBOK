@@ -194,8 +194,21 @@ export default function RdvCompletSection() {
   // Chargement des données depuis la vraie base de données
   async function loadProspects() {
     try {
-      const response = await fetch('/api/prospects', { cache: 'no-store' })
+      console.log('Chargement des prospects...')
+      const response = await fetch('/api/prospects', { 
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store' 
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Erreur HTTP: ${response.status}`)
+      }
+      
       const data = await response.json()
+      console.log('Prospects reçus:', data)
       
       if (Array.isArray(data)) {
         // Enrichir les données avec des valeurs par défaut si nécessaire
@@ -205,24 +218,65 @@ export default function RdvCompletSection() {
           ca_potentiel: p.ca_potentiel || Math.floor(Math.random() * 100000) + 10000
         }))
         setProspects(enrichedProspects)
+        console.log(`${enrichedProspects.length} prospects chargés`)
       } else {
+        console.warn('Les données reçues ne sont pas un tableau:', data)
         setProspects([])
       }
     } catch (error) {
-      console.error('Erreur chargement prospects:', error)
+      console.error('Erreur détaillée chargement prospects:', error)
       toast({
-        title: "Erreur",
-        description: "Impossible de charger les prospects",
+        title: "Erreur de connexion",
+        description: "Impossible de charger les prospects. Vérifiez votre connexion.",
         variant: "destructive"
       })
-      setProspects([])
+      // Données de démonstration si l'API ne fonctionne pas
+      setProspects([
+        {
+          id: 1,
+          nom: "Exemple Clinique Saint-Martin",
+          email: "contact@exemple.fr",
+          telephone: "+33 1 23 45 67 89",
+          adresse: "123 rue Exemple",
+          ville: "Paris",
+          code_postal: "75001",
+          secteur: "Santé",
+          statut: "nouveau",
+          notes: "Prospect de démonstration"
+        },
+        {
+          id: 2,
+          nom: "Exemple EHPAD Les Jardins",
+          email: "info@exemple2.fr",
+          telephone: "+33 1 98 76 54 32",
+          adresse: "456 avenue Test",
+          ville: "Lyon",
+          code_postal: "69001",
+          secteur: "Senior",
+          statut: "qualifie",
+          notes: "Second prospect de démonstration"
+        }
+      ])
     }
   }
 
   async function loadRdvs() {
     try {
-      const response = await fetch('/api/rdv', { cache: 'no-store' })
+      console.log('Chargement des RDV...')
+      const response = await fetch('/api/rdv', { 
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store' 
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Erreur HTTP: ${response.status}`)
+      }
+      
       const data = await response.json()
+      console.log('RDV reçus:', data)
       
       if (Array.isArray(data)) {
         // Enrichir les RDV avec les données prospects
@@ -231,11 +285,13 @@ export default function RdvCompletSection() {
           prospect: prospects.find(p => p.id === rdv.prospect_id)
         }))
         setRdvs(enrichedRdvs)
+        console.log(`${enrichedRdvs.length} RDV chargés`)
       } else {
+        console.warn('Les données RDV reçues ne sont pas un tableau:', data)
         setRdvs([])
       }
     } catch (error) {
-      console.error('Erreur chargement RDV:', error)
+      console.error('Erreur détaillée chargement RDV:', error)
       setRdvs([])
     }
   }
@@ -366,44 +422,79 @@ export default function RdvCompletSection() {
         prospect_id: selectedProspect.id,
         titre: `RDV - ${selectedProspect.nom}`,
         commercial: selectedCommercial.nom,
-        date_time: `${selectedDate}T${selectedTime}:00`,
+        date_time: new Date(`${selectedDate}T${selectedTime}:00`).toISOString(),
         type_visite: typeVisite,
-        priorite,
+        priorite: priorite,
         duree_min: parseInt(duree),
-        notes,
+        notes: notes || '',
         statut: 'planifie'
       }
 
+      console.log('Création RDV avec données:', rdvData)
+
       const response = await fetch('/api/rdv', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(rdvData)
       })
 
-      if (!response.ok) throw new Error('Erreur création RDV')
+      console.log('Réponse création RDV:', response.status)
 
-      await loadRdvs()
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('Erreur API:', errorText)
+        throw new Error(`Erreur création RDV: ${response.status}`)
+      }
+
+      const createdRdv = await response.json()
+      console.log('RDV créé:', createdRdv)
+
+      // Ajouter le RDV localement immédiatement pour feedback rapide
+      const newRdv = {
+        ...rdvData,
+        id: createdRdv.id || Date.now(),
+        prospect: selectedProspect
+      }
+      setRdvs(prev => [...prev, newRdv])
       
       // Mettre à jour le statut du prospect si nécessaire
       if (selectedProspect.statut === 'nouveau') {
-        await fetch(`/api/prospects/${selectedProspect.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ statut: 'contacte' })
-        })
-        await loadProspects()
+        try {
+          await fetch(`/api/prospects/${selectedProspect.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ statut: 'contacte' })
+          })
+          // Mettre à jour localement
+          setProspects(prev => prev.map(p => 
+            p.id === selectedProspect.id 
+              ? { ...p, statut: 'contacte' }
+              : p
+          ))
+        } catch (error) {
+          console.error('Erreur mise à jour prospect:', error)
+        }
       }
 
       toast({ 
-        title: "✅ RDV planifié", 
-        description: `RDV avec ${selectedProspect.nom} le ${new Date(selectedDate).toLocaleDateString('fr-FR')}`
+        title: "✅ RDV planifié avec succès", 
+        description: `RDV avec ${selectedProspect.nom} le ${new Date(selectedDate).toLocaleDateString('fr-FR')} à ${selectedTime}`
       })
 
       resetRdvForm()
+      
+      // Recharger les données après un délai
+      setTimeout(() => {
+        loadRdvs()
+      }, 1000)
+      
     } catch (error) {
+      console.error('Erreur complète création RDV:', error)
       toast({ 
-        title: "Erreur", 
-        description: "Impossible de créer le RDV",
+        title: "Erreur de création", 
+        description: "Impossible de créer le RDV. Vérifiez les données et réessayez.",
         variant: "destructive"
       })
     }
@@ -427,26 +518,43 @@ export default function RdvCompletSection() {
     if (!newProspect.nom || !newProspect.email || !newProspect.telephone) {
       toast({ 
         title: "Erreur", 
-        description: "Veuillez remplir tous les champs obligatoires",
+        description: "Veuillez remplir tous les champs obligatoires (nom, email, téléphone)",
         variant: "destructive"
       })
       return
     }
 
     try {
+      console.log('Création prospect avec données:', newProspect)
+      
       const response = await fetch('/api/prospects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProspect)
+        headers: { 
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...newProspect,
+          statut: newProspect.statut || 'nouveau'
+        })
       })
 
-      if (!response.ok) throw new Error('Erreur création prospect')
+      console.log('Réponse création prospect:', response.status)
 
-      await loadProspects()
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('Erreur API prospect:', errorText)
+        throw new Error(`Erreur: ${response.status}`)
+      }
+
+      const createdProspect = await response.json()
+      console.log('Prospect créé:', createdProspect)
+      
+      // Ajouter localement pour feedback immédiat
+      setProspects(prev => [...prev, createdProspect])
       
       toast({ 
-        title: "✅ Prospect créé", 
-        description: `${newProspect.nom} ajouté à la base`
+        title: "✅ Prospect créé avec succès", 
+        description: `${newProspect.nom} a été ajouté à la base`
       })
 
       setShowNewProspect(false)
@@ -462,10 +570,17 @@ export default function RdvCompletSection() {
         statut: 'nouveau',
         notes: ''
       })
+      
+      // Recharger après un délai
+      setTimeout(() => {
+        loadProspects()
+      }, 1000)
+      
     } catch (error) {
+      console.error('Erreur complète création prospect:', error)
       toast({ 
-        title: "Erreur", 
-        description: "Impossible de créer le prospect",
+        title: "Erreur de création", 
+        description: "Impossible de créer le prospect. Vérifiez votre connexion et les données.",
         variant: "destructive"
       })
     }
@@ -515,18 +630,26 @@ export default function RdvCompletSection() {
               Gestion Complète des Rendez-Vous
             </h2>
             <p className="text-gray-600">
-              {prospects.length} prospects dans la base • {rdvs.length} RDV planifiés
+              {prospects.length > 0 
+                ? `${prospects.length} prospects dans la base • ${rdvs.length} RDV planifiés`
+                : "Connexion à la base de données..."}
             </p>
           </div>
           <div className="flex gap-2">
             <Button 
               variant="outline" 
-              onClick={() => {
-                loadProspects()
-                loadRdvs()
+              onClick={async () => {
+                setLoading(true)
+                await loadProspects()
+                await loadRdvs()
+                setLoading(false)
+                toast({
+                  title: "✅ Données actualisées",
+                  description: `${prospects.length} prospects et ${rdvs.length} RDV chargés`
+                })
               }}
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Actualiser
             </Button>
             <Button variant="outline" onClick={() => setShowNewProspect(true)}>
