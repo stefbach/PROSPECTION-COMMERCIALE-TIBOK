@@ -4,6 +4,37 @@ import * as React from 'react'
 import * as XLSX from 'xlsx'
 import Papa from 'papaparse'
 import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger 
+} from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Progress } from '@/components/ui/progress'
+import { useToast } from '@/hooks/use-toast'
+import { 
+  FileSpreadsheet, 
+  Upload, 
+  AlertCircle, 
+  CheckCircle, 
+  XCircle,
+  Download,
+  Eye,
+  MapPin,
+  Map,
+  Loader2,
+  ChevronRight,
+  Info,
+  Settings
+} from 'lucide-react'
+import { 
   MAURITIUS_CONFIG, 
   CITY_TO_DISTRICT_MAP, 
   SECTOR_KEYWORDS,
