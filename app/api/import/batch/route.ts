@@ -1,89 +1,70 @@
+// app/api/import/batch/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma' // ou votre ORM
-import { MAURITIUS_CONFIG } from '@/lib/mauritius-config'
+import { CITY_TO_DISTRICT_MAP, SECTOR_KEYWORDS } from '@/lib/mauritius-config'
 
-// Types
-interface ImportOptions {
-  skipDuplicates: boolean
-  updateExisting: boolean
-  autoDetectSector: boolean
-  autoDetectDistrict: boolean
-  defaultSector: string
-  defaultDistrict: string
-}
-
-interface ImportResult {
-  success: boolean
-  imported: number
-  updated: number
-  skipped: number
-  errors: string[]
-  duplicates: string[]
-  details: any[]
-}
-
-// Fonction principale d'import
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { data, options }: { data: any[], options: ImportOptions } = body
+    const { data, options } = body
     
-    if (!data || !Array.isArray(data) || data.length === 0) {
-      return NextResponse.json(
-        { error: 'Aucune donnée à importer' },
-        { status: 400 }
-      )
-    }
-    
-    // Résultats
-    const result: ImportResult = {
+    const result = {
       success: false,
       imported: 0,
       updated: 0,
       skipped: 0,
       errors: [],
       duplicates: [],
-      details: []
+      withGPS: 0,
+      withoutGPS: 0
     }
     
-    // Traiter chaque ligne
     for (const item of data) {
       try {
-        // Valider les données
-        const validated = await validateProspect(item, options)
-        
-        if (!validated.isValid) {
-          result.errors.push(`Ligne ${item.nom}: ${validated.error}`)
-          result.skipped++
-          continue
+        // Enrichir avec les données calculées
+        const enriched = {
+          ...item,
+          // Calculer zone commerciale
+          zone_commerciale: `${item.district} - ${item.ville || 'Zone'}`,
+          
+          // Score de qualité finale
+          quality_score: calculateQualityScore(item),
+          
+          // Priorité commerciale
+          priority: item.quality_score >= 80 ? 'Haute' : 
+                   item.quality_score >= 60 ? 'Moyenne' : 'Basse',
+          
+          // Tracking GPS
+          has_valid_coordinates: !!(item.latitude && item.longitude)
         }
         
-        // Vérifier les doublons
-        const existing = await checkDuplicate(validated.data)
+        // Stats GPS
+        if (enriched.has_valid_coordinates) {
+          result.withGPS++
+        } else {
+          result.withoutGPS++
+        }
         
-        if (existing) {
-          result.duplicates.push(item.nom)
-          
-          if (options.skipDuplicates) {
+        // Vérifier les doublons par Google ID si disponible
+        if (enriched.google_place_id) {
+          const existing = await checkDuplicateByGoogleId(enriched.google_place_id)
+          if (existing && options.skipDuplicates) {
             result.skipped++
+            result.duplicates.push(enriched.nom)
             continue
           }
-          
-          if (options.updateExisting) {
-            // Mettre à jour l'existant
-            await updateProspect(existing.id, validated.data)
-            result.updated++
-          } else {
-            result.skipped++
-          }
-        } else {
-          // Créer nouveau prospect
-          await createProspect(validated.data)
-          result.imported++
         }
         
-      } catch (error: any) {
-        result.errors.push(`Erreur ligne ${item.nom}: ${error.message}`)
+        // Créer le prospect
+        await createProspect(enriched)
+        result.imported++
+        
+        // Si pas de GPS, lancer la géolocalisation en arrière-plan
+        if (!enriched.has_valid_coordinates && enriched.adresse) {
+          geocodeInBackground(enriched)
+        }
+        
+      } catch (error) {
+        result.errors.push(`Erreur pour ${item.nom}: ${error.message}`)
         result.skipped++
       }
     }
@@ -92,257 +73,50 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json(result)
     
-  } catch (error: any) {
-    console.error('Erreur import batch:', error)
+  } catch (error) {
     return NextResponse.json(
-      { error: 'Erreur lors de l\'import', details: error.message },
+      { error: 'Erreur import', details: error.message },
       { status: 500 }
     )
   }
 }
 
-// Fonction de validation
-async function validateProspect(data: any, options: ImportOptions) {
-  const errors: string[] = []
-  
-  // Nettoyer et valider les données
-  const cleaned: any = {
-    nom: data.nom?.trim() || '',
-    secteur: data.secteur || options.defaultSector,
-    ville: data.ville?.trim() || '',
-    district: data.district || options.defaultDistrict,
-    statut: data.statut || 'nouveau',
-    contact: data.contact?.trim() || 'Direction',
-    telephone: formatPhone(data.telephone),
-    email: data.email?.toLowerCase().trim() || '',
-    score: parseInt(data.score) || 3,
-    budget: data.budget || 'À définir',
-    notes: data.notes || `Import du ${new Date().toLocaleDateString('fr-FR')}`,
-    adresse: data.adresse?.trim() || '',
-    website: data.website?.trim() || ''
-  }
-  
-  // Validations obligatoires
-  if (!cleaned.nom) {
-    errors.push('Nom obligatoire')
-  }
-  
-  if (!cleaned.ville && !cleaned.district) {
-    errors.push('Ville ou district obligatoire')
-  }
-  
-  // Valider le secteur
-  if (!MAURITIUS_CONFIG.secteurs[cleaned.secteur]) {
-    if (options.autoDetectSector) {
-      cleaned.secteur = detectSecteur(data)
-    } else {
-      cleaned.secteur = options.defaultSector
+// Fonction de géocodage asynchrone
+async function geocodeInBackground(prospect: any) {
+  try {
+    const query = `${prospect.adresse}, ${prospect.ville}, Mauritius`
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?` +
+      `q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=mu`
+    )
+    
+    if (response.ok) {
+      const data = await response.json()
+      if (data.length > 0) {
+        // Mettre à jour les coordonnées
+        await updateProspectCoordinates(prospect.id, {
+          latitude: parseFloat(data[0].lat),
+          longitude: parseFloat(data[0].lon),
+          has_valid_coordinates: true
+        })
+      }
     }
-  }
-  
-  // Valider le district
-  if (!MAURITIUS_CONFIG.districts[cleaned.district]) {
-    if (options.autoDetectDistrict) {
-      cleaned.district = detectDistrict(data)
-    } else {
-      cleaned.district = options.defaultDistrict
-    }
-  }
-  
-  // Valider l'email
-  if (cleaned.email && !isValidEmail(cleaned.email)) {
-    errors.push('Email invalide')
-    cleaned.email = ''
-  }
-  
-  // Valider le téléphone
-  if (cleaned.telephone && !isValidPhone(cleaned.telephone)) {
-    errors.push('Téléphone invalide')
-  }
-  
-  // Valider le score
-  if (cleaned.score < 1 || cleaned.score > 5) {
-    cleaned.score = 3
-  }
-  
-  return {
-    isValid: errors.length === 0,
-    error: errors.join(', '),
-    data: cleaned
+  } catch (error) {
+    console.error(`Erreur géocodage pour ${prospect.nom}:`, error)
   }
 }
 
-// Vérifier les doublons
-async function checkDuplicate(data: any) {
-  // Version avec Prisma
-  /*
-  return await prisma.prospect.findFirst({
-    where: {
-      OR: [
-        { nom: data.nom },
-        { email: data.email ? data.email : undefined },
-        { telephone: data.telephone ? data.telephone : undefined }
-      ]
-    }
-  })
-  */
+function calculateQualityScore(item: any): number {
+  let score = 0
   
-  // Version simulée
-  // À remplacer par votre logique de base de données
-  const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/prospects?` + 
-    new URLSearchParams({
-      nom: data.nom,
-      email: data.email,
-      telephone: data.telephone
-    })
-  )
+  if (item.nom) score += 15
+  if (item.latitude && item.longitude) score += 25
+  if (item.adresse) score += 15
+  if (item.telephone) score += 10
+  if (item.email) score += 15
+  if (item.website) score += 10
+  if (item.rating) score += 5
+  if (item.business_status === 'OPERATIONAL') score += 5
   
-  if (response.ok) {
-    const prospects = await response.json()
-    return prospects.length > 0 ? prospects[0] : null
-  }
-  
-  return null
-}
-
-// Créer un prospect
-async function createProspect(data: any) {
-  // Version avec Prisma
-  /*
-  return await prisma.prospect.create({
-    data: {
-      ...data,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }
-  })
-  */
-  
-  // Version avec API
-  const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/prospects`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  })
-  
-  if (!response.ok) {
-    throw new Error('Erreur création prospect')
-  }
-  
-  return await response.json()
-}
-
-// Mettre à jour un prospect
-async function updateProspect(id: number, data: any) {
-  // Version avec Prisma
-  /*
-  return await prisma.prospect.update({
-    where: { id },
-    data: {
-      ...data,
-      updatedAt: new Date()
-    }
-  })
-  */
-  
-  // Version avec API
-  const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/prospects/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  })
-  
-  if (!response.ok) {
-    throw new Error('Erreur mise à jour prospect')
-  }
-  
-  return await response.json()
-}
-
-// Fonctions utilitaires
-function formatPhone(phone: string | undefined): string {
-  if (!phone) return ''
-  
-  const cleaned = phone.toString().replace(/\D/g, '')
-  
-  // Format Maurice
-  if (cleaned.length === 7 || cleaned.length === 8) {
-    return `+230 ${cleaned}`
-  }
-  
-  if (cleaned.startsWith('230')) {
-    return `+${cleaned}`
-  }
-  
-  return cleaned
-}
-
-function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
-}
-
-function isValidPhone(phone: string): boolean {
-  const cleaned = phone.replace(/\D/g, '')
-  return cleaned.length >= 7 && cleaned.length <= 15
-}
-
-function detectSecteur(data: any): string {
-  const text = JSON.stringify(data).toLowerCase()
-  
-  const sectorMappings: Record<string, string[]> = {
-    'hotel': ['hotel', 'resort', 'villa', 'guest', 'lodge'],
-    'restaurant': ['restaurant', 'resto', 'café', 'cafe', 'snack', 'bar'],
-    'pharmacie': ['pharmac', 'drug', 'medicament'],
-    'clinique': ['clinic', 'medical', 'health', 'sante', 'hopital', 'hospital'],
-    'assurance': ['assurance', 'insurance', 'assur'],
-    'banque': ['bank', 'banque', 'finance', 'credit'],
-    'immobilier': ['immobil', 'real estate', 'property', 'promoteur'],
-    'retail': ['shop', 'boutique', 'magasin', 'supermarché', 'store'],
-    'education': ['school', 'école', 'college', 'university', 'formation'],
-    'transport': ['transport', 'logistic', 'cargo', 'shipping'],
-    'technologie': ['tech', 'software', 'digital', 'web', 'it']
-  }
-  
-  for (const [sector, keywords] of Object.entries(sectorMappings)) {
-    if (keywords.some(keyword => text.includes(keyword))) {
-      return sector
-    }
-  }
-  
-  return 'autre'
-}
-
-function detectDistrict(data: any): string {
-  const text = JSON.stringify(data).toLowerCase()
-  
-  const districtMappings: Record<string, string[]> = {
-    'port-louis': ['port louis', 'caudan', 'chinatown'],
-    'pamplemousses': ['pamplemousses', 'terre rouge', 'arsenal'],
-    'riviere-du-rempart': ['grand baie', 'pereybere', 'cap malheureux', 'calodyne'],
-    'flacq': ['flacq', 'belle mare', 'trou d\'eau douce', 'quatre cocos'],
-    'grand-port': ['mahebourg', 'blue bay', 'plaine magnien', 'rose belle'],
-    'savanne': ['souillac', 'surinam', 'chemin grenier', 'bel ombre'],
-    'plaines-wilhems': ['curepipe', 'quatre bornes', 'vacoas', 'phoenix', 'rose hill'],
-    'moka': ['moka', 'quartier militaire', 'saint pierre'],
-    'black-river': ['flic en flac', 'tamarin', 'black river', 'le morne']
-  }
-  
-  for (const [district, keywords] of Object.entries(districtMappings)) {
-    if (keywords.some(keyword => text.includes(keyword))) {
-      return district
-    }
-  }
-  
-  return 'port-louis'
-}
-
-// GET - Obtenir le statut de l'import
-export async function GET(request: NextRequest) {
-  // Peut être utilisé pour suivre le progrès d'un import
-  return NextResponse.json({
-    status: 'ready',
-    maxBatchSize: 1000,
-    supportedFormats: ['csv', 'xlsx', 'xls', 'json']
-  })
+  return Math.min(score, 100)
 }
