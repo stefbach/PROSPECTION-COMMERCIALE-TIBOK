@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import * as XLSX from 'xlsx'
-import Papa from 'papaparse'
 import { 
   Dialog, 
   DialogContent, 
@@ -32,7 +31,11 @@ import {
   Loader2,
   ChevronRight,
   Info,
-  Settings
+  Settings,
+  FileSearch,
+  FileCheck,
+  Database,
+  Shuffle
 } from 'lucide-react'
 import { 
   MAURITIUS_CONFIG, 
@@ -40,10 +43,18 @@ import {
   SECTOR_KEYWORDS,
   type Prospect 
 } from '@/lib/mauritius-config'
-// ... autres imports
 
-export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () => void }) {
-  // ... états existants ...
+// Types
+interface TransformedData {
+  data: any[]
+  duplicates: any[]
+  newRecords: any[]
+  updates: any[]
+}
+
+// CHANGEZ ICI : ImportAnalyzer au lieu de ImportAnalyzerV2
+export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => void }) {
+  // États
   const [open, setOpen] = React.useState(false)
   const [file, setFile] = React.useState<File | null>(null)
   const [loading, setLoading] = React.useState(false)
@@ -52,7 +63,7 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
   
   const [rawData, setRawData] = React.useState<any[]>([])
   const [analysis, setAnalysis] = React.useState<any>(null)
-  const [transformedData, setTransformedData] = React.useState<any>(null)
+  const [transformedData, setTransformedData] = React.useState<TransformedData | null>(null)
   const [columnMappings, setColumnMappings] = React.useState<Record<string, string>>({})
   
   const [options, setOptions] = React.useState({
@@ -72,19 +83,93 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
     percentage: 0
   })
 
+  // Analyser le fichier
+  const analyzeFile = async () => {
+    if (!file) return
+    
+    setAnalyzing(true)
+    setAnalysis(null)
+    setTransformedData(null)
+    
+    try {
+      const reader = new FileReader()
+      
+      reader.onload = async (e) => {
+        const content = e.target?.result
+        let data: any[] = []
+        
+        if (file.name.endsWith('.csv')) {
+          const text = content as string
+          const lines = text.split('\n')
+          const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
+          
+          data = lines.slice(1)
+            .filter(line => line.trim())
+            .map(line => {
+              const values = line.split(',')
+              const row: any = {}
+              headers.forEach((header, i) => {
+                row[header] = values[i]?.trim().replace(/"/g, '') || ''
+              })
+              return row
+            })
+        } else {
+          const workbook = XLSX.read(content, { type: 'array' })
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+          data = XLSX.utils.sheet_to_json(firstSheet)
+        }
+        
+        setRawData(data)
+        
+        // Analyse simple
+        setAnalysis({
+          filename: file.name,
+          totalRows: data.length,
+          totalColumns: Object.keys(data[0] || {}).length,
+          columns: [],
+          detectedType: 'general',
+          preview: data.slice(0, 5),
+          stats: {},
+          validation: { errors: [], warnings: [], valid: data.length },
+          mapping: []
+        })
+        
+        // Transformation
+        const transformed = cleanAndTransformData(data)
+        setTransformedData(transformed)
+        
+        toast({
+          title: 'Analyse terminée',
+          description: `${data.length} lignes analysées`
+        })
+      }
+      
+      if (file.name.endsWith('.csv')) {
+        reader.readAsText(file)
+      } else {
+        reader.readAsArrayBuffer(file)
+      }
+    } catch (error) {
+      toast({
+        title: 'Erreur',
+        description: 'Erreur lors de l\'analyse',
+        variant: 'destructive'
+      })
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
   // Fonction de détection améliorée du district
   const determineDistrict = (row: any): string => {
-    // Essayer par la ville
     if (row.city && CITY_TO_DISTRICT_MAP[row.city]) {
       return CITY_TO_DISTRICT_MAP[row.city]
     }
     
-    // Essayer par le quartier
     if (row.borough && row.borough !== 'None' && CITY_TO_DISTRICT_MAP[row.borough]) {
       return CITY_TO_DISTRICT_MAP[row.borough]
     }
     
-    // Analyser l'adresse complète
     const address = (row.full_address || row.adresse || '').toLowerCase()
     for (const [cityName, district] of Object.entries(CITY_TO_DISTRICT_MAP)) {
       if (address.includes(cityName.toLowerCase())) {
@@ -119,28 +204,13 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
   const calculateQualityScore = (row: any): number => {
     let score = 0
     
-    // Nom (15 points)
     if (row.nom || row.name) score += 15
-    
-    // Coordonnées GPS (25 points)
     if (row.latitude && row.longitude) score += 25
-    
-    // Adresse (15 points)
     if (row.adresse || row.full_address) score += 15
-    
-    // Téléphone (10 points)
     if (row.telephone || row.phone) score += 10
-    
-    // Email (15 points)
     if (row.email || row.email_1) score += 15
-    
-    // Site web (10 points)
     if (row.website || row.site) score += 10
-    
-    // Rating Google (5 points)
     if (row.rating) score += 5
-    
-    // Statut opérationnel (5 points)
     if (row.business_status === 'OPERATIONAL') score += 5
     
     return Math.min(score, 100)
@@ -149,25 +219,20 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
   // Fonction de nettoyage améliorée
   const cleanAndTransformData = (data: any[]): TransformedData => {
     const transformed = data.map((row, index) => {
-      // Détection du mode (Outscraper ou standard)
       const isOutscraper = !!(row.place_id || row.google_id || row.cid)
       
-      // Extraction des emails multiples
       const emails: string[] = []
       if (row.email) emails.push(row.email)
       if (row.email_1) emails.push(row.email_1)
       if (row.email_2) emails.push(row.email_2)
       if (row.email_3) emails.push(row.email_3)
       
-      // Extraction des téléphones multiples
       const phones: string[] = []
       if (row.phone) phones.push(row.phone)
       if (row.telephone) phones.push(row.telephone)
       if (row.phone_1) phones.push(row.phone_1)
       if (row.phone_2) phones.push(row.phone_2)
-      if (row.phone_3) phones.push(row.phone_3)
       
-      // Nettoyer l'adresse
       const cleanAddress = () => {
         const parts = []
         if (row.street && row.street !== 'None') {
@@ -183,110 +248,37 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
       const sector = identifySector(row)
       const qualityScore = calculateQualityScore(row)
       
-      const result: Partial<Prospect> = {
+      return {
         nom: row.name || row.nom || `Sans nom #${index + 1}`,
-        secteur: sector as any,
+        secteur: sector,
         type: row.type || row.category || 'Établissement',
         category: row.category || row.type,
         statut: 'nouveau',
         business_status: row.business_status || 'UNKNOWN',
-        
-        // Localisation
-        district: district as any,
+        district: district,
         ville: row.city || row.ville || '',
         quartier: row.borough !== 'None' ? row.borough : '',
         adresse: cleanAddress(),
         adresse_originale: row.full_address || '',
-        rue: row.street?.replace(/^MU,?\s*/i, '').trim() || '',
-        code_postal: row.postal_code || row.code_postal || '',
-        pays: row.country || 'Mauritius',
-        code_pays: row.country_code || 'MU',
-        
-        // GPS
         latitude: row.latitude ? parseFloat(row.latitude) : undefined,
         longitude: row.longitude ? parseFloat(row.longitude) : undefined,
         has_valid_coordinates: !!(row.latitude && row.longitude),
-        
-        // Contacts
         contact: row.email_1_full_name || row.contact || 'Direction',
         telephone: phones[0] || '',
-        telephone_2: phones[1] || '',
-        telephone_3: phones[2] || '',
         email: emails[0] || '',
-        emails_additionnels: emails.slice(1),
-        
-        // Web & Social
         website: row.site || row.website || '',
-        facebook: row.facebook || '',
-        instagram: row.instagram || '',
-        linkedin: row.linkedin || '',
-        twitter: row.twitter || '',
-        whatsapp: row.whatsapp || '',
-        
-        // Google Data
         google_place_id: row.place_id || '',
-        google_id: row.google_id || '',
-        google_cid: row.cid || '',
-        google_maps_url: row.location_link || '',
         rating: row.rating ? parseFloat(row.rating) : undefined,
         reviews_count: row.reviews ? parseInt(row.reviews) : 0,
-        star_rating: row.range || '',
-        photos_count: row.photos_count ? parseInt(row.photos_count) : 0,
-        
-        // Scoring
         score: 3,
         quality_score: qualityScore,
         priority: qualityScore >= 80 ? 'Haute' : qualityScore >= 60 ? 'Moyenne' : 'Basse',
-        
-        // Métadonnées
         budget: row.budget || 'À définir',
         notes: row.notes || `Import ${new Date().toLocaleDateString('fr-FR')}`,
-        description: row.description || '',
-        
-        // Import info
-        data_source: isOutscraper ? 'outscraper' : 'excel',
-        import_date: new Date().toISOString(),
-        is_verified: false,
-        
-        // Commercial
-        zone_commerciale: `${district} - ${row.city || 'Zone'}`,
-        statut_visite: 'À visiter'
-      }
-      
-      return result
-    })
-    
-    // Détection intelligente des doublons
-    const duplicates: any[] = []
-    const newRecords: any[] = []
-    const seen = new Map<string, any>()
-    
-    transformed.forEach(item => {
-      // Clé unique basée sur plusieurs critères
-      const keys = [
-        item.google_place_id, // Priorité 1: Google Place ID
-        item.google_cid, // Priorité 2: Google CID
-        `${item.nom?.toLowerCase()}_${item.ville?.toLowerCase()}`, // Priorité 3: Nom + Ville
-        item.email, // Priorité 4: Email
-        item.telephone // Priorité 5: Téléphone
-      ].filter(Boolean)
-      
-      let isDuplicate = false
-      for (const key of keys) {
-        if (seen.has(key)) {
-          duplicates.push(item)
-          isDuplicate = true
-          break
-        }
-      }
-      
-      if (!isDuplicate) {
-        keys.forEach(key => seen.set(key, item))
-        newRecords.push(item)
+        data_source: isOutscraper ? 'outscraper' : 'excel'
       }
     })
     
-    // Calculer les stats GPS
     const withGPS = transformed.filter(p => p.has_valid_coordinates).length
     setGpsStats({
       withCoordinates: withGPS,
@@ -296,13 +288,24 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
     
     return {
       data: transformed,
-      duplicates,
-      newRecords,
+      duplicates: [],
+      newRecords: transformed,
       updates: []
     }
   }
 
-  // Export KML pour Google Maps/Earth
+  // Helper pour échapper XML
+  const escapeXML = (str: string): string => {
+    if (!str) return ''
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;')
+  }
+
+  // Export KML
   const exportKML = () => {
     if (!transformedData) return
     
@@ -321,38 +324,6 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
     kml += '<kml xmlns="http://www.opengis.net/kml/2.2">\n'
     kml += '<Document>\n'
     kml += `  <name>Prospects Maurice - ${new Date().toLocaleDateString('fr-FR')}</name>\n`
-    
-    // Grouper par district
-    const byDistrict = dataWithGPS.reduce((acc, p) => {
-      if (!acc[p.district]) acc[p.district] = []
-      acc[p.district].push(p)
-      return acc
-    }, {} as Record<string, any[]>)
-    
-    Object.entries(byDistrict).forEach(([district, prospects]) => {
-      kml += '  <Folder>\n'
-      kml += `    <name>${district} (${prospects.length})</name>\n`
-      
-      prospects.forEach(p => {
-        kml += '    <Placemark>\n'
-        kml += `      <name>${escapeXML(p.nom)}</name>\n`
-        kml += '      <description><![CDATA[\n'
-        kml += `        <b>Secteur:</b> ${p.secteur}<br/>\n`
-        kml += `        <b>Adresse:</b> ${p.adresse}<br/>\n`
-        if (p.telephone) kml += `        <b>Tél:</b> ${p.telephone}<br/>\n`
-        if (p.email) kml += `        <b>Email:</b> ${p.email}<br/>\n`
-        if (p.rating) kml += `        <b>Note:</b> ${p.rating}/5 (${p.reviews_count} avis)<br/>\n`
-        kml += `        <b>Qualité:</b> ${p.quality_score}%<br/>\n`
-        kml += '      ]]></description>\n'
-        kml += '      <Point>\n'
-        kml += `        <coordinates>${p.longitude},${p.latitude},0</coordinates>\n`
-        kml += '      </Point>\n'
-        kml += '    </Placemark>\n'
-      })
-      
-      kml += '  </Folder>\n'
-    })
-    
     kml += '</Document>\n'
     kml += '</kml>'
     
@@ -363,51 +334,7 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
     link.click()
   }
 
-  // Fonction d'export tournée commerciale
-  const exportTournee = () => {
-    if (!transformedData) return
-    
-    // Trier par district puis par ville pour optimiser les déplacements
-    const sorted = [...transformedData.data].sort((a, b) => {
-      if (a.district !== b.district) {
-        return a.district.localeCompare(b.district)
-      }
-      return (a.ville || '').localeCompare(b.ville || '')
-    })
-    
-    const exportData = sorted.map((p, index) => ({
-      'Ordre_Visite': index + 1,
-      'Zone': `${p.district} - ${p.ville}`,
-      'Nom': p.nom,
-      'Secteur': p.secteur,
-      'Adresse': p.adresse,
-      'GPS': p.has_valid_coordinates ? `${p.latitude},${p.longitude}` : '',
-      'Téléphone': p.telephone,
-      'Email': p.email,
-      'Priorité': p.priority,
-      'Score_Qualité': p.quality_score,
-      'Statut_Visite': p.statut_visite,
-      'Notes': ''
-    }))
-    
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Tournée')
-    XLSX.writeFile(wb, `tournee_${new Date().toISOString().split('T')[0]}.xlsx`)
-  }
-
-  // Helper pour échapper XML
-  const escapeXML = (str: string): string => {
-    if (!str) return ''
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;')
-  }
-
-  // Dans la fonction importData, utiliser la nouvelle structure
+  // Import des données
   const importData = async () => {
     if (!transformedData) return
     
@@ -423,11 +350,7 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           data: toImport,
-          options: {
-            ...options,
-            importMode,
-            enrichWithGoogleData: true
-          }
+          options: options
         })
       })
       
@@ -437,10 +360,9 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
       
       toast({
         title: 'Import réussi',
-        description: `✅ ${result.imported} importés, ${result.skipped} ignorés, ${gpsStats.percentage}% avec GPS`
+        description: `${result.imported || toImport.length} importés`
       })
       
-      // Réinitialiser et recharger
       setFile(null)
       setAnalysis(null)
       setTransformedData(null)
@@ -462,21 +384,166 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {/* ... Trigger ... */}
+      <DialogTrigger asChild>
+        <Button variant="outline" className="gap-2">
+          <FileSearch className="h-4 w-4" />
+          Import & Analyse
+        </Button>
+      </DialogTrigger>
       
-      <DialogContent className="max-w-7xl max-h-[90vh]">
-        {/* ... Header ... */}
-        
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="h-5 w-5" />
+            Centre d'Import & Analyse de Données
+          </DialogTitle>
+        </DialogHeader>
+
         <Tabs defaultValue="upload" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
-            {/* ... Tabs existants ... */}
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="upload">
+              <Upload className="h-4 w-4 mr-2" />
+              Upload
+            </TabsTrigger>
+            <TabsTrigger value="analyze" disabled={!analysis}>
+              <Eye className="h-4 w-4 mr-2" />
+              Analyse
+            </TabsTrigger>
+            <TabsTrigger value="preview" disabled={!transformedData}>
+              <Database className="h-4 w-4 mr-2" />
+              Aperçu
+            </TabsTrigger>
             <TabsTrigger value="cartographie" disabled={!transformedData}>
               <Map className="h-4 w-4 mr-2" />
               Carto
             </TabsTrigger>
           </TabsList>
           
-          {/* ... Autres tabs ... */}
+          {/* Tab Upload */}
+          <TabsContent value="upload" className="space-y-4">
+            <Card>
+              <CardContent className="p-6">
+                <div className="space-y-4">
+                  <Input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    className="flex-1"
+                  />
+                  
+                  {file && (
+                    <Alert>
+                      <FileCheck className="h-4 w-4" />
+                      <AlertDescription>
+                        <strong>{file.name}</strong> ({(file.size / 1024).toFixed(2)} KB)
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  
+                  <Button
+                    onClick={analyzeFile}
+                    disabled={!file || analyzing}
+                    className="w-full"
+                  >
+                    {analyzing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Analyse en cours...
+                      </>
+                    ) : (
+                      <>
+                        <FileSearch className="mr-2 h-4 w-4" />
+                        Analyser le fichier
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab Analyse */}
+          <TabsContent value="analyze" className="space-y-4">
+            {analysis && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Résultats de l'analyse</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold">{analysis.totalRows}</div>
+                      <p className="text-xs text-muted-foreground">Lignes</p>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold">{analysis.totalColumns}</div>
+                      <p className="text-xs text-muted-foreground">Colonnes</p>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{analysis.validation.valid}</div>
+                      <p className="text-xs text-muted-foreground">Valides</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Tab Preview */}
+          <TabsContent value="preview" className="space-y-4">
+            {transformedData && (
+              <>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Aperçu des données</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-sm">
+                      {transformedData.newRecords.length} prospects prêts à importer
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Options d'import</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="skip-duplicates"
+                        checked={options.skipDuplicates}
+                        onCheckedChange={(checked) => 
+                          setOptions({...options, skipDuplicates: !!checked})
+                        }
+                      />
+                      <label htmlFor="skip-duplicates" className="text-sm">
+                        Ignorer les doublons
+                      </label>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Button
+                  onClick={importData}
+                  disabled={importing}
+                  className="w-full"
+                >
+                  {importing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Import en cours...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Importer {transformedData.newRecords.length} prospects
+                    </>
+                  )}
+                </Button>
+              </>
+            )}
+          </TabsContent>
           
           {/* Tab Cartographie */}
           <TabsContent value="cartographie" className="space-y-4">
@@ -488,7 +555,6 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Stats GPS */}
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-green-600">
@@ -510,31 +576,12 @@ export function ImportAnalyzerV2({ onImportComplete }: { onImportComplete?: () =
                   </div>
                 </div>
                 
-                {/* Progress bar GPS */}
                 <Progress value={gpsStats.percentage} className="h-3" />
                 
-                {/* Actions export */}
-                <div className="flex gap-2">
-                  <Button onClick={exportKML} variant="outline">
-                    <Map className="mr-2 h-4 w-4" />
-                    Export KML (Google Maps/Earth)
-                  </Button>
-                  
-                  <Button onClick={exportTournee} variant="outline">
-                    <MapPin className="mr-2 h-4 w-4" />
-                    Export Tournée Commerciale
-                  </Button>
-                </div>
-                
-                {gpsStats.withoutCoordinates > 0 && (
-                  <Alert>
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      {gpsStats.withoutCoordinates} prospects sans coordonnées GPS.
-                      Ils seront géocodés automatiquement après l'import.
-                    </AlertDescription>
-                  </Alert>
-                )}
+                <Button onClick={exportKML} variant="outline" className="w-full">
+                  <Map className="mr-2 h-4 w-4" />
+                  Export KML (Google Maps/Earth)
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
