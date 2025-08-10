@@ -3,29 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 
 // ============================================
-// ADAPTEZ CES IMPORTS À VOTRE CONFIGURATION
-// ============================================
-
-// Option 1: Si vous utilisez Prisma
-// import { prisma } from '@/lib/prisma'
-
-// Option 2: Si vous utilisez pg directement
-// import { Pool } from 'pg'
-// const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-
-// Option 3: Si vous utilisez Drizzle
-// import { db } from '@/lib/db'
-
-// Pour cet exemple, j'utilise pg directement
-import { Pool } from 'pg'
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-})
-
-// ============================================
-// TYPES
+// VERSION QUI GÉNÈRE LE SQL SANS DÉPENDANCES
 // ============================================
 
 interface OutscraperRow {
@@ -80,13 +58,20 @@ interface OutscraperRow {
   [key: string]: any
 }
 
+interface ProcessedProspect {
+  mainData: any
+  emails: any[]
+  phones: any[]
+  socialMedia: any[]
+  metrics: any
+  enrichmentData: any
+}
+
 // ============================================
 // FONCTION PRINCIPALE D'IMPORT
 // ============================================
 
 export async function POST(request: NextRequest) {
-  const client = await pool.connect()
-  
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -102,328 +87,232 @@ export async function POST(request: NextRequest) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const rawData = XLSX.utils.sheet_to_json<OutscraperRow>(sheet)
     
-    console.log(`📊 Import de ${rawData.length} lignes depuis ${file.name}`)
+    console.log(`📊 Traitement de ${rawData.length} lignes depuis ${file.name}`)
     
-    // Démarrer une transaction
-    await client.query('BEGIN')
-    
-    // Créer un batch d'import
+    // Créer un batch ID
     const batchId = `outscraper_${Date.now()}`
-    await createImportBatch(client, batchId, file.name, rawData.length)
     
-    // Statistiques
+    // Générer toutes les requêtes SQL
+    const sqlQueries: string[] = []
+    const processedData: ProcessedProspect[] = []
     const stats = {
       total: rawData.length,
-      imported: 0,
-      skipped: 0,
-      errors: 0,
-      duplicates: [] as any[]
+      processed: 0,
+      withEmails: 0,
+      withPhones: 0,
+      withSocial: 0,
+      withCoordinates: 0
     }
     
-    // Traiter par chunks pour éviter timeout
-    const CHUNK_SIZE = 50
-    for (let i = 0; i < rawData.length; i += CHUNK_SIZE) {
-      const chunk = rawData.slice(i, i + CHUNK_SIZE)
-      
+    // Commencer la transaction
+    sqlQueries.push('BEGIN;')
+    
+    // Créer le batch d'import
+    sqlQueries.push(`
+      INSERT INTO import_batches (
+        id, filename, file_type, source, total_rows, 
+        status, started_at, created_at
+      ) VALUES (
+        '${batchId}', 
+        '${file.name.replace(/'/g, "''")}', 
+        'xlsx', 
+        'outscraper', 
+        ${rawData.length},
+        'processing', 
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      );
+    `)
+    
+    // Traiter chaque ligne
+    rawData.forEach((row, index) => {
       try {
-        const results = await processChunk(client, chunk, batchId, options)
-        stats.imported += results.imported
-        stats.skipped += results.skipped
-        stats.duplicates.push(...results.duplicates)
+        const processed = processRow(row, batchId, index + 1)
+        processedData.push(processed)
+        
+        // Générer les requêtes SQL pour ce prospect
+        const prospectSql = generateProspectSQL(processed, index + 1)
+        sqlQueries.push(...prospectSql)
+        
+        // Mettre à jour les stats
+        stats.processed++
+        if (processed.emails.length > 0) stats.withEmails++
+        if (processed.phones.length > 0) stats.withPhones++
+        if (processed.socialMedia.length > 0) stats.withSocial++
+        if (processed.mainData.latitude && processed.mainData.longitude) stats.withCoordinates++
+        
       } catch (error) {
-        console.error(`Erreur chunk ${i}-${i + CHUNK_SIZE}:`, error)
-        stats.errors += chunk.length
+        console.error(`Erreur ligne ${index + 1}:`, error)
       }
-      
-      // Mettre à jour la progression
-      await updateImportProgress(client, batchId, stats)
-    }
+    })
     
-    // Finaliser l'import
-    await finalizeImport(client, batchId, stats)
+    // Finaliser le batch
+    sqlQueries.push(`
+      UPDATE import_batches
+      SET 
+        status = 'completed',
+        completed_at = CURRENT_TIMESTAMP,
+        imported_rows = ${stats.processed},
+        skipped_rows = ${rawData.length - stats.processed}
+      WHERE id = '${batchId}';
+    `)
     
-    // Commit la transaction
-    await client.query('COMMIT')
+    // Mettre à jour les scores de qualité
+    sqlQueries.push(`
+      UPDATE prospects p
+      SET quality_score = calculate_quality_score(p.id)
+      WHERE p.import_batch_id = '${batchId}';
+    `)
     
     // Rafraîchir la vue matérialisée
-    await client.query('REFRESH MATERIALIZED VIEW prospect_full_view')
+    sqlQueries.push('REFRESH MATERIALIZED VIEW prospect_full_view;')
     
+    // Commit
+    sqlQueries.push('COMMIT;')
+    
+    // Option 1: Retourner le SQL à exécuter
+    if (options.returnSQL) {
+      return NextResponse.json({
+        success: true,
+        batchId,
+        stats,
+        sql: sqlQueries.join('\n'),
+        message: 'SQL généré avec succès. Copiez et exécutez dans votre base de données.'
+      })
+    }
+    
+    // Option 2: Sauvegarder dans un fichier
+    const sqlContent = sqlQueries.join('\n')
+    const sqlBlob = new Blob([sqlContent], { type: 'text/sql' })
+    
+    // Option 3: Retourner les données transformées en JSON
     return NextResponse.json({
       success: true,
       batchId,
       stats,
-      message: `Import terminé: ${stats.imported} prospects importés, ${stats.skipped} ignorés`
+      data: processedData,
+      sqlFile: {
+        content: sqlContent,
+        filename: `import_${batchId}.sql`,
+        lines: sqlQueries.length
+      },
+      message: `${stats.processed} prospects traités. Téléchargez le fichier SQL pour importer dans votre base.`
     })
     
   } catch (error: any) {
-    await client.query('ROLLBACK')
     console.error('Erreur import:', error)
     return NextResponse.json(
-      { error: 'Erreur lors de l\'import', details: error.message },
+      { error: 'Erreur lors du traitement', details: error.message },
       { status: 500 }
     )
-  } finally {
-    client.release()
   }
 }
 
 // ============================================
-// FONCTIONS DE TRAITEMENT
+// TRAITEMENT DES DONNÉES
 // ============================================
 
-async function processChunk(
-  client: any,
-  chunk: OutscraperRow[],
-  batchId: string,
-  options: any
-) {
-  const results = { imported: 0, skipped: 0, duplicates: [] as any[] }
-  
-  for (const row of chunk) {
-    try {
-      // 1. Vérifier les doublons
-      if (options.skipDuplicates) {
-        const duplicate = await checkDuplicate(client, row)
-        if (duplicate) {
-          results.duplicates.push({
-            name: row.name,
-            matchedWith: duplicate.prospect_id,
-            score: duplicate.match_score
-          })
-          results.skipped++
-          continue
-        }
-      }
-      
-      // 2. Transformer les données
-      const prospectData = transformOutscraperData(row, batchId)
-      
-      // 3. Insérer le prospect principal
-      const prospect = await insertProspect(client, prospectData)
-      
-      if (prospect) {
-        // 4. Insérer les données relationnelles
-        await Promise.all([
-          insertEmails(client, prospect.id, row),
-          insertPhones(client, prospect.id, row),
-          insertSocialMedia(client, prospect.id, row),
-          insertMetrics(client, prospect.id, row),
-          insertEnrichmentData(client, prospect.id, row)
-        ])
-        
-        // 5. Calculer le score de qualité
-        await client.query(
-          'UPDATE prospects SET quality_score = calculate_quality_score($1) WHERE id = $1',
-          [prospect.id]
-        )
-        
-        results.imported++
-      }
-    } catch (error) {
-      console.error('Erreur traitement ligne:', error, row.name)
-      results.skipped++
-    }
-  }
-  
-  return results
-}
-
-// Transformer les données Outscraper
-function transformOutscraperData(row: OutscraperRow, batchId: string) {
-  return {
-    nom: row.name || 'Sans nom',
+function processRow(row: OutscraperRow, batchId: string, rowIndex: number): ProcessedProspect {
+  // Données principales du prospect
+  const mainData = {
+    nom: escapeSql(row.name || `Sans nom #${rowIndex}`),
     secteur: detectSector(row.name || ''),
-    ville: row.city || '',
+    ville: escapeSql(row.city || ''),
     district: detectDistrict(row.city || row.full_address || ''),
     statut: 'nouveau',
-    contact: extractMainContact(row),
-    telephone: row.phone || row.phone_1 || '',
-    email: row.email_1 || '',
+    contact: escapeSql(extractMainContact(row)),
+    telephone: escapeSql(row.phone || row.phone_1 || ''),
+    email: escapeSql(row.email_1 || ''),
     score: 3,
     budget: 'À définir',
-    notes: `Import Outscraper ${new Date().toLocaleDateString('fr-FR')}`,
-    adresse: row.full_address || '',
-    website: row.site || '',
+    notes: escapeSql(`Import Outscraper ${new Date().toLocaleDateString('fr-FR')}`),
+    adresse: escapeSql(row.full_address || ''),
+    website: escapeSql(row.site || ''),
     latitude: row.latitude ? parseFloat(String(row.latitude)) : null,
     longitude: row.longitude ? parseFloat(String(row.longitude)) : null,
-    google_place_id: row.place_id || null,
-    google_cid: row.google_id || row.cid || null,
+    google_place_id: escapeSql(row.place_id || ''),
+    google_cid: escapeSql(row.google_id || row.cid || ''),
     business_status: row.business_status || 'OPERATIONAL',
     data_source: 'outscraper',
     import_batch_id: batchId,
     is_verified: false
   }
-}
-
-// Insérer le prospect principal
-async function insertProspect(client: any, data: any) {
-  try {
-    const query = `
-      INSERT INTO prospects (
-        nom, secteur, ville, district, statut, contact, 
-        telephone, email, score, budget, notes, adresse, website,
-        latitude, longitude, google_place_id, google_cid,
-        business_status, data_source, import_batch_id, is_verified
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-        $14, $15, $16, $17, $18, $19, $20, $21
-      )
-      RETURNING id, nom
-    `
-    
-    const values = [
-      data.nom, data.secteur, data.ville, data.district, data.statut,
-      data.contact, data.telephone, data.email, data.score, data.budget,
-      data.notes, data.adresse, data.website, data.latitude, data.longitude,
-      data.google_place_id, data.google_cid, data.business_status,
-      data.data_source, data.import_batch_id, data.is_verified
-    ]
-    
-    const result = await client.query(query, values)
-    return result.rows[0]
-  } catch (error) {
-    console.error('Erreur insertion prospect:', error)
-    return null
-  }
-}
-
-// Insérer les emails
-async function insertEmails(client: any, prospectId: number, row: OutscraperRow) {
-  const emails = []
   
-  // Email 1
+  // Emails
+  const emails = []
   if (row.email_1) {
     emails.push({
-      prospect_id: prospectId,
-      email: row.email_1,
+      email: escapeSql(row.email_1),
       email_type: 'primary',
       is_valid: row['email_1.emails_validator.status'] === 'valid',
-      validation_status: row['email_1.emails_validator.status'],
-      validation_details: row['email_1.emails_validator.status_details'],
-      full_name: row.email_1_full_name,
-      first_name: row.email_1_first_name,
-      last_name: row.email_1_last_name,
-      job_title: row.email_1_title,
+      validation_status: row['email_1.emails_validator.status'] || null,
+      validation_details: escapeSql(row['email_1.emails_validator.status_details'] || ''),
+      full_name: escapeSql(row.email_1_full_name || ''),
+      first_name: escapeSql(row.email_1_first_name || ''),
+      last_name: escapeSql(row.email_1_last_name || ''),
+      job_title: escapeSql(row.email_1_title || ''),
       priority: 1,
       is_active: true
     })
   }
-  
-  // Email 2
   if (row.email_2) {
     emails.push({
-      prospect_id: prospectId,
-      email: row.email_2,
+      email: escapeSql(row.email_2),
       email_type: 'secondary',
       is_valid: row['email_2.emails_validator.status'] === 'valid',
-      validation_status: row['email_2.emails_validator.status'],
-      full_name: row.email_2_full_name,
+      validation_status: row['email_2.emails_validator.status'] || null,
+      full_name: escapeSql(row.email_2_full_name || ''),
       priority: 2,
       is_active: true
     })
   }
-  
-  // Email 3
   if (row.email_3) {
     emails.push({
-      prospect_id: prospectId,
-      email: row.email_3,
+      email: escapeSql(row.email_3),
       email_type: 'secondary',
       is_valid: row['email_3.emails_validator.status'] === 'valid',
-      validation_status: row['email_3.emails_validator.status'],
+      validation_status: row['email_3.emails_validator.status'] || null,
       priority: 3,
       is_active: true
     })
   }
   
-  for (const emailData of emails) {
-    try {
-      const query = `
-        INSERT INTO prospect_emails (
-          prospect_id, email, email_type, is_valid, validation_status,
-          validation_details, full_name, first_name, last_name, 
-          job_title, priority, is_active
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        ON CONFLICT (prospect_id, email) DO NOTHING
-      `
-      
-      await client.query(query, [
-        emailData.prospect_id, emailData.email, emailData.email_type,
-        emailData.is_valid, emailData.validation_status,
-        emailData.validation_details || null, emailData.full_name || null,
-        emailData.first_name || null, emailData.last_name || null,
-        emailData.job_title || null, emailData.priority, emailData.is_active
-      ])
-    } catch (error) {
-      console.error('Erreur insertion email:', error)
-    }
-  }
-}
-
-// Insérer les téléphones
-async function insertPhones(client: any, prospectId: number, row: OutscraperRow) {
+  // Téléphones
   const phones = []
-  
-  // Téléphone principal
   if (row.phone) {
     phones.push({
-      prospect_id: prospectId,
-      phone_number: row.phone,
+      phone_number: escapeSql(row.phone),
       phone_type: 'main',
-      carrier_name: row['phone.phones_enricher.carrier_name'],
-      carrier_type: row['phone.phones_enricher.carrier_type'],
+      formatted_number: formatMauritianPhone(row.phone),
+      carrier_name: escapeSql(row['phone.phones_enricher.carrier_name'] || ''),
+      carrier_type: row['phone.phones_enricher.carrier_type'] || null,
+      is_whatsapp: row['phone.phones_enricher.carrier_type'] === 'mobile',
       priority: 1
     })
   }
-  
-  // Téléphone 1
   if (row.phone_1 && row.phone_1 !== row.phone) {
     phones.push({
-      prospect_id: prospectId,
-      phone_number: row.phone_1,
+      phone_number: escapeSql(row.phone_1),
       phone_type: 'secondary',
-      carrier_name: row['phone_1.phones_enricher.carrier_name'],
-      carrier_type: row['phone_1.phones_enricher.carrier_type'],
+      formatted_number: formatMauritianPhone(row.phone_1),
+      carrier_name: escapeSql(row['phone_1.phones_enricher.carrier_name'] || ''),
+      carrier_type: row['phone_1.phones_enricher.carrier_type'] || null,
       priority: 2
     })
   }
-  
-  // Téléphone 2
   if (row.phone_2) {
     phones.push({
-      prospect_id: prospectId,
-      phone_number: row.phone_2,
+      phone_number: escapeSql(row.phone_2),
       phone_type: 'secondary',
-      carrier_type: row['phone_2.phones_enricher.carrier_type'],
+      formatted_number: formatMauritianPhone(row.phone_2),
+      carrier_type: row['phone_2.phones_enricher.carrier_type'] || null,
       priority: 3
     })
   }
   
-  for (const phoneData of phones) {
-    try {
-      const query = `
-        INSERT INTO prospect_phones (
-          prospect_id, phone_number, phone_type, formatted_number,
-          carrier_name, carrier_type, is_whatsapp, is_valid, priority
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (prospect_id, phone_number) DO NOTHING
-      `
-      
-      await client.query(query, [
-        phoneData.prospect_id, phoneData.phone_number, phoneData.phone_type,
-        formatMauritianPhone(phoneData.phone_number),
-        phoneData.carrier_name || null, phoneData.carrier_type || null,
-        phoneData.carrier_type === 'mobile', true, phoneData.priority
-      ])
-    } catch (error) {
-      console.error('Erreur insertion téléphone:', error)
-    }
-  }
-}
-
-// Insérer les réseaux sociaux
-async function insertSocialMedia(client: any, prospectId: number, row: OutscraperRow) {
-  const platforms = [
+  // Réseaux sociaux
+  const socialMedia = []
+  const socialPlatforms = [
     { platform: 'facebook', url: row.facebook },
     { platform: 'instagram', url: row.instagram },
     { platform: 'linkedin', url: row.linkedin },
@@ -432,144 +321,197 @@ async function insertSocialMedia(client: any, prospectId: number, row: Outscrape
     { platform: 'whatsapp', url: row.whatsapp }
   ]
   
-  for (const social of platforms) {
+  socialPlatforms.forEach(social => {
     if (social.url) {
-      try {
-        const query = `
-          INSERT INTO prospect_social_media (prospect_id, platform, url)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (prospect_id, platform) DO NOTHING
-        `
-        await client.query(query, [prospectId, social.platform, social.url])
-      } catch (error) {
-        console.error('Erreur insertion réseau social:', error)
-      }
+      socialMedia.push({
+        platform: social.platform,
+        url: escapeSql(social.url)
+      })
     }
-  }
-}
-
-// Insérer les métriques
-async function insertMetrics(client: any, prospectId: number, row: OutscraperRow) {
-  if (row.rating || row.reviews) {
-    try {
-      const query = `
-        INSERT INTO prospect_metrics (
-          prospect_id, source, rating, reviews_count, 
-          reviews_link, photos_count
-        ) VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (prospect_id, source) 
-        DO UPDATE SET
-          rating = EXCLUDED.rating,
-          reviews_count = EXCLUDED.reviews_count,
-          photos_count = EXCLUDED.photos_count,
-          updated_at = CURRENT_TIMESTAMP
-      `
-      
-      await client.query(query, [
-        prospectId, 'google',
-        row.rating ? parseFloat(row.rating) : null,
-        row.reviews ? parseInt(row.reviews) : 0,
-        row.reviews_link || null,
-        row.photos_count ? parseInt(row.photos_count) : 0
-      ])
-    } catch (error) {
-      console.error('Erreur insertion métriques:', error)
-    }
-  }
-}
-
-// Insérer les données d'enrichissement brutes
-async function insertEnrichmentData(client: any, prospectId: number, row: OutscraperRow) {
-  try {
-    const query = `
-      INSERT INTO prospect_enrichment_data (
-        prospect_id, source, data_type, raw_data, processed
-      ) VALUES ($1, $2, $3, $4, $5)
-    `
-    
-    await client.query(query, [
-      prospectId, 'outscraper', 'full_data',
-      JSON.stringify(row), true
-    ])
-  } catch (error) {
-    console.error('Erreur insertion enrichment data:', error)
-  }
-}
-
-// Vérifier les doublons
-async function checkDuplicate(client: any, row: OutscraperRow) {
-  try {
-    const query = `
-      SELECT * FROM find_duplicates($1, $2, $3, $4, $5, $6) LIMIT 1
-    `
-    
-    const result = await client.query(query, [
-      row.email_1 || null,
-      row.phone || row.phone_1 || null,
-      row.google_id || row.cid || null,
-      row.name || null,
-      row.latitude ? parseFloat(String(row.latitude)) : null,
-      row.longitude ? parseFloat(String(row.longitude)) : null
-    ])
-    
-    return result.rows[0] || null
-  } catch (error) {
-    console.error('Erreur vérification doublon:', error)
-    return null
-  }
-}
-
-// Créer un batch d'import
-async function createImportBatch(client: any, id: string, filename: string, totalRows: number) {
-  const query = `
-    INSERT INTO import_batches (
-      id, filename, file_type, source, total_rows, 
-      status, started_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-  `
+  })
   
-  await client.query(query, [
-    id, filename, 'xlsx', 'outscraper', totalRows, 'processing'
-  ])
+  // Métriques
+  const metrics = {
+    source: 'google',
+    rating: row.rating ? parseFloat(row.rating) : null,
+    reviews_count: row.reviews ? parseInt(row.reviews) : 0,
+    reviews_link: escapeSql(row.reviews_link || ''),
+    photos_count: row.photos_count ? parseInt(row.photos_count) : 0
+  }
+  
+  // Données d'enrichissement
+  const enrichmentData = {
+    source: 'outscraper',
+    data_type: 'full_data',
+    raw_data: JSON.stringify(row),
+    processed: true
+  }
+  
+  return {
+    mainData,
+    emails,
+    phones,
+    socialMedia,
+    metrics: (metrics.rating || metrics.reviews_count) ? metrics : null,
+    enrichmentData
+  }
 }
 
-// Mettre à jour la progression
-async function updateImportProgress(client: any, batchId: string, stats: any) {
-  const query = `
-    UPDATE import_batches
-    SET 
-      imported_rows = $2,
-      skipped_rows = $3,
-      error_rows = $4
-    WHERE id = $1
-  `
-  
-  await client.query(query, [
-    batchId, stats.imported, stats.skipped, stats.errors
-  ])
-}
+// ============================================
+// GÉNÉRATION SQL
+// ============================================
 
-// Finaliser l'import
-async function finalizeImport(client: any, batchId: string, stats: any) {
-  const query = `
-    UPDATE import_batches
-    SET 
-      status = 'completed',
-      completed_at = CURRENT_TIMESTAMP,
-      imported_rows = $2,
-      skipped_rows = $3,
-      error_rows = $4
-    WHERE id = $1
-  `
+function generateProspectSQL(prospect: ProcessedProspect, index: number): string[] {
+  const queries: string[] = []
+  const tempId = 1000000 + index // ID temporaire pour les relations
   
-  await client.query(query, [
-    batchId, stats.imported, stats.skipped, stats.errors
-  ])
+  // 1. Insérer le prospect principal
+  const prospectSQL = `
+    -- Prospect ${index}: ${prospect.mainData.nom}
+    WITH new_prospect AS (
+      INSERT INTO prospects (
+        nom, secteur, ville, district, statut, contact, 
+        telephone, email, score, budget, notes, adresse, website,
+        latitude, longitude, google_place_id, google_cid,
+        business_status, data_source, import_batch_id, is_verified,
+        created_at, updated_at
+      ) VALUES (
+        '${prospect.mainData.nom}',
+        '${prospect.mainData.secteur}',
+        '${prospect.mainData.ville}',
+        '${prospect.mainData.district}',
+        '${prospect.mainData.statut}',
+        '${prospect.mainData.contact}',
+        '${prospect.mainData.telephone}',
+        '${prospect.mainData.email}',
+        ${prospect.mainData.score},
+        '${prospect.mainData.budget}',
+        '${prospect.mainData.notes}',
+        '${prospect.mainData.adresse}',
+        '${prospect.mainData.website}',
+        ${prospect.mainData.latitude || 'NULL'},
+        ${prospect.mainData.longitude || 'NULL'},
+        ${prospect.mainData.google_place_id ? `'${prospect.mainData.google_place_id}'` : 'NULL'},
+        ${prospect.mainData.google_cid ? `'${prospect.mainData.google_cid}'` : 'NULL'},
+        '${prospect.mainData.business_status}',
+        '${prospect.mainData.data_source}',
+        '${prospect.mainData.import_batch_id}',
+        ${prospect.mainData.is_verified},
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+      ON CONFLICT (google_cid) WHERE google_cid IS NOT NULL DO NOTHING
+      RETURNING id
+    )
+    SELECT id INTO TEMP temp_prospect_id_${index} FROM new_prospect;
+  `
+  queries.push(prospectSQL)
+  
+  // 2. Insérer les emails
+  prospect.emails.forEach((email, emailIndex) => {
+    queries.push(`
+      INSERT INTO prospect_emails (
+        prospect_id, email, email_type, is_valid, validation_status,
+        validation_details, full_name, first_name, last_name, 
+        job_title, priority, is_active, created_at
+      ) 
+      SELECT 
+        id,
+        '${email.email}',
+        '${email.email_type}',
+        ${email.is_valid},
+        ${email.validation_status ? `'${email.validation_status}'` : 'NULL'},
+        ${email.validation_details ? `'${email.validation_details}'` : 'NULL'},
+        ${email.full_name ? `'${email.full_name}'` : 'NULL'},
+        ${email.first_name ? `'${email.first_name}'` : 'NULL'},
+        ${email.last_name ? `'${email.last_name}'` : 'NULL'},
+        ${email.job_title ? `'${email.job_title}'` : 'NULL'},
+        ${email.priority},
+        ${email.is_active},
+        CURRENT_TIMESTAMP
+      FROM temp_prospect_id_${index}
+      ON CONFLICT (prospect_id, email) DO NOTHING;
+    `)
+  })
+  
+  // 3. Insérer les téléphones
+  prospect.phones.forEach((phone) => {
+    queries.push(`
+      INSERT INTO prospect_phones (
+        prospect_id, phone_number, phone_type, formatted_number,
+        carrier_name, carrier_type, is_whatsapp, is_valid, priority, created_at
+      )
+      SELECT 
+        id,
+        '${phone.phone_number}',
+        '${phone.phone_type}',
+        '${phone.formatted_number}',
+        ${phone.carrier_name ? `'${phone.carrier_name}'` : 'NULL'},
+        ${phone.carrier_type ? `'${phone.carrier_type}'` : 'NULL'},
+        ${phone.is_whatsapp || false},
+        true,
+        ${phone.priority},
+        CURRENT_TIMESTAMP
+      FROM temp_prospect_id_${index}
+      ON CONFLICT (prospect_id, phone_number) DO NOTHING;
+    `)
+  })
+  
+  // 4. Insérer les réseaux sociaux
+  prospect.socialMedia.forEach((social) => {
+    queries.push(`
+      INSERT INTO prospect_social_media (
+        prospect_id, platform, url, created_at
+      )
+      SELECT 
+        id,
+        '${social.platform}',
+        '${social.url}',
+        CURRENT_TIMESTAMP
+      FROM temp_prospect_id_${index}
+      ON CONFLICT (prospect_id, platform) DO NOTHING;
+    `)
+  })
+  
+  // 5. Insérer les métriques
+  if (prospect.metrics) {
+    queries.push(`
+      INSERT INTO prospect_metrics (
+        prospect_id, source, rating, reviews_count, 
+        reviews_link, photos_count, updated_at
+      )
+      SELECT 
+        id,
+        '${prospect.metrics.source}',
+        ${prospect.metrics.rating || 'NULL'},
+        ${prospect.metrics.reviews_count},
+        ${prospect.metrics.reviews_link ? `'${prospect.metrics.reviews_link}'` : 'NULL'},
+        ${prospect.metrics.photos_count},
+        CURRENT_TIMESTAMP
+      FROM temp_prospect_id_${index}
+      ON CONFLICT (prospect_id, source) 
+      DO UPDATE SET
+        rating = EXCLUDED.rating,
+        reviews_count = EXCLUDED.reviews_count,
+        photos_count = EXCLUDED.photos_count,
+        updated_at = CURRENT_TIMESTAMP;
+    `)
+  }
+  
+  // 6. Nettoyer la table temporaire
+  queries.push(`DROP TABLE IF EXISTS temp_prospect_id_${index};`)
+  
+  return queries
 }
 
 // ============================================
 // FONCTIONS UTILITAIRES
 // ============================================
+
+function escapeSql(str: string | null | undefined): string {
+  if (!str) return ''
+  return String(str).replace(/'/g, "''")
+}
 
 function detectSector(name: string): string {
   const n = name.toLowerCase()
@@ -614,4 +556,22 @@ function formatMauritianPhone(phone: string): string {
     return `+230 ${cleaned}`
   }
   return phone
+}
+
+// ============================================
+// ROUTE POUR TÉLÉCHARGER LE SQL
+// ============================================
+
+export async function GET(request: NextRequest) {
+  return NextResponse.json({
+    message: 'API d\'import Outscraper',
+    endpoints: {
+      POST: 'Envoyer un fichier Excel/CSV pour générer le SQL d\'import',
+      options: {
+        returnSQL: 'Retourne le SQL directement dans la réponse',
+        skipDuplicates: 'Ignore les doublons basés sur Google ID'
+      }
+    },
+    example: 'POST /api/import/outscraper avec FormData contenant file et options'
+  })
 }
