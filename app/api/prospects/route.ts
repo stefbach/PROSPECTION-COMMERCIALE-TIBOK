@@ -1,5 +1,5 @@
 // app/api/prospects/route.ts
-// API avec 4000+ prospects mauriciens
+// API avec EXACTEMENT 4070 prospects mauriciens
 
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -33,7 +33,7 @@ interface Prospect {
   updated_at: string
 }
 
-// Configuration pour générer des données réalistes
+// Configuration Maurice
 const MAURITIUS_DATA = {
   districts: {
     'port-louis': ['Port Louis', 'Caudan', 'Chinatown', 'Plaine Verte'],
@@ -47,92 +47,114 @@ const MAURITIUS_DATA = {
     'riviere-noire': ['Tamarin', 'Flic en Flac', 'Le Morne', 'La Gaulette']
   },
   
-  companyPrefixes: [
-    'Hotel', 'Restaurant', 'Boutique', 'Clinique', 'Pharmacie', 'Spa', 'Resort',
-    'Villa', 'Guest House', 'Beach Resort', 'Medical Center', 'Wellness Center',
-    'Super U', 'Winners', 'Jumbo', 'Intermart', 'Dream Price', 'La Croisette'
-  ],
-  
-  companySuffixes: [
-    'Paradise', 'Tropical', 'Island', 'Ocean View', 'Beach', 'Lagoon', 'Coral',
-    'Blue Bay', 'Grand Baie', 'Belle Mare', 'Le Morne', 'Tamarin', 'Flic en Flac'
+  companyNames: [
+    // Hôtels réels de Maurice
+    'Hotel Beachcomber', 'Hotel Constance', 'Hotel Heritage', 'Hotel Veranda',
+    'Hotel Attitude', 'Hotel LUX', 'Hotel Oberoi', 'Hotel Four Seasons',
+    'Hotel St. Regis', 'Hotel Shangri-La', 'Hotel Hilton', 'Hotel InterContinental',
+    
+    // Restaurants
+    'Restaurant Le Château', 'Restaurant La Table du Château', 'Restaurant Escale Créole',
+    'Restaurant Le Pescatore', 'Restaurant La Clef des Champs', 'Restaurant Chez Tino',
+    
+    // Cliniques et santé
+    'Clinique Darné', 'Clinique du Nord', 'Clinique Ferrière', 'Clinique Muller',
+    'Centre Médical', 'Cabinet Médical', 'Wellness Center', 'Spa Paradise',
+    
+    // Commerces
+    'Super U', 'Winners', 'Jumbo', 'Intermart', 'Dream Price', 'La Croisette',
+    'Shoprite', 'Pick n Pay', 'Spar', 'London Way', 'Galaxy', 'Carrefour'
   ],
   
   contactNames: [
     'Kumar Patel', 'Marie Duval', 'Jean-Pierre Martin', 'Anita Ramgoolam',
     'David Chen', 'Sophie Laurent', 'Raj Sharma', 'Michelle Dupont',
-    'Kevin Li', 'Priya Naidoo', 'François Bernard', 'Lisa Wong'
+    'Kevin Li', 'Priya Naidoo', 'François Bernard', 'Lisa Wong',
+    'Ahmed Hassan', 'Claire Rousseau', 'Vikash Dookun', 'Nathalie Lebreton'
   ]
 }
 
-// Générateur de prospects mauriciens
-function generateMauritianProspects(count: number = 4500): Prospect[] {
+// Variable globale pour stocker les prospects
+declare global {
+  var mauritiusProspects: Prospect[] | undefined
+  var lastGeneratedId: number | undefined
+}
+
+// Générateur de prospects avec nombre exact
+function generateMauritianProspects(count: number = 4070): Prospect[] {
+  console.log(`🏗️ Génération de ${count} prospects mauriciens...`)
   const prospects: Prospect[] = []
   
   for (let i = 1; i <= count; i++) {
-    const districtKey = Object.keys(MAURITIUS_DATA.districts)[
-      Math.floor(Math.random() * Object.keys(MAURITIUS_DATA.districts).length)
-    ] as District
+    // Sélection aléatoire du district
+    const districtKeys = Object.keys(MAURITIUS_DATA.districts) as District[]
+    const district = districtKeys[Math.floor(Math.random() * districtKeys.length)]
     
-    const cities = MAURITIUS_DATA.districts[districtKey]
-    const city = cities[Math.floor(Math.random() * cities.length)]
+    // Sélection aléatoire de la ville dans le district
+    const cities = MAURITIUS_DATA.districts[district]
+    const ville = cities[Math.floor(Math.random() * cities.length)]
     
+    // Sélection du secteur avec distribution réaliste
     const secteurs: Secteur[] = ['hotel', 'restaurant', 'retail', 'clinique', 'pharmacie', 
                                   'wellness', 'spa', 'tourisme', 'immobilier', 'autre']
     const secteur = secteurs[Math.floor(Math.random() * secteurs.length)]
     
-    const statuts: Statut[] = ['nouveau', 'contacte', 'qualifie', 'en-negociation', 'signe', 'perdu']
-    // Biais vers les nouveaux et qualifiés
-    const statutWeights = [0.35, 0.25, 0.20, 0.10, 0.05, 0.05]
-    const randomStatut = Math.random()
-    let statut: Statut = 'nouveau'
-    let cumulativeWeight = 0
-    for (let j = 0; j < statuts.length; j++) {
-      cumulativeWeight += statutWeights[j]
-      if (randomStatut <= cumulativeWeight) {
-        statut = statuts[j]
-        break
-      }
-    }
+    // Statut avec distribution réaliste
+    const statutRandom = Math.random()
+    let statut: Statut
+    if (statutRandom < 0.35) statut = 'nouveau'
+    else if (statutRandom < 0.60) statut = 'contacte'
+    else if (statutRandom < 0.80) statut = 'qualifie'
+    else if (statutRandom < 0.90) statut = 'en-negociation'
+    else if (statutRandom < 0.95) statut = 'signe'
+    else statut = 'perdu'
     
-    const companyPrefix = MAURITIUS_DATA.companyPrefixes[
-      Math.floor(Math.random() * MAURITIUS_DATA.companyPrefixes.length)
-    ]
-    const companySuffix = MAURITIUS_DATA.companySuffixes[
-      Math.floor(Math.random() * MAURITIUS_DATA.companySuffixes.length)
-    ]
+    // Nom de l'entreprise
+    const companyName = MAURITIUS_DATA.companyNames[i % MAURITIUS_DATA.companyNames.length] + ' ' + 
+                       (Math.floor(i / MAURITIUS_DATA.companyNames.length) + 1)
     
-    const contactName = MAURITIUS_DATA.contactNames[
-      Math.floor(Math.random() * MAURITIUS_DATA.contactNames.length)
-    ]
+    // Contact
+    const contact = MAURITIUS_DATA.contactNames[Math.floor(Math.random() * MAURITIUS_DATA.contactNames.length)]
     
-    const score = Math.floor(Math.random() * 5) + 1 as 1 | 2 | 3 | 4 | 5
+    // Score et qualité
+    const score = (Math.floor(Math.random() * 5) + 1) as 1 | 2 | 3 | 4 | 5
     const quality_score = Math.floor(Math.random() * 40) + 60 // 60-100
     
-    const priorities = ['Haute', 'Moyenne', 'Basse']
-    const priority = Math.random() > 0.8 ? priorities[0] : 
-                    Math.random() > 0.5 ? priorities[1] : priorities[2]
+    // Priorité
+    const priorityRandom = Math.random()
+    const priority = priorityRandom > 0.8 ? 'Haute' : 
+                    priorityRandom > 0.5 ? 'Moyenne' : 'Basse'
     
-    const budgets = ['Rs 50k', 'Rs 100k', 'Rs 250k', 'Rs 500k', 'Rs 1M', 'Rs 2M+']
+    // Budget
+    const budgets = ['Rs 50k', 'Rs 100k', 'Rs 250k', 'Rs 500k', 'Rs 1M', 'Rs 2M+', 'Rs 5M+']
     const budget = Math.random() > 0.3 ? budgets[Math.floor(Math.random() * budgets.length)] : undefined
     
+    // Création du prospect
     prospects.push({
       id: i,
-      nom: `${companyPrefix} ${companySuffix} ${i}`,
-      email: `contact${i}@${companyPrefix.toLowerCase().replace(/\s/g, '')}.mu`,
+      nom: companyName,
+      email: `contact${i}@${companyName.toLowerCase().replace(/\s/g, '').substring(0, 10)}.mu`,
       telephone: `+230 5${Math.floor(Math.random() * 900 + 100)} ${Math.floor(Math.random() * 9000 + 1000)}`,
-      adresse: `${Math.floor(Math.random() * 999) + 1} Royal Road`,
-      ville: city,
-      district: districtKey,
+      adresse: `${Math.floor(Math.random() * 999) + 1} ${Math.random() > 0.5 ? 'Royal Road' : 'Coastal Road'}`,
+      ville: ville,
+      district: district,
       secteur: secteur,
       statut: statut,
-      contact: contactName,
+      contact: contact,
       budget: budget,
-      notes: Math.random() > 0.5 ? `Prospect intéressant. ${secteur === 'hotel' ? 'Établissement de prestige.' : 
-                                    secteur === 'restaurant' ? 'Forte affluence touristique.' :
-                                    secteur === 'clinique' ? 'Besoin urgent de modernisation.' :
-                                    'À recontacter rapidement.'}` : undefined,
-      website: Math.random() > 0.4 ? `https://www.${companyPrefix.toLowerCase().replace(/\s/g, '')}.mu` : undefined,
+      notes: Math.random() > 0.5 ? 
+        `${secteur === 'hotel' ? 'Établissement hôtelier de référence.' : 
+          secteur === 'restaurant' ? 'Restaurant avec forte clientèle touristique.' :
+          secteur === 'clinique' ? 'Clinique privée, besoin de modernisation.' :
+          secteur === 'retail' ? 'Commerce de détail bien établi.' :
+          'Prospect à fort potentiel.'} ${
+          statut === 'nouveau' ? 'Premier contact à établir.' :
+          statut === 'qualifie' ? 'Intérêt confirmé pour nos services.' :
+          statut === 'en-negociation' ? 'Négociation en cours.' :
+          ''}` : undefined,
+      website: Math.random() > 0.4 ? 
+        `https://www.${companyName.toLowerCase().replace(/\s/g, '').substring(0, 20)}.mu` : 
+        undefined,
       score: score,
       priority: priority as 'Haute' | 'Moyenne' | 'Basse',
       quality_score: quality_score,
@@ -141,56 +163,56 @@ function generateMauritianProspects(count: number = 4500): Prospect[] {
     })
   }
   
+  global.lastGeneratedId = count
+  console.log(`✅ ${prospects.length} prospects générés avec succès`)
   return prospects
 }
 
-// Générer les données une seule fois au démarrage
-let allProspects: Prospect[] = []
-
-// Fonction pour initialiser les données
-function initializeData() {
-  if (allProspects.length === 0) {
-    console.log('🚀 Génération de 4500 prospects mauriciens...')
-    allProspects = generateMauritianProspects(4500)
-    console.log('✅ Base de données initialisée avec', allProspects.length, 'prospects')
+// Fonction pour obtenir les prospects (initialise si nécessaire)
+function getProspects(): Prospect[] {
+  if (!global.mauritiusProspects || global.mauritiusProspects.length === 0) {
+    console.log('🚀 Initialisation de la base de données...')
+    global.mauritiusProspects = generateMauritianProspects(4070) // EXACTEMENT 4070
+    console.log(`✅ Base initialisée avec ${global.mauritiusProspects.length} prospects`)
   }
+  return global.mauritiusProspects
 }
 
 // GET - Récupérer les prospects avec pagination et filtres
 export async function GET(request: NextRequest) {
   try {
-    // Initialiser les données si nécessaire
-    initializeData()
-    
+    const prospects = getProspects()
     const { searchParams } = new URL(request.url)
     
-    // Récupérer les paramètres
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    // Récupération des paramètres
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
+    const limit = Math.min(10000, Math.max(1, parseInt(searchParams.get('limit') || '50')))
     const secteur = searchParams.get('secteur')
     const district = searchParams.get('district')
     const statut = searchParams.get('statut')
     const search = searchParams.get('q')
-    const country = searchParams.get('country')
     
-    console.log(`📋 GET /prospects - Page: ${page}, Limit: ${limit}, Total: ${allProspects.length}`)
+    console.log(`📋 GET /prospects - Page: ${page}, Limit: ${limit}, Total en base: ${prospects.length}`)
     
-    // Filtrer les prospects
-    let filtered = [...allProspects]
+    // Filtrage
+    let filtered = [...prospects]
     
-    if (secteur) {
+    if (secteur && secteur !== '') {
       filtered = filtered.filter(p => p.secteur === secteur)
+      console.log(`  Filtre secteur: ${secteur} → ${filtered.length} résultats`)
     }
     
-    if (district) {
+    if (district && district !== '') {
       filtered = filtered.filter(p => p.district === district)
+      console.log(`  Filtre district: ${district} → ${filtered.length} résultats`)
     }
     
-    if (statut) {
+    if (statut && statut !== '') {
       filtered = filtered.filter(p => p.statut === statut)
+      console.log(`  Filtre statut: ${statut} → ${filtered.length} résultats`)
     }
     
-    if (search) {
+    if (search && search !== '') {
       const searchLower = search.toLowerCase()
       filtered = filtered.filter(p => 
         p.nom.toLowerCase().includes(searchLower) ||
@@ -198,32 +220,35 @@ export async function GET(request: NextRequest) {
         (p.contact && p.contact.toLowerCase().includes(searchLower)) ||
         p.email.toLowerCase().includes(searchLower)
       )
+      console.log(`  Recherche: "${search}" → ${filtered.length} résultats`)
     }
     
-    // Calculer la pagination
+    // Calcul de la pagination
     const total = filtered.length
     const totalPages = Math.ceil(total / limit)
-    const offset = (page - 1) * limit
+    const validPage = Math.min(page, totalPages || 1)
+    const offset = (validPage - 1) * limit
     const paginatedData = filtered.slice(offset, offset + limit)
     
-    console.log(`📊 Résultats: ${paginatedData.length} prospects (page ${page}/${totalPages}, total filtré: ${total})`)
+    console.log(`📊 Résultat final: ${paginatedData.length} prospects retournés (page ${validPage}/${totalPages}, total filtré: ${total})`)
     
-    // Retourner avec les métadonnées de pagination
+    // Retour avec métadonnées
     return NextResponse.json({
       data: paginatedData,
       pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-        hasMore: page < totalPages
+        page: validPage,
+        limit: limit,
+        total: total,
+        totalPages: totalPages,
+        hasMore: validPage < totalPages,
+        returned: paginatedData.length
       }
     })
     
   } catch (error) {
     console.error('❌ Erreur GET /api/prospects:', error)
     return NextResponse.json(
-      { error: 'Erreur lors de la récupération des prospects' },
+      { error: 'Erreur lors de la récupération des prospects', details: error },
       { status: 500 }
     )
   }
@@ -232,22 +257,26 @@ export async function GET(request: NextRequest) {
 // POST - Créer un nouveau prospect
 export async function POST(request: NextRequest) {
   try {
-    initializeData()
-    
+    const prospects = getProspects()
     const body = await request.json()
-    console.log('📝 POST /prospects - Données reçues:', body)
+    
+    console.log('📝 POST /prospects - Nouveau prospect')
     
     // Validation
     if (!body.nom || !body.email || !body.telephone) {
       return NextResponse.json(
-        { error: 'Données manquantes: nom, email et téléphone sont requis' },
+        { error: 'Données requises manquantes: nom, email, telephone' },
         { status: 400 }
       )
     }
     
-    // Créer le nouveau prospect
+    // Génération de l'ID
+    const newId = Math.max(...prospects.map(p => p.id), global.lastGeneratedId || 4070) + 1
+    global.lastGeneratedId = newId
+    
+    // Création du prospect
     const newProspect: Prospect = {
-      id: allProspects.length + 1,
+      id: newId,
       nom: body.nom,
       email: body.email,
       telephone: body.telephone,
@@ -261,17 +290,20 @@ export async function POST(request: NextRequest) {
       notes: body.notes,
       website: body.website,
       score: body.score || 3,
-      priority: body.priority,
+      priority: body.priority || 'Moyenne',
       quality_score: body.quality_score,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
     
-    // Ajouter à la liste
-    allProspects.unshift(newProspect)
+    // Ajout en début de liste
+    prospects.unshift(newProspect)
     
-    console.log('✅ Prospect créé:', newProspect.nom)
+    console.log(`✅ Prospect créé: ${newProspect.nom} (ID: ${newProspect.id})`)
+    console.log(`📊 Total prospects: ${prospects.length}`)
+    
     return NextResponse.json(newProspect, { status: 201 })
+    
   } catch (error) {
     console.error('❌ Erreur POST /api/prospects:', error)
     return NextResponse.json(
@@ -281,5 +313,5 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH - Mettre à jour un prospect (à implémenter dans [id]/route.ts)
-// DELETE - Supprimer un prospect (à implémenter dans [id]/route.ts)
+// PATCH - Mettre à jour un prospect (à créer dans [id]/route.ts)
+// DELETE - Supprimer un prospect (à créer dans [id]/route.ts)
