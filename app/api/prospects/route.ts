@@ -44,18 +44,20 @@ export async function POST(req: Request) {
     }
     const supabase = supabaseAdmin()
     const { data, error } = await supabase.from('prospects').insert({
-      nom: body.nom,
-      secteur: body.secteur,
-      ville: body.ville,
-      statut: body.statut,
-      region: body.region,
-      contact: body.contact || '',
-      telephone: body.telephone || '',
-      email: body.email || '',
-      score: body.score,
-      budget: body.budget || '',
-      notes: body.notes || '',
-    }).select().single()
+  nom: body.nom,
+  secteur: body.secteur,
+  ville: body.ville,
+  statut: body.statut,
+  region: body.region || body.district || 'port-louis',  // Accepter district aussi
+  contact: body.contact || '',
+  telephone: body.telephone || '',
+  email: body.email || '',
+  score: body.score,
+  budget: body.budget || '',
+  notes: body.notes || '',
+  website: body.website || '',  // Ajouter si la colonne existe
+  adresse: body.adresse || '',  // Ajouter si la colonne existe
+}).select().single()
     if (error) throw error
     return NextResponse.json(data)
   } catch (e: any) {
