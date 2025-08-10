@@ -336,23 +336,60 @@ export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => 
 
   // Import des données
   const importData = async () => {
-    if (!transformedData) return
+  if (!transformedData) return
+  
+  setImporting(true)
+  
+  try {
+    const toImport = options.skipDuplicates 
+      ? transformedData.newRecords 
+      : transformedData.data
     
-    setImporting(true)
+    let imported = 0
+    let failed = 0
     
-    try {
-      const toImport = options.skipDuplicates 
-        ? transformedData.newRecords 
-        : transformedData.data
-      
-      const response = await fetch('/api/import/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          data: toImport,
-          options: options
+    // Importer ligne par ligne
+    for (const prospect of toImport) {
+      try {
+        const response = await fetch('/api/prospects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(prospect)
         })
-      })
+        
+        if (response.ok) {
+          imported++
+        } else {
+          failed++
+        }
+      } catch (error) {
+        failed++
+      }
+    }
+    
+    toast({
+      title: 'Import terminé',
+      description: `✅ ${imported} importés, ❌ ${failed} échoués`
+    })
+    
+    setFile(null)
+    setAnalysis(null)
+    setTransformedData(null)
+    setOpen(false)
+    
+    if (onImportComplete) {
+      onImportComplete()
+    }
+  } catch (error: any) {
+    toast({
+      title: 'Erreur',
+      description: error.message,
+      variant: 'destructive'
+    })
+  } finally {
+    setImporting(false)
+  }
+}
       
       if (!response.ok) throw new Error('Erreur import')
       
