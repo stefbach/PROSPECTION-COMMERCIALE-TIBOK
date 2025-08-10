@@ -35,129 +35,108 @@ import {
   Building,
   User,
   Timer,
-  ArrowUpDown,
-  Grid,
-  List,
-  History,
-  BellRing,
-  BarChart3,
-  Briefcase,
-  UserPlus,
-  MessageSquare,
+  Car,
+  Route,
+  Navigation,
+  DollarSign,
   Activity,
   RefreshCw,
-  Info,
+  BellRing,
+  BarChart3,
   Trophy,
-  DollarSign,
-  ChevronLeft,
-  CheckSquare
+  Briefcase
 } from 'lucide-react'
 
-// Types basés sur la vraie structure de la base de données
-interface Prospect {
-  id: number
-  nom: string
-  email: string
-  telephone: string
-  adresse: string
-  ville: string
-  code_postal?: string
-  pays?: string
-  secteur: string
-  statut: 'nouveau' | 'contacte' | 'qualifie' | 'en-negociation' | 'signe' | 'perdu'
-  score?: number
-  notes?: string
-  created_at?: string
-  updated_at?: string
-  // Champs additionnels pour enrichir les données
-  contact_principal?: string
-  budget_estime?: string
-  ca_potentiel?: number
-  taille_entreprise?: string
-  dernier_contact?: string
-  prochain_contact?: string
-  besoins?: string[]
-}
+// Import des configurations Maurice depuis votre système existant
+import { MAURITIUS_CONFIG, Prospect as MauritiusProspect } from '@/lib/mauritius-config'
+import { 
+  Commercial, 
+  PlanningEvent, 
+  generateDailyPlanning, 
+  calculateDistance, 
+  calculateIndemnites 
+} from '@/lib/commercial-system'
 
+// Types étendus pour RDV
 interface RDV {
   id: number
   prospect_id: number
   titre: string
-  commercial: string
+  commercial_id: string
+  commercial_nom: string
   date_time: string
   type_visite: 'decouverte' | 'presentation' | 'negociation' | 'signature' | 'suivi' | 'support'
   priorite: 'normale' | 'haute' | 'urgente'
   duree_min: number
   notes: string
-  statut?: 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
-  prospect?: Prospect
+  statut: 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
+  prospect?: MauritiusProspect
   compte_rendu?: string
   prochaines_actions?: string
   resultat?: 'succes' | 'a-revoir' | 'echec' | 'en-attente'
+  distance_km?: number
+  temps_trajet?: number
+  indemnite_km?: number
 }
 
-interface Commercial {
-  id: string
-  nom: string
-  region: string
-  disponibilites: { date: string; creneaux: string[] }[]
-  rdv_jour: number
-  charge: number
-}
-
-// Commerciaux disponibles (à remplacer par une vraie API si disponible)
-const commercials: Commercial[] = [
+// Commercial unique : KARINE MOMUS avec accès à toute l'île Maurice
+const commerciauxMauritius: Commercial[] = [
   {
-    id: "1",
-    nom: "M. Dupont",
-    region: "Paris",
-    disponibilites: [
-      { date: "2024-01-15", creneaux: ["09:00", "10:00", "14:00", "15:00", "16:00"] },
-      { date: "2024-01-16", creneaux: ["09:00", "11:00", "14:00", "15:00"] },
-      { date: "2024-01-17", creneaux: ["10:00", "11:00", "14:00", "16:00"] }
+    id: '1',
+    userId: 'karine-momus',
+    nom: 'MOMUS',
+    prenom: 'Karine',
+    email: 'karine.momus@crm.mu',
+    telephone: '+230 5123 4567',
+    adresse: {
+      rue: 'Royal Road',
+      ville: 'Port Louis',
+      district: 'port-louis',
+      codePostal: '11328'
+    },
+    dateEmbauche: new Date('2024-01-01'),
+    statut: 'actif',
+    vehicule: {
+      type: 'personnel',
+      marque: 'Toyota',
+      modele: 'Yaris',
+      immatriculation: 'KM 2024',
+      tauxKm: 25
+    },
+    // Accès à toutes les zones de Maurice
+    zones: [
+      'port-louis', 
+      'pamplemousses', 
+      'riviere-du-rempart',
+      'flacq',
+      'grand-port',
+      'savanne',
+      'plaines-wilhems',
+      'moka',
+      'riviere-noire'
     ],
-    rdv_jour: 4,
-    charge: 75
-  },
-  {
-    id: "2",
-    nom: "Mme Martin",
-    region: "Lyon",
-    disponibilites: [
-      { date: "2024-01-15", creneaux: ["09:00", "10:00", "11:00", "14:00", "15:00"] },
-      { date: "2024-01-16", creneaux: ["09:00", "10:00", "14:00", "15:00", "16:00"] }
-    ],
-    rdv_jour: 3,
-    charge: 60
-  },
-  {
-    id: "3",
-    nom: "M. Bernard",
-    region: "PACA",
-    disponibilites: [],
-    rdv_jour: 3,
-    charge: 50
-  },
-  {
-    id: "4",
-    nom: "Mme Roux",
-    region: "Grand Est",
-    disponibilites: [],
-    rdv_jour: 4,
-    charge: 65
+    // Tous les secteurs d'activité
+    secteurs: ['hotel', 'restaurant', 'retail', 'clinique', 'pharmacie', 'wellness', 'spa', 'tourisme'],
+    objectifs: {
+      mensuel: { ca: 500000, nouveauxClients: 10, rdv: 40 },
+      annuel: { ca: 6000000, nouveauxClients: 120 }
+    }
   }
 ]
 
-export default function RdvCompletSection() {
-  // États principaux - Utilisation des vraies données de la base
-  const [prospects, setProspects] = React.useState<Prospect[]>([])
+export default function RdvMauritiusSection() {
+  // États principaux
+  const [prospects, setProspects] = React.useState<MauritiusProspect[]>([])
   const [rdvs, setRdvs] = React.useState<RDV[]>([])
+  const [commercials] = React.useState<Commercial[]>(commerciauxMauritius)
+  const selectedCommercial = commerciauxMauritius[0] // Karine MOMUS toujours sélectionnée
+  const [planning, setPlanning] = React.useState<PlanningEvent[]>([])
   const [loading, setLoading] = React.useState(true)
   const [activeTab, setActiveTab] = React.useState("planning")
   
-  // États pour le formulaire RDV
-  const [selectedProspect, setSelectedProspect] = React.useState<Prospect | null>(null)
-  const [selectedCommercial, setSelectedCommercial] = React.useState<Commercial | null>(null)
+  // États pour le formulaire RDV  
+  const [selectedProspect, setSelectedProspect] = React.useState<MauritiusProspect | null>(null)
+  const selectedCommercial = commerciauxMauritius[0] // Karine Momus toujours sélectionnée
   const [selectedDate, setSelectedDate] = React.useState("")
   const [selectedTime, setSelectedTime] = React.useState("")
   const [typeVisite, setTypeVisite] = React.useState<RDV['type_visite']>("decouverte")
@@ -165,163 +144,157 @@ export default function RdvCompletSection() {
   const [duree, setDuree] = React.useState("60")
   const [notes, setNotes] = React.useState("")
   
-  // États pour les filtres et recherche
+  // États pour les filtres
   const [searchTerm, setSearchTerm] = React.useState("")
+  const [filterDistrict, setFilterDistrict] = React.useState("all")
   const [filterSecteur, setFilterSecteur] = React.useState("all")
   const [filterStatut, setFilterStatut] = React.useState("all")
-  const [filterScore, setFilterScore] = React.useState("all")
   const [viewMode, setViewMode] = React.useState<'grid' | 'list'>('grid')
   const [showProspectDetails, setShowProspectDetails] = React.useState(false)
   const [showNewProspect, setShowNewProspect] = React.useState(false)
   
-  // États pour le formulaire nouveau prospect
-  const [newProspect, setNewProspect] = React.useState<Partial<Prospect>>({
+  // État pour le nouveau prospect
+  const [newProspect, setNewProspect] = React.useState<Partial<MauritiusProspect>>({
     nom: '',
-    email: '',
-    telephone: '',
-    adresse: '',
+    secteur: 'hotel',
     ville: '',
-    code_postal: '',
-    pays: 'France',
-    secteur: 'Santé',
+    district: 'port-louis',
     statut: 'nouveau',
-    notes: ''
+    contact: '',
+    telephone: '',
+    email: '',
+    score: 3,
+    budget: '',
+    notes: '',
+    adresse: ''
   })
   
   const { toast } = useToast()
   const today = new Date().toISOString().split("T")[0]
 
-  // Chargement des données depuis la vraie base de données
+  // Chargement des données
   async function loadProspects() {
     try {
-      console.log('Chargement des prospects...')
-      const response = await fetch('/api/prospects', { 
+      const response = await fetch('/api/prospects/mauritius', { 
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         cache: 'no-store' 
       })
       
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      console.log('Prospects reçus:', data)
-      
-      if (Array.isArray(data)) {
-        // Enrichir les données avec des valeurs par défaut si nécessaire
-        const enrichedProspects = data.map((p: Prospect) => ({
-          ...p,
-          score: p.score || Math.floor(Math.random() * 10) + 1, // Score aléatoire si pas défini
-          ca_potentiel: p.ca_potentiel || Math.floor(Math.random() * 100000) + 10000
-        }))
-        setProspects(enrichedProspects)
-        console.log(`${enrichedProspects.length} prospects chargés`)
+      if (response.ok) {
+        const data = await response.json()
+        setProspects(Array.isArray(data) ? data : [])
       } else {
-        console.warn('Les données reçues ne sont pas un tableau:', data)
-        setProspects([])
+        // Données de démonstration pour Maurice
+        setProspects([
+          {
+            id: 1,
+            nom: "Hotel Le Meridien",
+            secteur: "hotel",
+            ville: "Port Louis",
+            district: "port-louis",
+            statut: "en-negociation",
+            contact: "M. Kumar",
+            telephone: "+230 5234 5678",
+            email: "contact@meridien.mu",
+            score: 5,
+            budget: "Rs 200k",
+            notes: "Très intéressé par notre solution",
+            adresse: "Caudan Waterfront"
+          },
+          {
+            id: 2,
+            nom: "Restaurant Le Capitaine",
+            secteur: "restaurant",
+            ville: "Curepipe",
+            district: "plaines-wilhems",
+            statut: "qualifie",
+            contact: "Mme Leclerc",
+            telephone: "+230 5345 6789",
+            email: "info@lecapitaine.mu",
+            score: 4,
+            budget: "Rs 80k",
+            notes: "RDV prévu cette semaine",
+            adresse: "Royal Road, Curepipe"
+          },
+          {
+            id: 3,
+            nom: "Winners Supermarket",
+            secteur: "retail",
+            ville: "Phoenix",
+            district: "plaines-wilhems",
+            statut: "nouveau",
+            contact: "M. Patel",
+            telephone: "+230 5456 7890",
+            email: "manager@winners.mu",
+            score: 3,
+            budget: "À définir",
+            notes: "Premier contact à établir",
+            adresse: "Phoenix Mall"
+          },
+          {
+            id: 4,
+            nom: "Spa Attitude",
+            secteur: "spa",
+            ville: "Grand Baie",
+            district: "riviere-du-rempart",
+            statut: "contacte",
+            contact: "Mme Ramgoolam",
+            telephone: "+230 5567 8901",
+            email: "spa@attitude.mu",
+            score: 4,
+            budget: "Rs 150k",
+            notes: "Intéressé par package wellness",
+            adresse: "Royal Road, Grand Baie"
+          }
+        ])
       }
     } catch (error) {
-      console.error('Erreur détaillée chargement prospects:', error)
-      toast({
-        title: "Erreur de connexion",
-        description: "Impossible de charger les prospects. Vérifiez votre connexion.",
-        variant: "destructive"
-      })
-      // Données de démonstration si l'API ne fonctionne pas
-      setProspects([
-        {
-          id: 1,
-          nom: "Exemple Clinique Saint-Martin",
-          email: "contact@exemple.fr",
-          telephone: "+33 1 23 45 67 89",
-          adresse: "123 rue Exemple",
-          ville: "Paris",
-          code_postal: "75001",
-          secteur: "Santé",
-          statut: "nouveau",
-          notes: "Prospect de démonstration"
-        },
-        {
-          id: 2,
-          nom: "Exemple EHPAD Les Jardins",
-          email: "info@exemple2.fr",
-          telephone: "+33 1 98 76 54 32",
-          adresse: "456 avenue Test",
-          ville: "Lyon",
-          code_postal: "69001",
-          secteur: "Senior",
-          statut: "qualifie",
-          notes: "Second prospect de démonstration"
-        }
-      ])
+      console.error('Erreur chargement prospects:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
   async function loadRdvs() {
     try {
-      console.log('Chargement des RDV...')
-      const response = await fetch('/api/rdv', { 
+      const response = await fetch('/api/rdv/mauritius', { 
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         cache: 'no-store' 
       })
       
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      console.log('RDV reçus:', data)
-      
-      if (Array.isArray(data)) {
-        // Enrichir les RDV avec les données prospects
+      if (response.ok) {
+        const data = await response.json()
         const enrichedRdvs = data.map((rdv: RDV) => ({
           ...rdv,
           prospect: prospects.find(p => p.id === rdv.prospect_id)
         }))
-        setRdvs(enrichedRdvs)
-        console.log(`${enrichedRdvs.length} RDV chargés`)
-      } else {
-        console.warn('Les données RDV reçues ne sont pas un tableau:', data)
-        setRdvs([])
+        setRdvs(Array.isArray(enrichedRdvs) ? enrichedRdvs : [])
       }
     } catch (error) {
-      console.error('Erreur détaillée chargement RDV:', error)
-      setRdvs([])
+      console.error('Erreur chargement RDV:', error)
     }
   }
 
+  // Générer le planning optimisé pour Karine
+  React.useEffect(() => {
+    if (prospects.length > 0) {
+      const dailyPlanning = generateDailyPlanning(selectedCommercial, prospects, new Date())
+      setPlanning(dailyPlanning.events)
+    }
+  }, [prospects])
+
   // Chargement initial
   React.useEffect(() => {
-    async function loadData() {
-      setLoading(true)
-      await loadProspects()
-      setLoading(false)
-    }
-    loadData()
+    loadProspects()
   }, [])
 
-  // Charger les RDV quand les prospects sont chargés
   React.useEffect(() => {
     if (prospects.length > 0) {
       loadRdvs()
     }
   }, [prospects])
-
-  // Actualiser périodiquement les données
-  React.useEffect(() => {
-    const interval = setInterval(() => {
-      loadProspects()
-      loadRdvs()
-    }, 30000) // Toutes les 30 secondes
-
-    return () => clearInterval(interval)
-  }, [])
 
   // Filtrage des prospects
   const filteredProspects = React.useMemo(() => {
@@ -331,10 +304,13 @@ export default function RdvCompletSection() {
       filtered = filtered.filter(p =>
         p.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.ville.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.secteur.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.telephone && p.telephone.includes(searchTerm))
+        p.contact?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.secteur.toLowerCase().includes(searchTerm.toLowerCase())
       )
+    }
+    
+    if (filterDistrict !== 'all') {
+      filtered = filtered.filter(p => p.district === filterDistrict)
     }
     
     if (filterSecteur !== 'all') {
@@ -345,44 +321,48 @@ export default function RdvCompletSection() {
       filtered = filtered.filter(p => p.statut === filterStatut)
     }
     
-    if (filterScore !== 'all') {
-      const score = p.score || 5
-      if (filterScore === 'high') filtered = filtered.filter(p => score >= 8)
-      else if (filterScore === 'medium') filtered = filtered.filter(p => score >= 5 && score < 8)
-      else if (filterScore === 'low') filtered = filtered.filter(p => score < 5)
-    }
-    
-    // Tri par score décroissant (ou par date de création si pas de score)
-    filtered.sort((a, b) => {
-      if (a.score && b.score) return b.score - a.score
-      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-    })
+    // Tri par score décroissant
+    filtered.sort((a, b) => (b.score || 0) - (a.score || 0))
     
     return filtered
-  }, [prospects, searchTerm, filterSecteur, filterStatut, filterScore])
+  }, [prospects, searchTerm, filterDistrict, filterSecteur, filterStatut])
 
-  // Suggestions intelligentes de prospects à contacter
+  // Les RDV sont tous pour Karine, pas besoin de filtrer
+  const filteredRdvs = React.useMemo(() => {
+    return rdvs.sort((a, b) => 
+      new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
+    )
+  }, [rdvs])
+
+  // Suggestions de prospects prioritaires (toute l'île)
   const suggestedProspects = React.useMemo(() => {
     return prospects
       .filter(p => {
-        // Prospects nouveaux ou qualifiés non contactés récemment
-        return (p.statut === 'nouveau' || p.statut === 'qualifie') && p.statut !== 'signe' && p.statut !== 'perdu'
+        // Prospects avec statut prioritaire
+        const isPriority = p.statut === 'nouveau' || p.statut === 'qualifie'
+        return isPriority
       })
-      .sort((a, b) => {
-        const scoreA = a.score || 5
-        const scoreB = b.score || 5
-        return scoreB - scoreA
-      })
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
       .slice(0, 5)
   }, [prospects])
 
-  // Extraction des secteurs uniques depuis les vrais données
-  const secteurs = React.useMemo(() => {
-    const uniqueSecteurs = [...new Set(prospects.map(p => p.secteur).filter(Boolean))]
-    return uniqueSecteurs
+  // Statistiques par district
+  const statsByDistrict = React.useMemo(() => {
+    const stats: Record<string, { total: number; nouveaux: number; signes: number }> = {}
+    
+    Object.keys(MAURITIUS_CONFIG.districts).forEach(district => {
+      const districtProspects = prospects.filter(p => p.district === district)
+      stats[district] = {
+        total: districtProspects.length,
+        nouveaux: districtProspects.filter(p => p.statut === 'nouveau').length,
+        signes: districtProspects.filter(p => p.statut === 'signe').length
+      }
+    })
+    
+    return stats
   }, [prospects])
 
-  // Statistiques basées sur les vraies données
+  // Statistiques globales
   const stats = React.useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -392,23 +372,24 @@ export default function RdvCompletSection() {
       nouveaux: prospects.filter(p => p.statut === 'nouveau').length,
       enCours: prospects.filter(p => ['contacte', 'qualifie', 'en-negociation'].includes(p.statut)).length,
       signes: prospects.filter(p => p.statut === 'signe').length,
-      aContacter: suggestedProspects.length,
       rdvSemaine: rdvs.filter(r => {
         const rdvDate = new Date(r.date_time)
         const weekFromNow = new Date(today)
         weekFromNow.setDate(weekFromNow.getDate() + 7)
         return rdvDate >= today && rdvDate <= weekFromNow
       }).length,
-      caPotentiel: prospects.reduce((sum, p) => sum + (p.ca_potentiel || 0), 0),
-      tauxConversion: prospects.length > 0 
-        ? Math.round((prospects.filter(p => p.statut === 'signe').length / prospects.length) * 100)
-        : 0
+      kmPrevus: planning
+        .filter(e => e.type === 'trajet')
+        .reduce((sum, e) => sum + (e.trajet?.distance || 0), 0),
+      indemnites: planning
+        .filter(e => e.type === 'trajet')
+        .reduce((sum, e) => sum + calculateIndemnites(e.trajet?.distance || 0), 0)
     }
-  }, [prospects, rdvs, suggestedProspects])
+  }, [prospects, rdvs, planning])
 
-  // Créer un RDV
+  // Créer un RDV avec calcul de distance
   async function createRdv() {
-    if (!selectedProspect || !selectedCommercial || !selectedDate || !selectedTime) {
+    if (!selectedProspect || !selectedDate || !selectedTime) {
       toast({ 
         title: "Erreur", 
         description: "Veuillez remplir tous les champs obligatoires",
@@ -418,83 +399,50 @@ export default function RdvCompletSection() {
     }
 
     try {
+      // Calculer la distance depuis le bureau de Karine
+      const distance = calculateDistance(
+        selectedCommercial.adresse.district,
+        selectedProspect.district
+      )
+      
       const rdvData = {
         prospect_id: selectedProspect.id,
         titre: `RDV - ${selectedProspect.nom}`,
-        commercial: selectedCommercial.nom,
+        commercial_id: selectedCommercial.id,
+        commercial_nom: `${selectedCommercial.prenom} ${selectedCommercial.nom}`,
         date_time: new Date(`${selectedDate}T${selectedTime}:00`).toISOString(),
         type_visite: typeVisite,
         priorite: priorite,
         duree_min: parseInt(duree),
         notes: notes || '',
-        statut: 'planifie'
+        statut: 'planifie' as const,
+        distance_km: distance,
+        temps_trajet: Math.round(distance * 2.5), // Estimation 2.5 min/km à Maurice
+        indemnite_km: calculateIndemnites(distance)
       }
 
-      console.log('Création RDV avec données:', rdvData)
-
-      const response = await fetch('/api/rdv', {
+      const response = await fetch('/api/rdv/mauritius', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(rdvData)
       })
 
-      console.log('Réponse création RDV:', response.status)
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('Erreur API:', errorText)
-        throw new Error(`Erreur création RDV: ${response.status}`)
+      if (response.ok) {
+        const createdRdv = await response.json()
+        setRdvs(prev => [...prev, { ...createdRdv, prospect: selectedProspect }])
+        
+        toast({ 
+          title: "✅ RDV planifié avec succès", 
+          description: `${selectedProspect.nom} - ${MAURITIUS_CONFIG.districts[selectedProspect.district].label} (${distance}km - Rs ${calculateIndemnites(distance)})`
+        })
+        
+        resetRdvForm()
+        setActiveTab("planning")
       }
-
-      const createdRdv = await response.json()
-      console.log('RDV créé:', createdRdv)
-
-      // Ajouter le RDV localement immédiatement pour feedback rapide
-      const newRdv = {
-        ...rdvData,
-        id: createdRdv.id || Date.now(),
-        prospect: selectedProspect
-      }
-      setRdvs(prev => [...prev, newRdv])
-      
-      // Mettre à jour le statut du prospect si nécessaire
-      if (selectedProspect.statut === 'nouveau') {
-        try {
-          await fetch(`/api/prospects/${selectedProspect.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ statut: 'contacte' })
-          })
-          // Mettre à jour localement
-          setProspects(prev => prev.map(p => 
-            p.id === selectedProspect.id 
-              ? { ...p, statut: 'contacte' }
-              : p
-          ))
-        } catch (error) {
-          console.error('Erreur mise à jour prospect:', error)
-        }
-      }
-
-      toast({ 
-        title: "✅ RDV planifié avec succès", 
-        description: `RDV avec ${selectedProspect.nom} le ${new Date(selectedDate).toLocaleDateString('fr-FR')} à ${selectedTime}`
-      })
-
-      resetRdvForm()
-      
-      // Recharger les données après un délai
-      setTimeout(() => {
-        loadRdvs()
-      }, 1000)
-      
     } catch (error) {
-      console.error('Erreur complète création RDV:', error)
       toast({ 
-        title: "Erreur de création", 
-        description: "Impossible de créer le RDV. Vérifiez les données et réessayez.",
+        title: "Erreur", 
+        description: "Impossible de créer le RDV",
         variant: "destructive"
       })
     }
@@ -502,7 +450,6 @@ export default function RdvCompletSection() {
 
   function resetRdvForm() {
     setSelectedProspect(null)
-    setSelectedCommercial(null)
     setSelectedDate("")
     setSelectedTime("")
     setTypeVisite("decouverte")
@@ -515,95 +462,48 @@ export default function RdvCompletSection() {
   async function createProspect(e: React.FormEvent) {
     e.preventDefault()
     
-    if (!newProspect.nom || !newProspect.email || !newProspect.telephone) {
+    if (!newProspect.nom || !newProspect.contact || !newProspect.telephone) {
       toast({ 
         title: "Erreur", 
-        description: "Veuillez remplir tous les champs obligatoires (nom, email, téléphone)",
+        description: "Veuillez remplir les champs obligatoires",
         variant: "destructive"
       })
       return
     }
 
     try {
-      console.log('Création prospect avec données:', newProspect)
-      
-      const response = await fetch('/api/prospects', {
+      const response = await fetch('/api/prospects/mauritius', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...newProspect,
-          statut: newProspect.statut || 'nouveau'
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProspect)
+      })
+
+      if (response.ok) {
+        await loadProspects()
+        toast({ 
+          title: "✅ Prospect créé", 
+          description: `${newProspect.nom} ajouté dans ${MAURITIUS_CONFIG.districts[newProspect.district!].label}`
         })
-      })
-
-      console.log('Réponse création prospect:', response.status)
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('Erreur API prospect:', errorText)
-        throw new Error(`Erreur: ${response.status}`)
+        setShowNewProspect(false)
+        setNewProspect({
+          nom: '',
+          secteur: 'hotel',
+          ville: '',
+          district: 'port-louis',
+          statut: 'nouveau',
+          contact: '',
+          telephone: '',
+          email: '',
+          score: 3,
+          budget: '',
+          notes: '',
+          adresse: ''
+        })
       }
-
-      const createdProspect = await response.json()
-      console.log('Prospect créé:', createdProspect)
-      
-      // Ajouter localement pour feedback immédiat
-      setProspects(prev => [...prev, createdProspect])
-      
-      toast({ 
-        title: "✅ Prospect créé avec succès", 
-        description: `${newProspect.nom} a été ajouté à la base`
-      })
-
-      setShowNewProspect(false)
-      setNewProspect({
-        nom: '',
-        email: '',
-        telephone: '',
-        adresse: '',
-        ville: '',
-        code_postal: '',
-        pays: 'France',
-        secteur: 'Santé',
-        statut: 'nouveau',
-        notes: ''
-      })
-      
-      // Recharger après un délai
-      setTimeout(() => {
-        loadProspects()
-      }, 1000)
-      
-    } catch (error) {
-      console.error('Erreur complète création prospect:', error)
-      toast({ 
-        title: "Erreur de création", 
-        description: "Impossible de créer le prospect. Vérifiez votre connexion et les données.",
-        variant: "destructive"
-      })
-    }
-  }
-
-  // Supprimer un RDV
-  async function deleteRdv(rdvId: number) {
-    try {
-      const response = await fetch(`/api/rdv?id=${rdvId}`, {
-        method: 'DELETE'
-      })
-
-      if (!response.ok) throw new Error('Erreur suppression RDV')
-
-      await loadRdvs()
-      toast({ 
-        title: "✅ RDV supprimé", 
-        description: "Le rendez-vous a été supprimé"
-      })
     } catch (error) {
       toast({ 
         title: "Erreur", 
-        description: "Impossible de supprimer le RDV",
+        description: "Impossible de créer le prospect",
         variant: "destructive"
       })
     }
@@ -614,7 +514,7 @@ export default function RdvCompletSection() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-500" />
-          <p className="text-muted-foreground">Chargement des données...</p>
+          <p className="text-muted-foreground">Chargement des données Maurice...</p>
         </div>
       </div>
     )
@@ -622,38 +522,31 @@ export default function RdvCompletSection() {
 
   return (
     <div className="space-y-6">
-      {/* Header avec stats */}
+      {/* Header avec contexte Maurice */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">
-              Gestion Complète des Rendez-Vous
+              Gestion des Rendez-Vous - Île Maurice
             </h2>
             <p className="text-gray-600">
-              {prospects.length > 0 
-                ? `${prospects.length} prospects dans la base • ${rdvs.length} RDV planifiés`
-                : "Connexion à la base de données..."}
+              Commercial: <strong>Karine MOMUS</strong> • {prospects.length} prospects • {rdvs.length} RDV planifiés
             </p>
           </div>
           <div className="flex gap-2">
             <Button 
               variant="outline" 
               onClick={async () => {
-                setLoading(true)
                 await loadProspects()
                 await loadRdvs()
-                setLoading(false)
-                toast({
-                  title: "✅ Données actualisées",
-                  description: `${prospects.length} prospects et ${rdvs.length} RDV chargés`
-                })
+                toast({ title: "✅ Données actualisées" })
               }}
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className="h-4 w-4 mr-2" />
               Actualiser
             </Button>
             <Button variant="outline" onClick={() => setShowNewProspect(true)}>
-              <UserPlus className="h-4 w-4 mr-2" />
+              <Building className="h-4 w-4 mr-2" />
               Nouveau Prospect
             </Button>
             <Button onClick={() => setActiveTab("nouveau-rdv")}>
@@ -663,7 +556,7 @@ export default function RdvCompletSection() {
           </div>
         </div>
 
-        {/* KPIs */}
+        {/* KPIs avec focus Maurice */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
           <Card>
             <CardContent className="p-3">
@@ -684,7 +577,7 @@ export default function RdvCompletSection() {
                   <p className="text-xs text-muted-foreground">Nouveaux</p>
                   <p className="text-xl font-bold">{stats.nouveaux}</p>
                 </div>
-                <UserPlus className="h-6 w-6 text-green-500" />
+                <Target className="h-6 w-6 text-green-500" />
               </div>
             </CardContent>
           </Card>
@@ -717,18 +610,6 @@ export default function RdvCompletSection() {
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground">À contacter</p>
-                  <p className="text-xl font-bold text-red-600">{stats.aContacter}</p>
-                </div>
-                <BellRing className="h-6 w-6 text-red-500" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between">
-                <div>
                   <p className="text-xs text-muted-foreground">RDV/sem</p>
                   <p className="text-xl font-bold">{stats.rdvSemaine}</p>
                 </div>
@@ -741,8 +622,20 @@ export default function RdvCompletSection() {
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground">CA potentiel</p>
-                  <p className="text-lg font-bold">{(stats.caPotentiel / 1000).toFixed(0)}k€</p>
+                  <p className="text-xs text-muted-foreground">Km prévus</p>
+                  <p className="text-xl font-bold">{stats.kmPrevus}</p>
+                </div>
+                <Car className="h-6 w-6 text-red-500" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">Indemnités</p>
+                  <p className="text-lg font-bold">Rs {stats.indemnites}</p>
                 </div>
                 <DollarSign className="h-6 w-6 text-green-600" />
               </div>
@@ -753,26 +646,26 @@ export default function RdvCompletSection() {
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground">Conversion</p>
-                  <p className="text-xl font-bold">{stats.tauxConversion}%</p>
+                  <p className="text-xs text-muted-foreground">Districts</p>
+                  <p className="text-xl font-bold">9</p>
                 </div>
-                <BarChart3 className="h-6 w-6 text-blue-600" />
+                <MapPin className="h-6 w-6 text-blue-600" />
               </div>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Alertes et suggestions */}
+      {/* Alertes pour prospects prioritaires */}
       {suggestedProspects.length > 0 && (
         <Alert className="bg-amber-50 border-amber-200">
           <BellRing className="h-4 w-4 text-amber-600" />
           <AlertDescription>
-            <strong className="text-amber-900">Prospects prioritaires :</strong>{' '}
+            <strong className="text-amber-900">Prospects prioritaires à contacter :</strong>{' '}
             <span className="text-amber-800">
-              {suggestedProspects.length} prospect(s) à contacter : {' '}
-              {suggestedProspects.slice(0, 3).map(p => p.nom).join(', ')}
-              {suggestedProspects.length > 3 && '...'}
+              {suggestedProspects.map(p => 
+                `${p.nom} (${MAURITIUS_CONFIG.districts[p.district].label})`
+              ).join(', ')}
             </span>
           </AlertDescription>
         </Alert>
@@ -780,110 +673,157 @@ export default function RdvCompletSection() {
 
       {/* Tabs principales */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="planning">
-            <Calendar className="h-4 w-4 mr-2" />
+            <Route className="h-4 w-4 mr-2" />
             Planning
           </TabsTrigger>
           <TabsTrigger value="prospects">
             <Users className="h-4 w-4 mr-2" />
-            Base Prospects
+            Prospects
           </TabsTrigger>
           <TabsTrigger value="nouveau-rdv">
             <Plus className="h-4 w-4 mr-2" />
             Nouveau RDV
           </TabsTrigger>
-          <TabsTrigger value="analytics">
+          <TabsTrigger value="carte">
+            <MapPin className="h-4 w-4 mr-2" />
+            Carte
+          </TabsTrigger>
+          <TabsTrigger value="stats">
             <BarChart3 className="h-4 w-4 mr-2" />
-            Analytics
+            Statistiques
           </TabsTrigger>
         </TabsList>
 
-        {/* Tab Planning */}
+        {/* Tab Planning Optimisé */}
         <TabsContent value="planning" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Planning de la semaine</CardTitle>
+              <CardTitle>Planning optimisé du jour - Karine MOMUS</CardTitle>
               <CardDescription>
-                Vue d'ensemble des RDV planifiés
+                Circuit optimisé par zones pour minimiser les distances dans toute l'île Maurice
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* RDV du jour et à venir */}
-              <div className="space-y-4">
-                <h4 className="font-semibold">Prochains rendez-vous</h4>
+              {/* Planning du jour */}
+              {planning.length > 0 ? (
                 <div className="space-y-2">
-                  {rdvs
-                    .filter(r => new Date(r.date_time) >= new Date())
-                    .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
-                    .slice(0, 10)
-                    .map(rdv => (
-                      <div key={rdv.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                        <div className="flex items-center gap-3">
+                  {planning.map((event, index) => (
+                    <div key={event.id} className={`border rounded-lg p-4 ${
+                      event.type === 'trajet' ? 'bg-green-50' :
+                      event.type === 'rdv' ? 'bg-blue-50' :
+                      event.type === 'pause' ? 'bg-yellow-50' :
+                      'bg-gray-50'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
                           <div className="text-center">
-                            <div className="text-sm font-bold">
-                              {new Date(rdv.date_time).toLocaleDateString('fr-FR', {
-                                day: '2-digit',
-                                month: 'short'
-                              })}
-                            </div>
-                            <div className="text-lg">
-                              {new Date(rdv.date_time).toLocaleTimeString('fr-FR', {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </div>
+                            <p className="text-lg font-bold">{event.heureDebut}</p>
+                            <p className="text-xs text-muted-foreground">{event.duree} min</p>
                           </div>
-                          <div>
-                            <div className="font-medium">{rdv.prospect?.nom || rdv.titre}</div>
-                            <div className="text-sm text-gray-500">
-                              {rdv.commercial} • {rdv.type_visite} • {rdv.duree_min} min
-                            </div>
-                            {rdv.prospect && (
-                              <div className="text-xs text-gray-400">
-                                {rdv.prospect.ville} • {rdv.prospect.secteur}
-                              </div>
+                          
+                          <div className={`h-10 w-10 rounded-full flex items-center justify-center
+                            ${event.type === 'rdv' ? 'bg-blue-100 text-blue-600' :
+                              event.type === 'trajet' ? 'bg-green-100 text-green-600' :
+                              event.type === 'pause' ? 'bg-yellow-100 text-yellow-600' :
+                              'bg-gray-100 text-gray-600'}`}>
+                            {event.type === 'rdv' ? <Users className="h-5 w-5" /> :
+                             event.type === 'trajet' ? <Route className="h-5 w-5" /> :
+                             event.type === 'pause' ? <Clock className="h-5 w-5" /> :
+                             <Activity className="h-5 w-5" />}
+                          </div>
+                          
+                          <div className="flex-1">
+                            {event.type === 'rdv' && event.prospect && (
+                              <>
+                                <p className="font-medium">{event.prospect.nom}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  {event.prospect.contact} • {MAURITIUS_CONFIG.districts[event.prospect.district].label}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {MAURITIUS_CONFIG.secteurs[event.prospect.secteur].label}
+                                  </Badge>
+                                  {event.scoreOpportunite && (
+                                    <Badge variant="outline" className="text-xs">
+                                      Score: {event.scoreOpportunite}%
+                                    </Badge>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                            
+                            {event.type === 'trajet' && event.trajet && (
+                              <>
+                                <p className="font-medium">
+                                  Trajet: {MAURITIUS_CONFIG.districts[event.trajet.depart]?.label || event.trajet.depart} → {MAURITIUS_CONFIG.districts[event.trajet.arrivee]?.label || event.trajet.arrivee}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {event.trajet.distance} km • {event.trajet.duree} min • Rs {calculateIndemnites(event.trajet.distance)}
+                                </p>
+                              </>
+                            )}
+                            
+                            {event.type === 'pause' && (
+                              <p className="font-medium">Pause déjeuner</p>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={
-                            rdv.priorite === 'urgente' ? 'destructive' : 
-                            rdv.priorite === 'haute' ? 'default' : 
-                            'secondary'
-                          }>
-                            {rdv.priorite}
-                          </Badge>
-                          <Button 
-                            size="sm" 
-                            variant="ghost"
-                            onClick={() => deleteRdv(rdv.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Résumé du planning */}
+                  <Card className="mt-4 bg-gray-50">
+                    <CardContent className="p-4">
+                      <div className="grid grid-cols-4 gap-4 text-center">
+                        <div>
+                          <p className="text-sm text-muted-foreground">RDV</p>
+                          <p className="text-xl font-bold">
+                            {planning.filter(e => e.type === 'rdv').length}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Distance totale</p>
+                          <p className="text-xl font-bold">
+                            {planning.filter(e => e.type === 'trajet').reduce((sum, e) => sum + (e.trajet?.distance || 0), 0)} km
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Temps route</p>
+                          <p className="text-xl font-bold">
+                            {Math.round(planning.filter(e => e.type === 'trajet').reduce((sum, e) => sum + (e.trajet?.duree || 0), 0) / 60)}h
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Indemnités</p>
+                          <p className="text-xl font-bold">
+                            Rs {planning.filter(e => e.type === 'trajet').reduce((sum, e) => sum + calculateIndemnites(e.trajet?.distance || 0), 0)}
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  
-                  {rdvs.filter(r => new Date(r.date_time) >= new Date()).length === 0 && (
-                    <p className="text-center text-gray-500 py-4">Aucun rendez-vous planifié</p>
-                  )}
+                    </CardContent>
+                  </Card>
                 </div>
-              </div>
+              ) : (
+                <p className="text-center text-gray-500 py-8">
+                  Aucun RDV planifié pour aujourd'hui
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Tab Base Prospects */}
+        {/* Tab Prospects avec filtres par district */}
         <TabsContent value="prospects" className="space-y-4">
-          {/* Barre de recherche et filtres */}
           <Card>
             <CardContent className="p-4">
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Rechercher un prospect (nom, ville, email, téléphone)..."
+                    placeholder="Rechercher un prospect..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10"
@@ -893,12 +833,23 @@ export default function RdvCompletSection() {
                 <div className="flex gap-2">
                   <select
                     className="border rounded-md px-3 py-2 text-sm"
+                    value={filterDistrict}
+                    onChange={(e) => setFilterDistrict(e.target.value)}
+                  >
+                    <option value="all">Tous les districts</option>
+                    {Object.entries(MAURITIUS_CONFIG.districts).map(([key, district]) => (
+                      <option key={key} value={key}>{district.label}</option>
+                    ))}
+                  </select>
+                  
+                  <select
+                    className="border rounded-md px-3 py-2 text-sm"
                     value={filterSecteur}
                     onChange={(e) => setFilterSecteur(e.target.value)}
                   >
-                    <option value="all">Tous secteurs</option>
-                    {secteurs.map(secteur => (
-                      <option key={secteur} value={secteur}>{secteur}</option>
+                    <option value="all">Tous les secteurs</option>
+                    {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, secteur]) => (
+                      <option key={key} value={key}>{secteur.label}</option>
                     ))}
                   </select>
                   
@@ -907,451 +858,340 @@ export default function RdvCompletSection() {
                     value={filterStatut}
                     onChange={(e) => setFilterStatut(e.target.value)}
                   >
-                    <option value="all">Tous statuts</option>
-                    <option value="nouveau">Nouveau</option>
-                    <option value="contacte">Contacté</option>
-                    <option value="qualifie">Qualifié</option>
-                    <option value="en-negociation">En négociation</option>
-                    <option value="signe">Signé</option>
-                    <option value="perdu">Perdu</option>
+                    <option value="all">Tous les statuts</option>
+                    {Object.entries(MAURITIUS_CONFIG.statuts).map(([key, statut]) => (
+                      <option key={key} value={key}>{statut.label}</option>
+                    ))}
                   </select>
-                  
-                  <div className="flex gap-1 border rounded-md">
-                    <Button
-                      size="sm"
-                      variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                      onClick={() => setViewMode('grid')}
-                      className="rounded-r-none"
-                    >
-                      <Grid className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={viewMode === 'list' ? 'default' : 'ghost'}
-                      onClick={() => setViewMode('list')}
-                      className="rounded-l-none"
-                    >
-                      <List className="h-4 w-4" />
-                    </Button>
-                  </div>
                 </div>
               </div>
-              
-              {filteredProspects.length !== prospects.length && (
-                <Alert className="mt-4">
-                  <AlertDescription>
-                    {filteredProspects.length} résultat(s) sur {prospects.length} prospects
-                  </AlertDescription>
-                </Alert>
-              )}
             </CardContent>
           </Card>
 
-          {/* Liste des prospects avec actions RDV */}
           <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-4'}>
             {filteredProspects.map(prospect => (
-              <ProspectCard
-                key={prospect.id}
-                prospect={prospect}
-                viewMode={viewMode}
-                onSelectForRdv={() => {
-                  setSelectedProspect(prospect)
-                  setActiveTab("nouveau-rdv")
-                }}
-                onViewDetails={() => {
-                  setSelectedProspect(prospect)
-                  setShowProspectDetails(true)
-                }}
-              />
+              <Card key={prospect.id} className="hover:shadow-lg transition-shadow">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h4 className="font-semibold">{prospect.nom}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {MAURITIUS_CONFIG.secteurs[prospect.secteur].icon} {MAURITIUS_CONFIG.secteurs[prospect.secteur].label}
+                      </p>
+                    </div>
+                    <Badge variant={
+                      prospect.statut === 'signe' ? 'default' :
+                      prospect.statut === 'en-negociation' ? 'secondary' :
+                      'outline'
+                    }>
+                      {MAURITIUS_CONFIG.statuts[prospect.statut].label}
+                    </Badge>
+                  </div>
+                  
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                      <span>{prospect.ville}, {MAURITIUS_CONFIG.districts[prospect.district].label}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      <span>{prospect.contact}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <span>{prospect.telephone}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="h-4 w-4 text-muted-foreground" />
+                      <span>Budget: {prospect.budget}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-1 my-3">
+                    {[...Array(5)].map((_, i) => (
+                      <Star 
+                        key={i} 
+                        className={`h-4 w-4 ${i < prospect.score ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`}
+                      />
+                    ))}
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Button 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => {
+                        setSelectedProspect(prospect)
+                        setActiveTab("nouveau-rdv")
+                      }}
+                    >
+                      <Calendar className="h-4 w-4 mr-1" />
+                      Planifier RDV
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
-
-          {filteredProspects.length === 0 && (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">
-                  {searchTerm || filterSecteur !== 'all' || filterStatut !== 'all' 
-                    ? "Aucun prospect ne correspond à vos critères"
-                    : "Aucun prospect dans la base de données"}
-                </p>
-              </CardContent>
-            </Card>
-          )}
         </TabsContent>
 
-        {/* Tab Nouveau RDV avec accès prospects */}
+        {/* Tab Nouveau RDV avec vérification des zones */}
         <TabsContent value="nouveau-rdv" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Colonne gauche: Sélection prospect */}
-            <Card className="lg:col-span-1">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Sélection du prospect */}
+            <Card>
               <CardHeader>
                 <CardTitle className="text-lg">1. Sélectionner un prospect</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {/* Suggestions prioritaires */}
-                {suggestedProspects.length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="text-sm font-medium mb-2 text-red-600">
-                      ⚠️ À contacter en priorité
-                    </h4>
-                    <div className="space-y-2">
-                      {suggestedProspects.slice(0, 3).map(prospect => (
-                        <div
-                          key={prospect.id}
-                          className={`p-2 border rounded-lg cursor-pointer hover:bg-gray-50 ${
-                            selectedProspect?.id === prospect.id ? 'bg-blue-50 border-blue-300' : ''
-                          }`}
-                          onClick={() => setSelectedProspect(prospect)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium text-sm">{prospect.nom}</div>
-                              <div className="text-xs text-gray-500">{prospect.ville}</div>
-                            </div>
-                            <Badge variant="destructive" className="text-xs">
-                              {prospect.statut}
-                            </Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Liste complète des prospects */}
-                <div>
-                  <h4 className="text-sm font-medium mb-2">Tous les prospects ({prospects.length})</h4>
-                  <div className="max-h-96 overflow-y-auto space-y-2 border rounded-lg p-2">
-                    {prospects
-                      .filter(p => p.statut !== 'signe' && p.statut !== 'perdu')
-                      .map(prospect => (
-                        <div
-                          key={prospect.id}
-                          className={`p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${
-                            selectedProspect?.id === prospect.id ? 'bg-blue-50 border-blue-300' : ''
-                          }`}
-                          onClick={() => setSelectedProspect(prospect)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <div className="font-medium">{prospect.nom}</div>
-                              <div className="text-sm text-gray-500">
-                                {prospect.ville} • {prospect.telephone}
-                              </div>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge variant="outline" className="text-xs">
-                                  {prospect.secteur}
-                                </Badge>
-                                <Badge 
-                                  variant={
-                                    prospect.statut === 'nouveau' ? 'default' :
-                                    prospect.statut === 'qualifie' ? 'secondary' :
-                                    'outline'
-                                  } 
-                                  className="text-xs"
-                                >
-                                  {prospect.statut}
-                                </Badge>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    
-                    {prospects.filter(p => p.statut !== 'signe' && p.statut !== 'perdu').length === 0 && (
-                      <p className="text-center text-gray-500 py-4">
-                        Aucun prospect disponible pour un RDV
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <Button 
-                  variant="outline" 
-                  className="w-full" 
-                  onClick={() => setShowNewProspect(true)}
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Créer un nouveau prospect
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Colonne centrale: Détails du prospect sélectionné */}
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle className="text-lg">2. Informations prospect</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {selectedProspect ? (
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="font-semibold text-lg">{selectedProspect.nom}</h3>
-                      <p className="text-sm text-gray-500">{selectedProspect.secteur}</p>
-                    </div>
-
-                    <div className="space-y-2 text-sm">
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-4 w-4 text-gray-400" />
-                        <span>{selectedProspect.telephone}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4 text-gray-400" />
-                        <span className="break-all">{selectedProspect.email}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-gray-400" />
-                        <span>{selectedProspect.adresse}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Building className="h-4 w-4 text-gray-400" />
-                        <span>{selectedProspect.ville} {selectedProspect.code_postal}</span>
-                      </div>
-                    </div>
-
-                    {/* Statut actuel */}
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">Statut actuel</h4>
-                      <Badge 
-                        variant={
-                          selectedProspect.statut === 'nouveau' ? 'default' :
-                          selectedProspect.statut === 'qualifie' ? 'secondary' :
-                          selectedProspect.statut === 'en-negociation' ? 'default' :
-                          'outline'
-                        }
-                      >
-                        {selectedProspect.statut}
-                      </Badge>
-                    </div>
-
-                    {/* Notes */}
-                    {selectedProspect.notes && (
-                      <div>
-                        <h4 className="text-sm font-medium mb-2">Notes</h4>
-                        <div className="p-3 bg-gray-50 rounded-lg text-sm">
-                          {selectedProspect.notes}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Dates */}
-                    <div className="text-xs text-gray-500">
-                      {selectedProspect.created_at && (
-                        <p>Créé le {new Date(selectedProspect.created_at).toLocaleDateString('fr-FR')}</p>
-                      )}
-                      {selectedProspect.updated_at && (
-                        <p>Modifié le {new Date(selectedProspect.updated_at).toLocaleDateString('fr-FR')}</p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                    <p>Sélectionnez un prospect pour voir ses informations</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Colonne droite: Formulaire RDV */}
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle className="text-lg">3. Planifier le rendez-vous</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={(e) => { e.preventDefault(); createRdv(); }} className="space-y-4">
-                  {/* Commercial */}
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Commercial assigné *</label>
-                    <select
-                      className="w-full border rounded-md px-3 py-2"
-                      value={selectedCommercial?.id || ""}
-                      onChange={(e) => {
-                        const commercial = commercials.find(c => c.id === e.target.value)
-                        setSelectedCommercial(commercial || null)
-                      }}
-                      required
-                    >
-                      <option value="">Sélectionner un commercial</option>
-                      {commercials.map(commercial => (
-                        <option key={commercial.id} value={commercial.id}>
-                          {commercial.nom} - {commercial.region} (Charge: {commercial.charge}%)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Date et heure */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Date *</label>
-                      <Input
-                        type="date"
-                        min={today}
-                        value={selectedDate}
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Heure *</label>
-                      <Input
-                        type="time"
-                        value={selectedTime}
-                        onChange={(e) => setSelectedTime(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  {/* Type de visite et priorité */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Type de visite</label>
-                      <select
-                        className="w-full border rounded-md px-3 py-2"
-                        value={typeVisite}
-                        onChange={(e) => setTypeVisite(e.target.value as RDV['type_visite'])}
-                      >
-                        <option value="decouverte">🔍 Découverte</option>
-                        <option value="presentation">📊 Présentation</option>
-                        <option value="negociation">💼 Négociation</option>
-                        <option value="signature">✍️ Signature</option>
-                        <option value="suivi">📞 Suivi</option>
-                        <option value="support">🛠️ Support</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Priorité</label>
-                      <select
-                        className="w-full border rounded-md px-3 py-2"
-                        value={priorite}
-                        onChange={(e) => setPriorite(e.target.value as RDV['priorite'])}
-                      >
-                        <option value="normale">🟢 Normale</option>
-                        <option value="haute">🟡 Haute</option>
-                        <option value="urgente">🔴 Urgente</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Durée */}
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Durée estimée</label>
-                    <select
-                      className="w-full border rounded-md px-3 py-2"
-                      value={duree}
-                      onChange={(e) => setDuree(e.target.value)}
-                    >
-                      <option value="30">30 minutes</option>
-                      <option value="60">1 heure</option>
-                      <option value="90">1h30</option>
-                      <option value="120">2 heures</option>
-                    </select>
-                  </div>
-
-                  {/* Notes */}
-                  <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Notes & Objectifs du RDV
-                    </label>
-                    <Textarea
-                      rows={4}
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Objectifs, points à aborder, préparation nécessaire..."
-                    />
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-3">
-                    <Button type="submit" className="flex-1" disabled={!selectedProspect || !selectedCommercial}>
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Planifier le RDV
-                    </Button>
-                    <Button type="button" variant="outline" onClick={resetRdvForm}>
-                      Réinitialiser
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Tab Analytics */}
-        <TabsContent value="analytics" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Performance commerciale</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between mb-2">
-                      <span className="text-sm">Taux de conversion</span>
-                      <span className="text-sm font-bold">{stats.tauxConversion}%</span>
-                    </div>
-                    <Progress value={stats.tauxConversion} />
-                  </div>
-                  <div>
-                    <div className="flex justify-between mb-2">
-                      <span className="text-sm">Prospects qualifiés</span>
-                      <span className="text-sm font-bold">
-                        {prospects.filter(p => p.statut === 'qualifie').length} / {stats.totalProspects}
-                      </span>
-                    </div>
-                    <Progress value={(prospects.filter(p => p.statut === 'qualifie').length / stats.totalProspects) * 100} />
-                  </div>
-                  <div>
-                    <div className="flex justify-between mb-2">
-                      <span className="text-sm">RDV réalisés ce mois</span>
-                      <span className="text-sm font-bold">
-                        {rdvs.filter(r => r.statut === 'termine').length} / {rdvs.length}
-                      </span>
-                    </div>
-                    <Progress value={rdvs.length > 0 ? (rdvs.filter(r => r.statut === 'termine').length / rdvs.length) * 100 : 0} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Répartition par statut</CardTitle>
+                <CardDescription>
+                  Karine MOMUS peut intervenir dans toute l'île Maurice
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {['nouveau', 'contacte', 'qualifie', 'en-negociation', 'signe', 'perdu'].map(statut => {
-                    const count = prospects.filter(p => p.statut === statut).length
-                    const percentage = stats.totalProspects > 0 ? Math.round((count / stats.totalProspects) * 100) : 0
+                  {/* Prospects prioritaires */}
+                  {suggestedProspects.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium mb-2 text-red-600">
+                        ⚠️ Prospects prioritaires
+                      </h4>
+                      <div className="space-y-2">
+                        {suggestedProspects.map(prospect => (
+                          <div
+                            key={prospect.id}
+                            className={`p-2 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+                              selectedProspect?.id === prospect.id ? 'bg-blue-50 border-blue-300' : ''
+                            }`}
+                            onClick={() => setSelectedProspect(prospect)}
+                          >
+                            <div className="font-medium text-sm">{prospect.nom}</div>
+                            <div className="text-xs text-gray-500">
+                              {MAURITIUS_CONFIG.districts[prospect.district].label} • Score {prospect.score}/5
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tous les prospects */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">Tous les prospects</h4>
+                    <div className="max-h-96 overflow-y-auto space-y-2">
+                      {prospects
+                        .filter(p => p.statut !== 'signe' && p.statut !== 'perdu')
+                        .map(prospect => (
+                          <div
+                            key={prospect.id}
+                            className={`p-2 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+                              selectedProspect?.id === prospect.id ? 'bg-blue-50 border-blue-300' : ''
+                            }`}
+                            onClick={() => setSelectedProspect(prospect)}
+                          >
+                            <div className="font-medium text-sm">{prospect.nom}</div>
+                            <div className="text-xs text-gray-500">
+                              {MAURITIUS_CONFIG.districts[prospect.district].label} • {MAURITIUS_CONFIG.secteurs[prospect.secteur].label}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Formulaire RDV */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">2. Détails du RDV</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {selectedProspect ? (
+                  <form onSubmit={(e) => { e.preventDefault(); createRdv(); }} className="space-y-4">
+                    {/* Info prospect sélectionné */}
+                    <div className="bg-gray-50 p-3 rounded-lg">
+                      <p className="font-medium">{selectedProspect.nom}</p>
+                      <p className="text-sm text-gray-500">
+                        {MAURITIUS_CONFIG.districts[selectedProspect.district].label} • 
+                        Distance depuis Port Louis: {calculateDistance('port-louis', selectedProspect.district)} km
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Date *</label>
+                        <Input
+                          type="date"
+                          min={today}
+                          value={selectedDate}
+                          onChange={(e) => setSelectedDate(e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Heure *</label>
+                        <Input
+                          type="time"
+                          value={selectedTime}
+                          onChange={(e) => setSelectedTime(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Type</label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2"
+                          value={typeVisite}
+                          onChange={(e) => setTypeVisite(e.target.value as RDV['type_visite'])}
+                        >
+                          <option value="decouverte">Découverte</option>
+                          <option value="presentation">Présentation</option>
+                          <option value="negociation">Négociation</option>
+                          <option value="signature">Signature</option>
+                          <option value="suivi">Suivi</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Priorité</label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2"
+                          value={priorite}
+                          onChange={(e) => setPriorite(e.target.value as RDV['priorite'])}
+                        >
+                          <option value="normale">Normale</option>
+                          <option value="haute">Haute</option>
+                          <option value="urgente">Urgente</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Notes</label>
+                      <Textarea
+                        rows={3}
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Objectifs du RDV..."
+                      />
+                    </div>
+
+                    <Button type="submit" className="w-full">
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Planifier le RDV
+                    </Button>
+                  </form>
+                ) : (
+                  <p className="text-center text-gray-500 py-8">
+                    Sélectionnez un prospect pour planifier un RDV
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Tab Carte des districts */}
+        <TabsContent value="carte" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Répartition géographique des prospects</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-4">
+                {Object.entries(MAURITIUS_CONFIG.districts).map(([key, district]) => (
+                  <div key={key} className="border rounded-lg p-4">
+                    <h4 className="font-semibold mb-2">{district.label}</h4>
+                    <div className="space-y-1 text-sm">
+                      <p>Total: {statsByDistrict[key]?.total || 0} prospects</p>
+                      <p className="text-green-600">Nouveaux: {statsByDistrict[key]?.nouveaux || 0}</p>
+                      <p className="text-blue-600">Signés: {statsByDistrict[key]?.signes || 0}</p>
+                    </div>
+                    <Progress 
+                      value={(statsByDistrict[key]?.signes || 0) / Math.max(1, statsByDistrict[key]?.total || 1) * 100}
+                      className="mt-2"
+                    />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab Statistiques */}
+        <TabsContent value="stats" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Performance par secteur</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, secteur]) => {
+                    const secteurProspects = prospects.filter(p => p.secteur === key)
+                    const signes = secteurProspects.filter(p => p.statut === 'signe').length
+                    const taux = secteurProspects.length > 0 ? (signes / secteurProspects.length * 100) : 0
                     
                     return (
-                      <div key={statut} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge 
-                            variant={
-                              statut === 'nouveau' ? 'default' :
-                              statut === 'qualifie' ? 'secondary' :
-                              statut === 'signe' ? 'success' :
-                              statut === 'perdu' ? 'destructive' :
-                              'outline'
-                            }
-                            className="text-xs"
-                          >
-                            {statut}
-                          </Badge>
-                          <span className="text-sm">{count} prospects</span>
+                      <div key={key}>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-sm">
+                            {secteur.icon} {secteur.label}
+                          </span>
+                          <span className="text-sm font-bold">
+                            {signes}/{secteurProspects.length} ({taux.toFixed(0)}%)
+                          </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Progress value={percentage} className="w-20" />
-                          <span className="text-xs text-gray-500 w-10">{percentage}%</span>
-                        </div>
+                        <Progress value={taux} />
                       </div>
                     )
                   })}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Performance de Karine MOMUS</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="p-4 border rounded-lg bg-blue-50">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <p className="font-medium text-lg">Karine MOMUS</p>
+                        <p className="text-sm text-gray-600">
+                          Commercial - Toute l'île Maurice
+                        </p>
+                      </div>
+                      <Trophy className="h-8 w-8 text-yellow-500" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 mt-4">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{rdvs.filter(r => r.statut === 'termine').length}</p>
+                        <p className="text-xs text-gray-500">RDV terminés</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{rdvs.filter(r => r.statut === 'planifie').length}</p>
+                        <p className="text-xs text-gray-500">RDV planifiés</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{prospects.filter(p => p.statut === 'signe').length}</p>
+                        <p className="text-xs text-gray-500">Contrats signés</p>
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <p className="text-sm text-gray-600 mb-2">Zones couvertes:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {Object.values(MAURITIUS_CONFIG.districts).map(district => (
+                          <Badge key={district.label} variant="secondary" className="text-xs">
+                            {district.label}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1359,12 +1199,12 @@ export default function RdvCompletSection() {
         </TabsContent>
       </Tabs>
 
-      {/* Modal nouveau prospect */}
+      {/* Modal nouveau prospect Maurice */}
       {showNewProspect && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <Card className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <CardHeader>
-              <CardTitle>Créer un nouveau prospect</CardTitle>
+              <CardTitle>Créer un nouveau prospect à Maurice</CardTitle>
             </CardHeader>
             <CardContent>
               <form onSubmit={createProspect} className="space-y-4">
@@ -1383,24 +1223,45 @@ export default function RdvCompletSection() {
                       className="w-full border rounded-md px-3 py-2"
                       value={newProspect.secteur}
                       onChange={(e) => setNewProspect({...newProspect, secteur: e.target.value})}
-                      required
                     >
-                      <option value="Santé">Santé</option>
-                      <option value="Senior">Senior</option>
-                      <option value="Médical">Médical</option>
-                      <option value="Pharmacie">Pharmacie</option>
-                      <option value="Autre">Autre</option>
+                      {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, secteur]) => (
+                        <option key={key} value={key}>
+                          {secteur.icon} {secteur.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Email *</label>
+                    <label className="block text-sm font-medium mb-2">District *</label>
+                    <select
+                      className="w-full border rounded-md px-3 py-2"
+                      value={newProspect.district}
+                      onChange={(e) => setNewProspect({...newProspect, district: e.target.value})}
+                    >
+                      {Object.entries(MAURITIUS_CONFIG.districts).map(([key, district]) => (
+                        <option key={key} value={key}>{district.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Ville *</label>
                     <Input
-                      type="email"
-                      value={newProspect.email}
-                      onChange={(e) => setNewProspect({...newProspect, email: e.target.value})}
+                      value={newProspect.ville}
+                      onChange={(e) => setNewProspect({...newProspect, ville: e.target.value})}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Contact principal *</label>
+                    <Input
+                      value={newProspect.contact}
+                      onChange={(e) => setNewProspect({...newProspect, contact: e.target.value})}
                       required
                     />
                   </div>
@@ -1409,9 +1270,19 @@ export default function RdvCompletSection() {
                     <Input
                       value={newProspect.telephone}
                       onChange={(e) => setNewProspect({...newProspect, telephone: e.target.value})}
+                      placeholder="+230..."
                       required
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Email</label>
+                  <Input
+                    type="email"
+                    value={newProspect.email}
+                    onChange={(e) => setNewProspect({...newProspect, email: e.target.value})}
+                  />
                 </div>
 
                 <div>
@@ -1422,27 +1293,26 @@ export default function RdvCompletSection() {
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Ville</label>
+                    <label className="block text-sm font-medium mb-2">Budget estimé</label>
                     <Input
-                      value={newProspect.ville}
-                      onChange={(e) => setNewProspect({...newProspect, ville: e.target.value})}
+                      value={newProspect.budget}
+                      onChange={(e) => setNewProspect({...newProspect, budget: e.target.value})}
+                      placeholder="Rs..."
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Code postal</label>
-                    <Input
-                      value={newProspect.code_postal}
-                      onChange={(e) => setNewProspect({...newProspect, code_postal: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Pays</label>
-                    <Input
-                      value={newProspect.pays}
-                      onChange={(e) => setNewProspect({...newProspect, pays: e.target.value})}
-                    />
+                    <label className="block text-sm font-medium mb-2">Score priorité (1-5)</label>
+                    <select
+                      className="w-full border rounded-md px-3 py-2"
+                      value={newProspect.score}
+                      onChange={(e) => setNewProspect({...newProspect, score: parseInt(e.target.value)})}
+                    >
+                      {[1,2,3,4,5].map(score => (
+                        <option key={score} value={score}>{score} étoile(s)</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
@@ -1452,7 +1322,6 @@ export default function RdvCompletSection() {
                     rows={3}
                     value={newProspect.notes}
                     onChange={(e) => setNewProspect({...newProspect, notes: e.target.value})}
-                    placeholder="Informations complémentaires..."
                   />
                 </div>
 
@@ -1461,7 +1330,7 @@ export default function RdvCompletSection() {
                     Annuler
                   </Button>
                   <Button type="submit">
-                    <UserPlus className="h-4 w-4 mr-2" />
+                    <Building className="h-4 w-4 mr-2" />
                     Créer le prospect
                   </Button>
                 </div>
@@ -1470,197 +1339,6 @@ export default function RdvCompletSection() {
           </Card>
         </div>
       )}
-
-      {/* Modal détails prospect */}
-      {showProspectDetails && selectedProspect && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Fiche complète - {selectedProspect.nom}</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowProspectDetails(false)}
-                >
-                  ✕
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">Entreprise</h4>
-                  <p className="font-semibold">{selectedProspect.nom}</p>
-                </div>
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">Secteur</h4>
-                  <p>{selectedProspect.secteur}</p>
-                </div>
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">Email</h4>
-                  <p className="break-all">{selectedProspect.email}</p>
-                </div>
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">Téléphone</h4>
-                  <p>{selectedProspect.telephone}</p>
-                </div>
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">Adresse</h4>
-                  <p>{selectedProspect.adresse}</p>
-                </div>
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">Ville</h4>
-                  <p>{selectedProspect.ville} {selectedProspect.code_postal}</p>
-                </div>
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">Statut</h4>
-                  <Badge>{selectedProspect.statut}</Badge>
-                </div>
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">Score</h4>
-                  <p>{selectedProspect.score || 'Non défini'}</p>
-                </div>
-              </div>
-              
-              {selectedProspect.notes && (
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">Notes</h4>
-                  <p className="bg-gray-50 p-3 rounded-lg">{selectedProspect.notes}</p>
-                </div>
-              )}
-              
-              <div className="flex justify-end gap-3 pt-4">
-                <Button variant="outline" onClick={() => {
-                  setSelectedProspect(selectedProspect)
-                  setShowProspectDetails(false)
-                  setActiveTab("nouveau-rdv")
-                }}>
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Planifier un RDV
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
-  )
-}
-
-// Composant ProspectCard
-function ProspectCard({
-  prospect,
-  viewMode,
-  onSelectForRdv,
-  onViewDetails
-}: {
-  prospect: Prospect
-  viewMode: 'grid' | 'list'
-  onSelectForRdv: () => void
-  onViewDetails: () => void
-}) {
-  const statusColor = {
-    nouveau: 'bg-blue-100 text-blue-700',
-    contacte: 'bg-yellow-100 text-yellow-700',
-    qualifie: 'bg-green-100 text-green-700',
-    'en-negociation': 'bg-purple-100 text-purple-700',
-    signe: 'bg-emerald-100 text-emerald-700',
-    perdu: 'bg-red-100 text-red-700'
-  }[prospect.statut]
-
-  if (viewMode === 'list') {
-    return (
-      <Card className="hover:shadow-md transition-shadow">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4 flex-1">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h4 className="font-semibold">{prospect.nom}</h4>
-                  <Badge className={statusColor}>
-                    {prospect.statut}
-                  </Badge>
-                  <Badge variant="outline">
-                    {prospect.secteur}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <MapPin className="h-3 w-3" />
-                    {prospect.ville}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Phone className="h-3 w-3" />
-                    {prospect.telephone}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Mail className="h-3 w-3" />
-                    {prospect.email}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={onViewDetails}>
-                <Eye className="h-4 w-4" />
-              </Button>
-              <Button size="sm" onClick={onSelectForRdv}>
-                <Calendar className="h-4 w-4 mr-1" />
-                RDV
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card className="hover:shadow-lg transition-shadow">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h4 className="font-semibold">{prospect.nom}</h4>
-            <p className="text-sm text-muted-foreground">{prospect.secteur}</p>
-          </div>
-          <Badge className={statusColor}>
-            {prospect.statut}
-          </Badge>
-        </div>
-        
-        <div className="space-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-muted-foreground" />
-            <span>{prospect.ville} {prospect.code_postal}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Phone className="h-4 w-4 text-muted-foreground" />
-            <span>{prospect.telephone}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Mail className="h-4 w-4 text-muted-foreground" />
-            <span className="truncate">{prospect.email}</span>
-          </div>
-        </div>
-        
-        {prospect.notes && (
-          <div className="mt-3 p-2 bg-gray-50 rounded text-xs text-gray-600 line-clamp-2">
-            {prospect.notes}
-          </div>
-        )}
-        
-        <div className="flex gap-2 mt-4">
-          <Button size="sm" variant="outline" className="flex-1" onClick={onViewDetails}>
-            <Eye className="h-4 w-4 mr-1" />
-            Détails
-          </Button>
-          <Button size="sm" className="flex-1" onClick={onSelectForRdv}>
-            <Calendar className="h-4 w-4 mr-1" />
-            RDV
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
   )
 }
