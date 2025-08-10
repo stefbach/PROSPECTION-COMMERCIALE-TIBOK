@@ -6,10 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { CalendarPlus, Phone, Plus, Search, Mail, Globe, MapPin, Building2 } from 'lucide-react'
+import { CalendarPlus, Phone, Plus, Search, Mail, Globe, MapPin, Building2, Eye, FileText } from 'lucide-react'
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { ImportAnalyzer } from '@/components/import-analyzer'
+import { ProspectDetailModal } from '@/components/prospect-detail-modal'
 
 export default function MauritiusProspectsSection() {
   const [loading, setLoading] = React.useState(false)
@@ -116,6 +117,13 @@ export default function MauritiusProspectsSection() {
     }
   }
 
+  // Nouvelle fonction pour mettre à jour un prospect complet
+  function updateProspect(updated: Prospect) {
+    setProspects(prev => prev.map(p => 
+      p.id === updated.id ? updated : p
+    ))
+  }
+
   return (
     <div className="space-y-6">
       {/* Header avec statistiques */}
@@ -192,76 +200,16 @@ export default function MauritiusProspectsSection() {
                 value={filters.statut} 
                 onChange={(e) => setFilters({...filters, statut: e.target.value})} 
                 className="w-full border rounded-md px-3 py-2"
-              >{/* Filtre Secteur */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Secteur</label>
-              <select
-                value={filters.secteur} 
-                onChange={(e) => setFilters({...filters, secteur: e.target.value})} 
-                className="w-full border rounded-md px-3 py-2"
               >
-                <option value="">Tous les secteurs</option> 
-                {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, config]) => ( 
-                  <option key={key} value={key}>
-                    {config.icon} {config.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Filtre District */}
-            <div>
-              <label className="block text-sm font-medium mb-2">District</label>
-              <select
-                value={filters.district} 
-                onChange={(e) => setFilters({...filters, district: e.target.value})} 
-                className="w-full border rounded-md px-3 py-2"
-              >
-                <option value="">Tous les districts</option> 
-                {Object.entries(MAURITIUS_CONFIG.districts).map(([key, config]) => ( 
-                  <option key={key} value={key}>{config.label}</option>
-                ))}
-              </select>
-            </div>
                 <option value="">Tous les statuts</option>
                 {Object.entries(MAURITIUS_CONFIG.statuts).map(([key, config]) => (
                   <option key={key} value={key}>{config.label}</option>
                 ))}
               </select>
             </div>
-{/* Filtre Secteur */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Secteur</label>
-              <select
-                value={filters.secteur || ''} 
-                onChange={(e) => setFilters({...filters, secteur: e.target.value})} 
-                className="w-full border rounded-md px-3 py-2"
-              >
-                <option value="">Tous les secteurs</option> 
-                {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, config]) => ( 
-                  <option key={key} value={key}>
-                    {config.icon} {config.label}
-                  </option>
-                ))}
-              </select>
-            </div>
 
-            {/* Filtre District */}
-            <div>
-              <label className="block text-sm font-medium mb-2">District</label>
-              <select
-                value={filters.district || ''} 
-                onChange={(e) => setFilters({...filters, district: e.target.value})} 
-                className="w-full border rounded-md px-3 py-2"
-              >
-                <option value="">Tous les districts</option> 
-                {Object.entries(MAURITIUS_CONFIG.districts).map(([key, config]) => ( 
-                  <option key={key} value={key}>{config.label}</option>
-                ))}
-              </select>
-            </div>
             {/* Recherche */}
-                        <div>
+            <div>
               <label className="block text-sm font-medium mb-2">Recherche</label>
               <Input 
                 value={filters.search} 
@@ -308,6 +256,7 @@ export default function MauritiusProspectsSection() {
             key={p.id}
             prospect={p}
             onStatusChange={(statut) => updateStatus(p.id, statut)}
+            onUpdate={updateProspect}
           />
         ))}
         {!loading && filtered.length === 0 && (
@@ -327,11 +276,15 @@ export default function MauritiusProspectsSection() {
 
 function ProspectCard({ 
   prospect, 
-  onStatusChange 
+  onStatusChange,
+  onUpdate
 }: { 
   prospect: Prospect
-  onStatusChange: (statut: Statut) => void 
+  onStatusChange: (statut: Statut) => void
+  onUpdate: (updated: Prospect) => void
 }) {
+  const [showDetail, setShowDetail] = React.useState(false)
+  
   const statutConfig = MAURITIUS_CONFIG.statuts[prospect.statut]
   const secteurConfig = MAURITIUS_CONFIG.secteurs[prospect.secteur]
   const districtConfig = MAURITIUS_CONFIG.districts[prospect.district]
@@ -348,117 +301,165 @@ function ProspectCard({
   }
 
   return (
-    <Card className="transition-all hover:shadow-lg">
-      <CardContent className="p-6">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <span>{secteurConfig?.icon}</span>
-              <span className="truncate">{prospect.nom}</span>
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              {secteurConfig?.label}
-            </p>
-          </div>
-          <span className={`px-2 py-1 rounded text-xs ${statutColors[statutConfig.color]}`}>
-            {statutConfig.label}
-          </span>
-        </div>
-
-        {/* Infos */}
-        <div className="space-y-2 mb-4 text-sm">
-          <div className="flex items-center gap-2 text-gray-600">
-            <MapPin className="h-4 w-4" />
-            <span>{prospect.ville}, {districtConfig?.label}</span>
-          </div>
-          
-          {prospect.contact && (
-            <div className="flex items-center gap-2 text-gray-600">
-              <span>👤</span>
-              <span>{prospect.contact}</span>
+    <>
+      <Card 
+        className="transition-all hover:shadow-lg cursor-pointer relative group" 
+        onClick={() => setShowDetail(true)}
+      >
+        {/* Badge de priorité si haute */}
+        {prospect.priority === 'Haute' && (
+          <div className="absolute -top-2 -right-2 z-10">
+            <div className="bg-red-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
+              Priorité
             </div>
-          )}
-          
-          {prospect.telephone && (
-            <div className="flex items-center gap-2 text-gray-600">
-              <Phone className="h-4 w-4" />
-              <span>{prospect.telephone}</span>
-            </div>
-          )}
-          
-          {prospect.email && (
-            <div className="flex items-center gap-2 text-gray-600">
-              <Mail className="h-4 w-4" />
-              <span className="truncate">{prospect.email}</span>
-            </div>
-          )}
-          
-          {prospect.website && (
-            <div className="flex items-center gap-2 text-gray-600">
-              <Globe className="h-4 w-4" />
-              <span className="truncate">{prospect.website}</span>
-            </div>
-          )}
-          
-          <div className="flex items-center gap-2">
-            <span className="text-yellow-500">{stars}</span>
-            <span className="text-xs text-gray-500">Score: {prospect.score}/5</span>
-          </div>
-          
-          {prospect.budget && (
-            <div className="text-gray-600">
-              💰 Budget: {MAURITIUS_CONFIG.labels.currency} {prospect.budget}
-            </div>
-          )}
-        </div>
-
-        {/* Notes */}
-        {prospect.notes && (
-          <div className="bg-gray-50 p-3 rounded text-sm text-gray-700 mb-4">
-            {prospect.notes}
           </div>
         )}
+        
+        <CardContent className="p-6">
+          {/* Header */}
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <span>{secteurConfig?.icon}</span>
+                <span className="truncate">{prospect.nom}</span>
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                {secteurConfig?.label}
+              </p>
+            </div>
+            <span className={`px-2 py-1 rounded text-xs ${statutColors[statutConfig.color]}`}>
+              {statutConfig.label}
+            </span>
+          </div>
 
-        {/* Actions */}
-        <div className="flex gap-2">
-          <Button 
-            size="sm" 
-            className="flex-1 bg-green-600 hover:bg-green-700"
-            onClick={() => window.location.href = `tel:${prospect.telephone}`}
-          >
-            <Phone className="h-4 w-4 mr-1" />
-            Appeler
-          </Button>
-          
-          {prospect.email && (
+          {/* Infos */}
+          <div className="space-y-2 mb-4 text-sm">
+            <div className="flex items-center gap-2 text-gray-600">
+              <MapPin className="h-4 w-4" />
+              <span>{prospect.ville}, {districtConfig?.label}</span>
+            </div>
+            
+            {prospect.contact && (
+              <div className="flex items-center gap-2 text-gray-600">
+                <span>👤</span>
+                <span>{prospect.contact}</span>
+              </div>
+            )}
+            
+            {prospect.telephone && (
+              <div className="flex items-center gap-2 text-gray-600">
+                <Phone className="h-4 w-4" />
+                <span>{prospect.telephone}</span>
+              </div>
+            )}
+            
+            {prospect.email && (
+              <div className="flex items-center gap-2 text-gray-600">
+                <Mail className="h-4 w-4" />
+                <span className="truncate">{prospect.email}</span>
+              </div>
+            )}
+            
+            {prospect.website && (
+              <div className="flex items-center gap-2 text-gray-600">
+                <Globe className="h-4 w-4" />
+                <span className="truncate">{prospect.website}</span>
+              </div>
+            )}
+            
+            <div className="flex items-center gap-2">
+              <span className="text-yellow-500">{stars}</span>
+              <span className="text-xs text-gray-500">Score: {prospect.score}/5</span>
+            </div>
+            
+            {prospect.budget && (
+              <div className="text-gray-600">
+                💰 Budget: {MAURITIUS_CONFIG.labels.currency} {prospect.budget}
+              </div>
+            )}
+
+            {/* Indicateurs de qualité */}
+            {prospect.quality_score && (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 bg-gray-200 rounded-full h-2">
+                  <div 
+                    className={`h-2 rounded-full ${
+                      prospect.quality_score >= 80 ? 'bg-green-500' :
+                      prospect.quality_score >= 60 ? 'bg-yellow-500' :
+                      'bg-red-500'
+                    }`}
+                    style={{ width: `${prospect.quality_score}%` }}
+                  />
+                </div>
+                <span className="text-xs text-gray-500">{prospect.quality_score}%</span>
+              </div>
+            )}
+          </div>
+
+          {/* Notes */}
+          {prospect.notes && (
+            <div className="bg-gray-50 p-3 rounded text-sm text-gray-700 mb-4 line-clamp-2">
+              {prospect.notes}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2">
             <Button 
               size="sm" 
-              variant="outline" 
-              className="flex-1"
-              onClick={() => window.location.href = `mailto:${prospect.email}`}
+              className="flex-1 bg-green-600 hover:bg-green-700"
+              onClick={(e) => {
+                e.stopPropagation()
+                window.location.href = `tel:${prospect.telephone}`
+              }}
             >
-              <Mail className="h-4 w-4 mr-1" />
-              Email
+              <Phone className="h-4 w-4 mr-1" />
+              Appeler
             </Button>
-          )}
-          
-          <Button 
-            size="sm" 
-            variant="outline"
-            onClick={() => {
-              const nextStatus = prospect.statut === 'nouveau' ? 'contacte' :
-                               prospect.statut === 'contacte' ? 'qualifie' :
-                               prospect.statut === 'qualifie' ? 'en-negociation' :
-                               prospect.statut === 'en-negociation' ? 'signe' : 'signe'
-              onStatusChange(nextStatus as Statut)
-            }}
-          >
-            <CalendarPlus className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+            
+            {prospect.email && (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="flex-1"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  window.location.href = `mailto:${prospect.email}`
+                }}
+              >
+                <Mail className="h-4 w-4 mr-1" />
+                Email
+              </Button>
+            )}
+            
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowDetail(true)
+              }}
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Overlay au hover */}
+          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-5 transition-all pointer-events-none rounded-lg" />
+        </CardContent>
+      </Card>
+      
+      {/* Modal de détail */}
+      <ProspectDetailModal
+        prospect={prospect}
+        open={showDetail}
+        onClose={() => setShowDetail(false)}
+        onUpdate={(updated) => {
+          onUpdate(updated)
+          onStatusChange(updated.statut)
+        }}
+      />
+    </>
   )
 }
 
@@ -617,4 +618,3 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
     </Dialog>
   )
 }
-// Rebuild forced at Sam  9 aoû 2025 23:42:37 CEST
