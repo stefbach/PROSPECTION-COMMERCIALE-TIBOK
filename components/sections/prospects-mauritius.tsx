@@ -7,16 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { 
-  AlertDialog, 
-  AlertDialogAction, 
-  AlertDialogCancel, 
-  AlertDialogContent, 
-  AlertDialogDescription, 
-  AlertDialogFooter, 
-  AlertDialogHeader, 
-  AlertDialogTitle 
-} from "@/components/ui/alert-dialog"
-import { 
   CalendarPlus, Phone, Plus, Search, Mail, Globe, MapPin, Building2, Eye, 
   FileText, TrendingUp, Users, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Trash2, Edit, X, Save
@@ -836,20 +826,26 @@ function ProspectCard({
         }}
       />
 
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent className="bg-white">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-gray-900">Êtes-vous sûr ?</AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-600">
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="bg-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-gray-900">Êtes-vous sûr ?</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-gray-600">
               Cette action supprimera définitivement le prospect "{prospect.nom}". 
               Cette action ne peut pas être annulée.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="bg-white text-gray-700 border-gray-300">
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button 
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              className="bg-white text-gray-700 border-gray-300"
+            >
               Annuler
-            </AlertDialogCancel>
-            <AlertDialogAction 
+            </Button>
+            <Button 
               onClick={(e) => {
                 e.stopPropagation()
                 onDelete()
@@ -858,10 +854,10 @@ function ProspectCard({
               className="bg-red-600 hover:bg-red-700 text-white"
             >
               Supprimer
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -1309,20 +1305,26 @@ function ProspectDetailModal({
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent className="bg-white">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-gray-900">Êtes-vous sûr ?</AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-600">
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="bg-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-gray-900">Êtes-vous sûr ?</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-gray-600">
               Cette action supprimera définitivement le prospect "{prospect.nom}". 
               Cette action ne peut pas être annulée.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="bg-white text-gray-700 border-gray-300">
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button 
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              className="bg-white text-gray-700 border-gray-300"
+            >
               Annuler
-            </AlertDialogCancel>
-            <AlertDialogAction 
+            </Button>
+            <Button 
               onClick={() => {
                 onDelete?.()
                 setShowDeleteDialog(false)
@@ -1331,10 +1333,10 @@ function ProspectDetailModal({
               className="bg-red-600 hover:bg-red-700 text-white"
             >
               Supprimer
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
