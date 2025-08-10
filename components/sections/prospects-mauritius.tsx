@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { CalendarPlus, Phone, Plus, Search, Mail, Globe, MapPin, Building2, Eye, FileText } from 'lucide-react'
+import { CalendarPlus, Phone, Plus, Search, Mail, Globe, MapPin, Building2, Eye, FileText, TrendingUp, Users } from 'lucide-react'
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { ImportAnalyzer } from '@/components/import-analyzer'
@@ -125,49 +125,72 @@ export default function MauritiusProspectsSection() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 bg-gray-50 min-h-screen p-6">
       {/* Header avec statistiques */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
+        <Card className="bg-white border-gray-200">
           <CardContent className="p-6">
-            <div className="text-2xl font-bold">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">Total prospects</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
+                <p className="text-xs text-gray-600">Total prospects</p>
+              </div>
+              <Users className="h-8 w-8 text-gray-400" />
+            </div>
           </CardContent>
         </Card>
-        <Card>
+        
+        <Card className="bg-white border-gray-200">
           <CardContent className="p-6">
-            <div className="text-2xl font-bold text-blue-600">{stats.nouveaux}</div>
-            <p className="text-xs text-muted-foreground">Nouveaux</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-2xl font-bold text-blue-600">{stats.nouveaux}</div>
+                <p className="text-xs text-gray-600">Nouveaux</p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-blue-400" />
+            </div>
           </CardContent>
         </Card>
-        <Card>
+        
+        <Card className="bg-white border-gray-200">
           <CardContent className="p-6">
-            <div className="text-2xl font-bold text-orange-600">{stats.qualifies}</div>
-            <p className="text-xs text-muted-foreground">Qualifiés</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-2xl font-bold text-orange-600">{stats.qualifies}</div>
+                <p className="text-xs text-gray-600">Qualifiés</p>
+              </div>
+              <Eye className="h-8 w-8 text-orange-400" />
+            </div>
           </CardContent>
         </Card>
-        <Card>
+        
+        <Card className="bg-white border-gray-200">
           <CardContent className="p-6">
-            <div className="text-2xl font-bold text-green-600">{stats.signes}</div>
-            <p className="text-xs text-muted-foreground">Clients signés</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-2xl font-bold text-green-600">{stats.signes}</div>
+                <p className="text-xs text-gray-600">Clients signés</p>
+              </div>
+              <CalendarPlus className="h-8 w-8 text-green-400" />
+            </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Filtres */}
-      <Card>
+      <Card className="bg-white border-gray-200">
         <CardHeader>
-          <CardTitle className="text-base">Filtres & Actions</CardTitle>
+          <CardTitle className="text-base text-gray-900">Filtres & Actions</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
             {/* Secteur */}
             <div>
-              <label className="block text-sm font-medium mb-2">Secteur d'activité</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">Secteur d'activité</label>
               <select 
                 value={filters.secteur} 
                 onChange={(e) => setFilters({...filters, secteur: e.target.value})} 
-                className="w-full border rounded-md px-3 py-2"
+                className="w-full border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Tous les secteurs</option>
                 {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, config]) => (
@@ -180,11 +203,11 @@ export default function MauritiusProspectsSection() {
 
             {/* District */}
             <div>
-              <label className="block text-sm font-medium mb-2">District</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">District</label>
               <select 
                 value={filters.district} 
                 onChange={(e) => setFilters({...filters, district: e.target.value})} 
-                className="w-full border rounded-md px-3 py-2"
+                className="w-full border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Tous les districts</option>
                 {Object.entries(MAURITIUS_CONFIG.districts).map(([key, config]) => (
@@ -195,11 +218,11 @@ export default function MauritiusProspectsSection() {
 
             {/* Statut */}
             <div>
-              <label className="block text-sm font-medium mb-2">Statut</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">Statut</label>
               <select 
                 value={filters.statut} 
                 onChange={(e) => setFilters({...filters, statut: e.target.value})} 
-                className="w-full border rounded-md px-3 py-2"
+                className="w-full border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Tous les statuts</option>
                 {Object.entries(MAURITIUS_CONFIG.statuts).map(([key, config]) => (
@@ -210,19 +233,20 @@ export default function MauritiusProspectsSection() {
 
             {/* Recherche */}
             <div>
-              <label className="block text-sm font-medium mb-2">Recherche</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">Recherche</label>
               <Input 
                 value={filters.search} 
                 onChange={(e) => setFilters({...filters, search: e.target.value})} 
                 placeholder="Nom ou ville..." 
+                className="bg-white text-gray-900 border-gray-300"
               />
             </div>
 
             {/* Actions */}
             <div>
-              <label className="block text-sm font-medium mb-2">&nbsp;</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">&nbsp;</label>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={loadProspects} className="flex-1">
+                <Button variant="secondary" onClick={loadProspects} className="flex-1 bg-blue-600 text-white hover:bg-blue-700">
                   <Search className="h-4 w-4 mr-1" />
                   Filtrer
                 </Button>
@@ -237,6 +261,7 @@ export default function MauritiusProspectsSection() {
                 setFilters({ secteur: '', district: '', statut: '', search: '' })
                 loadProspects()
               }}
+              className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
             >
               Réinitialiser
             </Button>
@@ -260,12 +285,12 @@ export default function MauritiusProspectsSection() {
           />
         ))}
         {!loading && filtered.length === 0 && (
-          <div className="col-span-full text-center py-8 text-muted-foreground">
+          <div className="col-span-full text-center py-8 text-gray-600 bg-white rounded-lg border border-gray-200">
             Aucun prospect ne correspond aux filtres sélectionnés.
           </div>
         )}
         {loading && (
-          <div className="col-span-full text-center py-8 text-muted-foreground">
+          <div className="col-span-full text-center py-8 text-gray-600 bg-white rounded-lg border border-gray-200">
             Chargement des prospects...
           </div>
         )}
@@ -290,20 +315,21 @@ function ProspectCard({
   const districtConfig = MAURITIUS_CONFIG.districts[prospect.district]
   const stars = "★".repeat(prospect.score) + "☆".repeat(5 - prospect.score)
   
-  const statutColors = {
-    gray: "bg-gray-100 text-gray-800",
-    blue: "bg-blue-100 text-blue-800",
-    yellow: "bg-yellow-100 text-yellow-800",
-    purple: "bg-purple-100 text-purple-800",
-    orange: "bg-orange-100 text-orange-800",
-    green: "bg-green-100 text-green-800",
-    red: "bg-red-100 text-red-800"
+  // Couleurs des statuts avec des couleurs claires
+  const statutColors: Record<string, string> = {
+    gray: "bg-gray-100 text-gray-800 border border-gray-300",
+    blue: "bg-blue-100 text-blue-800 border border-blue-300",
+    yellow: "bg-yellow-100 text-yellow-800 border border-yellow-300",
+    purple: "bg-purple-100 text-purple-800 border border-purple-300",
+    orange: "bg-orange-100 text-orange-800 border border-orange-300",
+    green: "bg-green-100 text-green-800 border border-green-300",
+    red: "bg-red-100 text-red-800 border border-red-300"
   }
 
   return (
     <>
       <Card 
-        className="transition-all hover:shadow-lg cursor-pointer relative group" 
+        className="transition-all hover:shadow-lg cursor-pointer relative group bg-white border-gray-200 hover:border-blue-300"
         onClick={() => setShowDetail(true)}
       >
         {/* Badge de priorité si haute */}
@@ -320,60 +346,62 @@ function ProspectCard({
           <div className="flex items-start justify-between mb-3">
             <div className="flex-1">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <span>{secteurConfig?.icon}</span>
+                <span className="text-2xl">{secteurConfig?.icon}</span>
                 <span className="truncate">{prospect.nom}</span>
               </h3>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-sm text-gray-600 mt-1">
                 {secteurConfig?.label}
               </p>
             </div>
-            <span className={`px-2 py-1 rounded text-xs ${statutColors[statutConfig.color]}`}>
-              {statutConfig.label}
+            <span className={`px-2 py-1 rounded text-xs ${
+              statutColors[statutConfig?.color || 'gray'] || statutColors.gray
+            }`}>
+              {statutConfig?.label}
             </span>
           </div>
 
           {/* Infos */}
           <div className="space-y-2 mb-4 text-sm">
-            <div className="flex items-center gap-2 text-gray-600">
-              <MapPin className="h-4 w-4" />
+            <div className="flex items-center gap-2 text-gray-700">
+              <MapPin className="h-4 w-4 text-gray-400" />
               <span>{prospect.ville}, {districtConfig?.label}</span>
             </div>
             
             {prospect.contact && (
-              <div className="flex items-center gap-2 text-gray-600">
-                <span>👤</span>
+              <div className="flex items-center gap-2 text-gray-700">
+                <span className="text-gray-400">👤</span>
                 <span>{prospect.contact}</span>
               </div>
             )}
             
             {prospect.telephone && (
-              <div className="flex items-center gap-2 text-gray-600">
-                <Phone className="h-4 w-4" />
+              <div className="flex items-center gap-2 text-gray-700">
+                <Phone className="h-4 w-4 text-gray-400" />
                 <span>{prospect.telephone}</span>
               </div>
             )}
             
             {prospect.email && (
-              <div className="flex items-center gap-2 text-gray-600">
-                <Mail className="h-4 w-4" />
+              <div className="flex items-center gap-2 text-gray-700">
+                <Mail className="h-4 w-4 text-gray-400" />
                 <span className="truncate">{prospect.email}</span>
               </div>
             )}
             
             {prospect.website && (
-              <div className="flex items-center gap-2 text-gray-600">
-                <Globe className="h-4 w-4" />
+              <div className="flex items-center gap-2 text-gray-700">
+                <Globe className="h-4 w-4 text-gray-400" />
                 <span className="truncate">{prospect.website}</span>
               </div>
             )}
             
             <div className="flex items-center gap-2">
               <span className="text-yellow-500">{stars}</span>
-              <span className="text-xs text-gray-500">Score: {prospect.score}/5</span>
+              <span className="text-xs text-gray-600">Score: {prospect.score}/5</span>
             </div>
             
             {prospect.budget && (
-              <div className="text-gray-600">
+              <div className="text-gray-700">
                 💰 Budget: {MAURITIUS_CONFIG.labels.currency} {prospect.budget}
               </div>
             )}
@@ -391,14 +419,14 @@ function ProspectCard({
                     style={{ width: `${prospect.quality_score}%` }}
                   />
                 </div>
-                <span className="text-xs text-gray-500">{prospect.quality_score}%</span>
+                <span className="text-xs text-gray-600">{prospect.quality_score}%</span>
               </div>
             )}
           </div>
 
           {/* Notes */}
           {prospect.notes && (
-            <div className="bg-gray-50 p-3 rounded text-sm text-gray-700 mb-4 line-clamp-2">
+            <div className="bg-gray-50 border border-gray-200 p-3 rounded text-sm text-gray-700 mb-4 line-clamp-2">
               {prospect.notes}
             </div>
           )}
@@ -407,7 +435,7 @@ function ProspectCard({
           <div className="flex gap-2">
             <Button 
               size="sm" 
-              className="flex-1 bg-green-600 hover:bg-green-700"
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
               onClick={(e) => {
                 e.stopPropagation()
                 window.location.href = `tel:${prospect.telephone}`
@@ -421,7 +449,7 @@ function ProspectCard({
               <Button 
                 size="sm" 
                 variant="outline" 
-                className="flex-1"
+                className="flex-1 bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
                 onClick={(e) => {
                   e.stopPropagation()
                   window.location.href = `mailto:${prospect.email}`
@@ -435,6 +463,7 @@ function ProspectCard({
             <Button 
               size="sm" 
               variant="outline"
+              className="bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
               onClick={(e) => {
                 e.stopPropagation()
                 setShowDetail(true)
@@ -443,9 +472,6 @@ function ProspectCard({
               <Eye className="h-4 w-4" />
             </Button>
           </div>
-
-          {/* Overlay au hover */}
-          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-5 transition-all pointer-events-none rounded-lg" />
         </CardContent>
       </Card>
       
@@ -504,24 +530,25 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
+        <Button className="bg-blue-600 hover:bg-blue-700 text-white">
           <Plus className="h-4 w-4 mr-2" />
           Nouveau Prospect
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl bg-white">
         <DialogHeader>
-          <DialogTitle>Ajouter un nouveau prospect</DialogTitle>
+          <DialogTitle className="text-gray-900">Ajouter un nouveau prospect</DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Input 
             placeholder="Nom de l'entreprise *" 
             value={form.nom} 
-            onChange={(e) => setForm({ ...form, nom: e.target.value })} 
+            onChange={(e) => setForm({ ...form, nom: e.target.value })}
+            className="bg-white text-gray-900 border-gray-300"
           />
           
           <select 
-            className="border rounded-md px-3 py-2" 
+            className="border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2" 
             value={form.secteur} 
             onChange={(e) => setForm({ ...form, secteur: e.target.value as Secteur })}
           >
@@ -535,11 +562,12 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
           <Input 
             placeholder="Ville *" 
             value={form.ville} 
-            onChange={(e) => setForm({ ...form, ville: e.target.value })} 
+            onChange={(e) => setForm({ ...form, ville: e.target.value })}
+            className="bg-white text-gray-900 border-gray-300"
           />
           
           <select 
-            className="border rounded-md px-3 py-2" 
+            className="border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2" 
             value={form.district} 
             onChange={(e) => setForm({ ...form, district: e.target.value as District })}
           >
@@ -551,30 +579,34 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
           <Input 
             placeholder="Personne de contact" 
             value={form.contact} 
-            onChange={(e) => setForm({ ...form, contact: e.target.value })} 
+            onChange={(e) => setForm({ ...form, contact: e.target.value })}
+            className="bg-white text-gray-900 border-gray-300"
           />
           
           <Input 
             placeholder="Téléphone (ex: +230 5123 4567)" 
             value={form.telephone} 
-            onChange={(e) => setForm({ ...form, telephone: e.target.value })} 
+            onChange={(e) => setForm({ ...form, telephone: e.target.value })}
+            className="bg-white text-gray-900 border-gray-300"
           />
           
           <Input 
             placeholder="Email" 
             type="email"
             value={form.email} 
-            onChange={(e) => setForm({ ...form, email: e.target.value })} 
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            className="bg-white text-gray-900 border-gray-300"
           />
           
           <Input 
             placeholder="Site web" 
             value={form.website} 
-            onChange={(e) => setForm({ ...form, website: e.target.value })} 
+            onChange={(e) => setForm({ ...form, website: e.target.value })}
+            className="bg-white text-gray-900 border-gray-300"
           />
           
           <select 
-            className="border rounded-md px-3 py-2" 
+            className="border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2" 
             value={form.score} 
             onChange={(e) => setForm({ ...form, score: Number(e.target.value) as 1|2|3|4|5 })}
           >
@@ -588,18 +620,19 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
           <Input 
             placeholder="Budget (ex: Rs 100k)" 
             value={form.budget} 
-            onChange={(e) => setForm({ ...form, budget: e.target.value })} 
+            onChange={(e) => setForm({ ...form, budget: e.target.value })}
+            className="bg-white text-gray-900 border-gray-300"
           />
           
           <Input 
-            className="sm:col-span-2" 
+            className="sm:col-span-2 bg-white text-gray-900 border-gray-300" 
             placeholder="Adresse complète" 
             value={form.adresse} 
             onChange={(e) => setForm({ ...form, adresse: e.target.value })} 
           />
           
           <Textarea 
-            className="sm:col-span-2" 
+            className="sm:col-span-2 bg-white text-gray-900 border-gray-300" 
             placeholder="Notes et commentaires..." 
             value={form.notes} 
             onChange={(e) => setForm({ ...form, notes: e.target.value })} 
@@ -607,10 +640,17 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
           />
         </div>
         <div className="flex justify-end gap-2 mt-4">
-          <Button variant="outline" onClick={() => setOpen(false)}>
+          <Button 
+            variant="outline" 
+            onClick={() => setOpen(false)}
+            className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+          >
             Annuler
           </Button>
-          <Button onClick={submit}>
+          <Button 
+            onClick={submit}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
             Enregistrer le prospect
           </Button>
         </div>
