@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ImportAnalyzer } from '@/components/import-analyzer'
+import { ImportAnalyzerV2 as ImportAnalyzer } from '@/components/import-analyzer'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
