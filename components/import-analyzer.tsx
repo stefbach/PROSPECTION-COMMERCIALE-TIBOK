@@ -391,34 +391,6 @@ export function ImportAnalyzer({ onImportComplete }: { onImportComplete?: () => 
   }
 }
       
-      if (!response.ok) throw new Error('Erreur import')
-      
-      const result = await response.json()
-      
-      toast({
-        title: 'Import réussi',
-        description: `${result.imported || toImport.length} importés`
-      })
-      
-      setFile(null)
-      setAnalysis(null)
-      setTransformedData(null)
-      setOpen(false)
-      
-      if (onImportComplete) {
-        onImportComplete()
-      }
-    } catch (error: any) {
-      toast({
-        title: 'Erreur',
-        description: error.message,
-        variant: 'destructive'
-      })
-    } finally {
-      setImporting(false)
-    }
-
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
