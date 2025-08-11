@@ -48,7 +48,7 @@ class Database {
         return
       }
     } catch (error) {
-      console.log('Pas de fichier data/prospects.json, recherche d'autres sources...')
+      console.log("Pas de fichier data/prospects.json, recherche d'autres sources...")
     }
     
     // Si pas de fichier, essayer de charger depuis un autre emplacement
