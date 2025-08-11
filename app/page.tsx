@@ -8,11 +8,10 @@ import { useToast } from "@/hooks/use-toast"
 import { Bell, Brain } from 'lucide-react'
 import DashboardSection from "@/components/sections/dashboard"
 import ProspectsSection from "@/components/sections/prospects-mauritius"
-import RdvSection from "@/components/sections/rdv"
 import PlanningSection from "@/components/sections/planning"
 import { AIDashboard } from "@/components/ai-dashboard"
 
-type SectionKey = "dashboard" | "prospects" | "rdv" | "planning" | "ai"
+type SectionKey = "dashboard" | "prospects" | "planning" | "ai"
 
 export default function Page() {
   const [section, setSection] = React.useState<SectionKey>("dashboard")
