@@ -18,6 +18,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { ImportAnalyzer } from '@/components/import-analyzer'
 
+function getStars(score: number | undefined): string {
+  const normalizedScore = Math.min(5, Math.max(1, Math.ceil((score || 50) / 20)))
+  return "★".repeat(normalizedScore) + "☆".repeat(5 - normalizedScore)
+}
+
 // Types pour RDV et Contrats
 interface RDV {
   id: number
@@ -532,7 +537,7 @@ function ProspectCard({
   const statutConfig = MAURITIUS_CONFIG.statuts[prospect.statut]
   const secteurConfig = MAURITIUS_CONFIG.secteurs[prospect.secteur]
   const districtConfig = MAURITIUS_CONFIG.districts[prospect.district]
-  const stars = "★".repeat(Math.min(5, prospect.score || 3)) + "☆".repeat(Math.max(0, 5 - (prospect.score || 3)))
+  const stars = getStars(prospect.score)
   
   const statutColors: Record<string, string> = {
     gray: "bg-gray-100 text-gray-800 border border-gray-300",
