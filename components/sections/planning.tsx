@@ -1,3 +1,6 @@
+// components/sections/planning.tsx
+// Version unifiée qui détecte automatiquement Google Maps
+
 "use client"
 
 import * as React from "react"
@@ -8,36 +11,24 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 
-// Types simplifiés (compatibles avec mauritius-config)
+// Import conditionnel du service Google Maps
+let GoogleMapsService: any = null
+try {
+  GoogleMapsService = require('@/lib/google-maps-service').default
+} catch (error) {
+  console.log('Service Google Maps non disponible, utilisation du mode estimation')
+}
+
+// Configuration
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
+const HAS_GOOGLE_MAPS = !!(GOOGLE_MAPS_API_KEY && GoogleMapsService)
+
+// Types (identiques pour les deux modes)
 type District = 'port-louis' | 'pamplemousses' | 'riviere-du-rempart' | 'flacq' | 'grand-port' | 'savanne' | 'plaines-wilhems' | 'moka' | 'riviere-noire'
 type Secteur = 'hotel' | 'restaurant' | 'clinique' | 'pharmacie' | 'supermarche' | 'entreprise' | 'ecole' | 'autre'
 type Statut = 'nouveau' | 'contacte' | 'qualifie' | 'proposition' | 'negociation' | 'signe' | 'perdu'
 
-// Configuration simplifiée
-const DISTRICTS_CONFIG = {
-  'port-louis': { label: 'Port Louis' },
-  'pamplemousses': { label: 'Pamplemousses' },
-  'riviere-du-rempart': { label: 'Rivière du Rempart' },
-  'flacq': { label: 'Flacq' },
-  'grand-port': { label: 'Grand Port' },
-  'savanne': { label: 'Savanne' },
-  'plaines-wilhems': { label: 'Plaines Wilhems' },
-  'moka': { label: 'Moka' },
-  'riviere-noire': { label: 'Rivière Noire' }
-}
-
-const SECTEURS_CONFIG = {
-  'hotel': { label: 'Hôtel', icon: '🏨' },
-  'restaurant': { label: 'Restaurant', icon: '🍽️' },
-  'clinique': { label: 'Clinique', icon: '🏥' },
-  'pharmacie': { label: 'Pharmacie', icon: '💊' },
-  'supermarche': { label: 'Supermarché', icon: '🛒' },
-  'entreprise': { label: 'Entreprise', icon: '🏢' },
-  'ecole': { label: 'École', icon: '🎓' },
-  'autre': { label: 'Autre', icon: '📍' }
-}
-
-// Matrice des distances entre districts (en km)
+// Matrice de distances pour le fallback
 const DISTANCE_MATRIX: Record<District, Record<District, number>> = {
   'port-louis': {
     'port-louis': 0,
@@ -140,7 +131,30 @@ const DISTANCE_MATRIX: Record<District, Record<District, number>> = {
   }
 }
 
-// Types
+const DISTRICTS_CONFIG = {
+  'port-louis': { label: 'Port Louis' },
+  'pamplemousses': { label: 'Pamplemousses' },
+  'riviere-du-rempart': { label: 'Rivière du Rempart' },
+  'flacq': { label: 'Flacq' },
+  'grand-port': { label: 'Grand Port' },
+  'savanne': { label: 'Savanne' },
+  'plaines-wilhems': { label: 'Plaines Wilhems' },
+  'moka': { label: 'Moka' },
+  'riviere-noire': { label: 'Rivière Noire' }
+}
+
+const SECTEURS_CONFIG = {
+  'hotel': { label: 'Hôtel', icon: '🏨' },
+  'restaurant': { label: 'Restaurant', icon: '🍽️' },
+  'clinique': { label: 'Clinique', icon: '🏥' },
+  'pharmacie': { label: 'Pharmacie', icon: '💊' },
+  'supermarche': { label: 'Supermarché', icon: '🛒' },
+  'entreprise': { label: 'Entreprise', icon: '🏢' },
+  'ecole': { label: 'École', icon: '🎓' },
+  'autre': { label: 'Autre', icon: '📍' }
+}
+
+// Interfaces
 interface Prospect {
   id: number
   nom: string
@@ -162,7 +176,6 @@ interface RendezVous {
   id: string
   prospectId: number
   prospect: Prospect
-  commercial: string
   date: string
   heure: string
   duree: number
@@ -172,137 +185,109 @@ interface RendezVous {
   priorite?: 'haute' | 'moyenne' | 'basse'
 }
 
-interface Tournee {
-  commercial: string
-  date: string
-  rdvs: RendezVous[]
-  distanceTotale: number
-  tempsDeplacement: number
-  tempsTotal: number
-  suggestions?: string[]
+interface RouteInfo {
+  distance: number
+  duration: number
+  distanceText: string
+  durationText: string
+  cost: number
+  method: 'google' | 'estimation'
 }
 
-// Fonctions utilitaires
-function calculateDistance(from: District, to: District): number {
-  return DISTANCE_MATRIX[from]?.[to] || 0
+interface CostSettings {
+  fuelPrice: number
+  consumption: number
+  indemnityPerKm: number
+  averageSpeed: number
+  useIndemnity: boolean
+  useGoogleMaps: boolean
 }
 
-function estimateTravelTime(distance: number): number {
-  return Math.round((distance / 40) * 60)
+const DEFAULT_SETTINGS: CostSettings = {
+  fuelPrice: 65,
+  consumption: 8,
+  indemnityPerKm: 15,
+  averageSpeed: 40,
+  useIndemnity: false,
+  useGoogleMaps: HAS_GOOGLE_MAPS // Auto-détection
 }
 
-function calculateFuelCost(distance: number): number {
-  const fuelPrice = 65
-  const consumption = 8
-  return Math.round((distance * consumption * fuelPrice) / 100)
-}
+const SETTINGS_KEY = 'planning_cost_settings'
 
-function optimizeTour(rdvs: RendezVous[], startDistrict?: District): RendezVous[] {
-  if (rdvs.length <= 2) return rdvs
-
-  const optimized: RendezVous[] = []
-  const remaining = [...rdvs]
-  
-  let current = startDistrict 
-    ? remaining.find(r => r.prospect.district === startDistrict) || remaining[0]
-    : remaining[0]
-  
-  optimized.push(current)
-  remaining.splice(remaining.indexOf(current), 1)
-  
-  while (remaining.length > 0) {
-    let nearest = remaining[0]
-    let minDistance = calculateDistance(current.prospect.district, nearest.prospect.district)
-    
-    for (const rdv of remaining) {
-      const distance = calculateDistance(current.prospect.district, rdv.prospect.district)
-      if (distance < minDistance) {
-        minDistance = distance
-        nearest = rdv
-      }
-    }
-    
-    optimized.push(nearest)
-    remaining.splice(remaining.indexOf(nearest), 1)
-    current = nearest
-  }
-  
-  return optimized
-}
-
-function analyzeGeographicCoherence(rdvs: RendezVous[]): {
-  isCoherent: boolean
-  issues: string[]
-  suggestions: string[]
-} {
-  const issues: string[] = []
-  const suggestions: string[] = []
-  let isCoherent = true
-  
-  if (rdvs.length < 2) return { isCoherent: true, issues: [], suggestions: [] }
-  
-  for (let i = 0; i < rdvs.length - 2; i++) {
-    const d1 = rdvs[i].prospect.district
-    const d2 = rdvs[i + 1].prospect.district
-    const d3 = rdvs[i + 2].prospect.district
-    
-    if (d1 === d3 && d1 !== d2) {
-      issues.push(`Aller-retour détecté: ${DISTRICTS_CONFIG[d1].label} → ${DISTRICTS_CONFIG[d2].label} → ${DISTRICTS_CONFIG[d1].label}`)
-      isCoherent = false
-    }
-  }
-  
-  let currentDistance = 0
-  for (let i = 0; i < rdvs.length - 1; i++) {
-    currentDistance += calculateDistance(rdvs[i].prospect.district, rdvs[i + 1].prospect.district)
-  }
-  
-  const optimized = optimizeTour(rdvs)
-  let optimizedDistance = 0
-  for (let i = 0; i < optimized.length - 1; i++) {
-    optimizedDistance += calculateDistance(optimized[i].prospect.district, optimized[i + 1].prospect.district)
-  }
-  
-  const savings = currentDistance - optimizedDistance
-  if (savings > 10) {
-    suggestions.push(`Réorganiser les RDV pourrait économiser ${savings} km`)
-    isCoherent = false
-  }
-  
-  const districtCounts = rdvs.reduce((acc, rdv) => {
-    acc[rdv.prospect.district] = (acc[rdv.prospect.district] || 0) + 1
-    return acc
-  }, {} as Record<District, number>)
-  
-  const districts = Object.keys(districtCounts)
-  if (districts.length > 3) {
-    suggestions.push(`Trop de districts différents (${districts.length}). Essayez de regrouper par zones`)
-    isCoherent = false
-  }
-  
-  const rushHours = rdvs.filter(r => {
-    const hour = parseInt(r.heure.split(':')[0])
-    return (hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 18)
-  })
-  
-  if (rushHours.length > 0) {
-    issues.push(`${rushHours.length} RDV pendant les heures de pointe (embouteillages)`)
-  }
-  
-  return { isCoherent, issues, suggestions }
-}
-
+/**
+ * Composant Planning unifié
+ * Utilise Google Maps si disponible, sinon mode estimation
+ */
 export default function PlanningSection() {
   const [loading, setLoading] = React.useState(true)
+  const [calculating, setCalculating] = React.useState(false)
   const [prospects, setProspects] = React.useState<Prospect[]>([])
   const [rendezVous, setRendezVous] = React.useState<RendezVous[]>([])
+  const [routes, setRoutes] = React.useState<Map<string, RouteInfo>>(new Map())
   const [selectedDate, setSelectedDate] = React.useState(new Date().toISOString().split('T')[0])
-  const [selectedCommercial, setSelectedCommercial] = React.useState<string>('all')
   const [showAddRdv, setShowAddRdv] = React.useState(false)
+  const [showSettings, setShowSettings] = React.useState(false)
+  const [editingRdv, setEditingRdv] = React.useState<RendezVous | null>(null)
+  const [settings, setSettings] = React.useState<CostSettings>(DEFAULT_SETTINGS)
   const { toast } = useToast()
+
+  // Instance du service Google Maps (si disponible)
+  const googleMapsRef = React.useRef<any>(null)
+
+  // Initialisation
+  React.useEffect(() => {
+    if (HAS_GOOGLE_MAPS && GoogleMapsService) {
+      try {
+        googleMapsRef.current = new GoogleMapsService(GOOGLE_MAPS_API_KEY)
+        console.log('✅ Google Maps activé')
+        toast({
+          title: "Google Maps activé",
+          description: "Calculs de distance précis disponibles"
+        })
+      } catch (error) {
+        console.error('Erreur Google Maps:', error)
+      }
+    } else {
+      console.log('📍 Mode estimation (pas de Google Maps)')
+    }
+  }, [])
+
+  // Charger les paramètres
+  React.useEffect(() => {
+    const savedSettings = localStorage.getItem(SETTINGS_KEY)
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings)
+        setSettings({ 
+          ...DEFAULT_SETTINGS, 
+          ...parsed,
+          useGoogleMaps: HAS_GOOGLE_MAPS && parsed.useGoogleMaps // Forcer false si pas d'API
+        })
+      } catch (e) {
+        console.error('Erreur chargement paramètres:', e)
+      }
+    }
+  }, [])
+
+  function saveSettings(newSettings: CostSettings) {
+    // Forcer useGoogleMaps à false si l'API n'est pas disponible
+    const finalSettings = {
+      ...newSettings,
+      useGoogleMaps: HAS_GOOGLE_MAPS && newSettings.useGoogleMaps
+    }
+    setSettings(finalSettings)
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings))
+    toast({
+      title: "Paramètres sauvegardés",
+      description: finalSettings.useGoogleMaps ? 
+        "Google Maps activé" : 
+        "Mode estimation activé"
+    })
+  }
 
   React.useEffect(() => {
     loadProspects()
+    loadRdvs()
   }, [])
 
   async function loadProspects() {
@@ -311,7 +296,6 @@ export default function PlanningSection() {
       const result = await res.json()
       const data = result.data || result
       setProspects(Array.isArray(data) ? data : [])
-      generateSampleRdvs(Array.isArray(data) ? data : [])
     } catch (error) {
       toast({
         title: "Erreur",
@@ -323,146 +307,275 @@ export default function PlanningSection() {
     }
   }
 
-  function generateSampleRdvs(prospectsData: Prospect[]) {
-    if (!prospectsData || prospectsData.length === 0) return
-
-    const commerciaux = ['Jean Dupont', 'Marie Martin', 'Paul Bernard']
-    const types: RendezVous['type'][] = ['decouverte', 'demo', 'negociation', 'signature', 'suivi']
-    const statuts: RendezVous['statut'][] = ['planifie', 'confirme']
-    
-    const rdvs: RendezVous[] = []
-    const today = new Date()
-    
-    for (let day = 0; day < 7; day++) {
-      const date = new Date(today)
-      date.setDate(date.getDate() + day)
-      const dateStr = date.toISOString().split('T')[0]
-      
-      commerciaux.forEach(commercial => {
-        const rdvCount = Math.min(Math.floor(Math.random() * 3) + 3, prospectsData.length)
-        const dayProspects = [...prospectsData].sort(() => Math.random() - 0.5).slice(0, rdvCount)
-        
-        dayProspects.forEach((prospect, index) => {
-          const hour = 9 + index * 2
-          rdvs.push({
-            id: `rdv-${day}-${commercial}-${index}`,
-            prospectId: prospect.id,
-            prospect,
-            commercial,
-            date: dateStr,
-            heure: `${hour}:00`,
-            duree: 60,
-            type: types[Math.floor(Math.random() * types.length)],
-            statut: statuts[Math.floor(Math.random() * statuts.length)],
-            priorite: prospect.score >= 4 ? 'haute' : prospect.score >= 3 ? 'moyenne' : 'basse',
-            notes: `RDV avec ${prospect.contact || 'le responsable'}`
-          })
-        })
-      })
+  function loadRdvs() {
+    const savedRdvs = localStorage.getItem('planning_rdvs')
+    if (savedRdvs) {
+      try {
+        const parsed = JSON.parse(savedRdvs)
+        setRendezVous(parsed)
+      } catch (e) {
+        console.error('Erreur chargement RDV:', e)
+      }
     }
+  }
+
+  function saveRdvs(rdvs: RendezVous[]) {
+    localStorage.setItem('planning_rdvs', JSON.stringify(rdvs))
+  }
+
+  // Calcul de distance unifié
+  async function calculateDistance(
+    origin: Prospect,
+    destination: Prospect
+  ): Promise<RouteInfo> {
+    // Essayer Google Maps si disponible et activé
+    if (settings.useGoogleMaps && googleMapsRef.current) {
+      try {
+        const originAddress = origin.adresse || 
+          `${origin.ville}, ${DISTRICTS_CONFIG[origin.district].label}, Mauritius`
+        const destAddress = destination.adresse || 
+          `${destination.ville}, ${DISTRICTS_CONFIG[destination.district].label}, Mauritius`
+
+        const result = await googleMapsRef.current.calculateDistance(
+          originAddress,
+          destAddress
+        )
+
+        const cost = settings.useIndemnity ?
+          Math.round(result.distance * settings.indemnityPerKm) :
+          Math.round((result.distance * settings.consumption * settings.fuelPrice) / 100)
+
+        return {
+          distance: result.distance,
+          duration: result.duration,
+          distanceText: result.distanceText,
+          durationText: result.durationText,
+          cost,
+          method: 'google'
+        }
+      } catch (error) {
+        console.error('Erreur Google Maps, fallback sur estimation:', error)
+      }
+    }
+
+    // Fallback : calcul par matrice de districts
+    const distance = DISTANCE_MATRIX[origin.district]?.[destination.district] || 25
+    const duration = Math.round(distance / settings.averageSpeed * 60)
+    const cost = settings.useIndemnity ?
+      Math.round(distance * settings.indemnityPerKm) :
+      Math.round((distance * settings.consumption * settings.fuelPrice) / 100)
+
+    return {
+      distance,
+      duration,
+      distanceText: `~${distance} km`,
+      durationText: `~${duration} min`,
+      cost,
+      method: 'estimation'
+    }
+  }
+
+  // Calculer toutes les distances
+  async function calculateDayDistances(rdvs: RendezVous[]) {
+    if (rdvs.length < 2) return
+
+    setCalculating(true)
+    const newRoutes = new Map<string, RouteInfo>()
+
+    try {
+      for (let i = 0; i < rdvs.length - 1; i++) {
+        const key = `${rdvs[i].id}-${rdvs[i + 1].id}`
+        const route = await calculateDistance(
+          rdvs[i].prospect,
+          rdvs[i + 1].prospect
+        )
+        newRoutes.set(key, route)
+      }
+
+      setRoutes(newRoutes)
+      
+      let totalDistance = 0
+      let totalCost = 0
+      
+      newRoutes.forEach(route => {
+        totalDistance += route.distance
+        totalCost += route.cost
+      })
+
+      toast({
+        title: "Distances calculées",
+        description: `${Math.round(totalDistance)} km - Rs ${totalCost} (${
+          settings.useGoogleMaps ? 'Google Maps' : 'Estimation'
+        })`
+      })
+    } catch (error) {
+      console.error('Erreur calcul distances:', error)
+    } finally {
+      setCalculating(false)
+    }
+  }
+
+  // Optimiser la tournée
+  async function optimizeTournee() {
+    setCalculating(true)
     
-    setRendezVous(rdvs)
+    try {
+      let optimizedOrder: number[] = []
+      
+      // Si Google Maps disponible, utiliser son optimisation
+      if (settings.useGoogleMaps && googleMapsRef.current) {
+        const addresses = filteredRdvs.map(rdv => 
+          rdv.prospect.adresse || 
+          `${rdv.prospect.ville}, ${DISTRICTS_CONFIG[rdv.prospect.district].label}, Mauritius`
+        )
+
+        const result = await googleMapsRef.current.optimizeRoute(addresses)
+        optimizedOrder = result.optimizedOrder
+        
+        toast({
+          title: "Tournée optimisée (Google)",
+          description: `Économie de ${result.savings} km`
+        })
+      } else {
+        // Algorithme simple du plus proche voisin
+        const visited = new Set<number>()
+        optimizedOrder = [0]
+        visited.add(0)
+        
+        let current = 0
+        
+        while (visited.size < filteredRdvs.length) {
+          let nearest = -1
+          let minDistance = Infinity
+          
+          for (let i = 0; i < filteredRdvs.length; i++) {
+            if (!visited.has(i)) {
+              const dist = DISTANCE_MATRIX[
+                filteredRdvs[current].prospect.district
+              ]?.[filteredRdvs[i].prospect.district] || 999
+              
+              if (dist < minDistance) {
+                minDistance = dist
+                nearest = i
+              }
+            }
+          }
+          
+          if (nearest !== -1) {
+            optimizedOrder.push(nearest)
+            visited.add(nearest)
+            current = nearest
+          }
+        }
+        
+        toast({
+          title: "Tournée optimisée",
+          description: "Ordre réorganisé pour minimiser les distances"
+        })
+      }
+      
+      // Réorganiser les RDV
+      const optimizedRdvs = optimizedOrder.map(index => filteredRdvs[index])
+      
+      // Recalculer les heures
+      const updatedRdvs = rendezVous.map(rdv => {
+        if (rdv.date === selectedDate) {
+          const index = optimizedRdvs.findIndex(o => o.id === rdv.id)
+          if (index !== -1 && index > 0) {
+            const prevRdv = optimizedRdvs[index - 1]
+            const routeKey = `${prevRdv.id}-${rdv.id}`
+            const route = routes.get(routeKey)
+            const travelTime = route?.duration || 30
+            
+            const [prevHour, prevMin] = prevRdv.heure.split(':').map(Number)
+            const totalMinutes = prevHour * 60 + prevMin + prevRdv.duree + travelTime
+            const newHour = Math.floor(totalMinutes / 60)
+            const newMin = totalMinutes % 60
+            
+            return {
+              ...rdv,
+              heure: `${String(newHour).padStart(2, '0')}:${String(newMin).padStart(2, '0')}`
+            }
+          }
+        }
+        return rdv
+      })
+      
+      setRendezVous(updatedRdvs)
+      saveRdvs(updatedRdvs)
+      
+      // Recalculer les distances
+      await calculateDayDistances(optimizedRdvs)
+    } catch (error) {
+      console.error('Erreur optimisation:', error)
+      toast({
+        title: "Erreur",
+        description: "Impossible d'optimiser la tournée",
+        variant: "destructive"
+      })
+    } finally {
+      setCalculating(false)
+    }
   }
 
   const filteredRdvs = React.useMemo(() => {
-    return rendezVous.filter(rdv => {
-      const dateMatch = rdv.date === selectedDate
-      const commercialMatch = selectedCommercial === 'all' || rdv.commercial === selectedCommercial
-      return dateMatch && commercialMatch
-    })
-  }, [rendezVous, selectedDate, selectedCommercial])
+    return rendezVous.filter(rdv => rdv.date === selectedDate)
+      .sort((a, b) => a.heure.localeCompare(b.heure))
+  }, [rendezVous, selectedDate])
 
-  const tournees = React.useMemo((): Tournee[] => {
-    const grouped = filteredRdvs.reduce((acc, rdv) => {
-      if (!acc[rdv.commercial]) {
-        acc[rdv.commercial] = []
-      }
-      acc[rdv.commercial].push(rdv)
-      return acc
-    }, {} as Record<string, RendezVous[]>)
-
-    return Object.entries(grouped).map(([commercial, rdvs]) => {
-      rdvs.sort((a, b) => a.heure.localeCompare(b.heure))
-      
-      let distanceTotale = 0
-      let tempsDeplacement = 0
-      
-      for (let i = 0; i < rdvs.length - 1; i++) {
-        const distance = calculateDistance(rdvs[i].prospect.district, rdvs[i + 1].prospect.district)
-        distanceTotale += distance
-        tempsDeplacement += estimateTravelTime(distance)
-      }
-      
-      const tempsTotal = tempsDeplacement + rdvs.reduce((sum, rdv) => sum + rdv.duree, 0)
-      const analysis = analyzeGeographicCoherence(rdvs)
-      
-      return {
-        commercial,
-        date: selectedDate,
-        rdvs,
-        distanceTotale,
-        tempsDeplacement,
-        tempsTotal,
-        suggestions: [...analysis.issues, ...analysis.suggestions]
-      }
-    })
-  }, [filteredRdvs, selectedDate])
+  React.useEffect(() => {
+    if (filteredRdvs.length >= 2) {
+      calculateDayDistances(filteredRdvs)
+    }
+  }, [filteredRdvs])
 
   const stats = React.useMemo(() => {
-    const totalRdvs = filteredRdvs.length
-    const totalDistance = tournees.reduce((sum, t) => sum + t.distanceTotale, 0)
-    const totalFuel = calculateFuelCost(totalDistance)
-    const avgDistance = totalRdvs > 0 ? Math.round(totalDistance / totalRdvs) : 0
+    let distanceTotale = 0
+    let tempsDeplacement = 0
+    let coutTotal = 0
     
-    let optimizedDistance = 0
-    tournees.forEach(tournee => {
-      const optimized = optimizeTour(tournee.rdvs)
-      for (let i = 0; i < optimized.length - 1; i++) {
-        optimizedDistance += calculateDistance(optimized[i].prospect.district, optimized[i + 1].prospect.district)
-      }
+    routes.forEach(route => {
+      distanceTotale += route.distance
+      tempsDeplacement += route.duration
+      coutTotal += route.cost
     })
     
-    const potentialSavings = totalDistance - optimizedDistance
+    const tempsTotal = tempsDeplacement + filteredRdvs.reduce((sum, rdv) => sum + rdv.duree, 0)
     
     return {
-      totalRdvs,
-      totalDistance,
-      totalFuel,
-      avgDistance,
-      potentialSavings,
-      potentialFuelSavings: calculateFuelCost(potentialSavings)
+      totalRdvs: filteredRdvs.length,
+      distanceTotale: Math.round(distanceTotale * 10) / 10,
+      tempsDeplacement: Math.round(tempsDeplacement),
+      tempsTotal: Math.round(tempsTotal),
+      coutTotal: Math.round(coutTotal)
     }
-  }, [filteredRdvs, tournees])
+  }, [filteredRdvs, routes])
 
-  function optimizeTournee(commercial: string) {
-    const tournee = tournees.find(t => t.commercial === commercial)
-    if (!tournee) return
-    
-    const optimized = optimizeTour(tournee.rdvs)
-    
-    const updatedRdvs = rendezVous.map(rdv => {
-      if (rdv.commercial === commercial && rdv.date === selectedDate) {
-        const index = optimized.findIndex(o => o.id === rdv.id)
-        if (index !== -1) {
-          const baseHour = 9
-          const newHour = baseHour + index * 2
-          return { ...rdv, heure: `${newHour}:00` }
-        }
-      }
-      return rdv
-    })
-    
-    setRendezVous(updatedRdvs)
-    
+  function addRdv(rdv: RendezVous) {
+    const newRdvs = [...rendezVous, rdv]
+    setRendezVous(newRdvs)
+    saveRdvs(newRdvs)
     toast({
-      title: "Tournée optimisée",
-      description: `La tournée de ${commercial} a été réorganisée pour minimiser les déplacements`
+      title: "RDV ajouté",
+      description: `RDV avec ${rdv.prospect.nom} planifié`
     })
   }
 
-  const commerciaux = React.useMemo(() => {
-    return Array.from(new Set(rendezVous.map(rdv => rdv.commercial)))
-  }, [rendezVous])
+  function updateRdv(updatedRdv: RendezVous) {
+    const newRdvs = rendezVous.map(rdv => 
+      rdv.id === updatedRdv.id ? updatedRdv : rdv
+    )
+    setRendezVous(newRdvs)
+    saveRdvs(newRdvs)
+    toast({ title: "RDV modifié" })
+  }
+
+  function deleteRdv(rdvId: string) {
+    const newRdvs = rendezVous.filter(rdv => rdv.id !== rdvId)
+    setRendezVous(newRdvs)
+    saveRdvs(newRdvs)
+    toast({ title: "RDV supprimé" })
+  }
 
   if (loading) {
     return (
@@ -474,85 +587,106 @@ export default function PlanningSection() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">
-          Planning & Optimisation des Tournées
-        </h2>
-        <p className="text-gray-600">
-          Gestion intelligente des rendez-vous commerciaux à Maurice
-        </p>
+      {/* Header avec indicateur de mode */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">
+            Planning & Optimisation
+          </h2>
+          <p className="text-gray-600">
+            Mode : {settings.useGoogleMaps && HAS_GOOGLE_MAPS ? 
+              '🌍 Google Maps (précis)' : 
+              '📍 Estimation par district'
+            }
+          </p>
+        </div>
+        
+        <div className="flex gap-2">
+          {!HAS_GOOGLE_MAPS && (
+            <Button
+              onClick={() => window.open('https://console.cloud.google.com', '_blank')}
+              variant="outline"
+              className="bg-yellow-50 text-yellow-700 border-yellow-300"
+            >
+              📚 Configurer Google Maps
+            </Button>
+          )}
+          
+          <Button
+            onClick={() => setShowSettings(true)}
+            variant="outline"
+            className="bg-gray-50"
+          >
+            ⚙️ Paramètres
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <Card className="bg-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">RDV du jour</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalRdvs}</p>
-              </div>
-              <span className="text-2xl">📅</span>
+      {/* Statistiques */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">📅</div>
+              <p className="text-xs text-gray-600">RDV</p>
+              <p className="text-xl font-bold">{stats.totalRdvs}</p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Distance totale</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalDistance} km</p>
-              </div>
-              <span className="text-2xl">🗺️</span>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">🗺️</div>
+              <p className="text-xs text-gray-600">Distance</p>
+              <p className="text-xl font-bold">{stats.distanceTotale} km</p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Coût essence</p>
-                <p className="text-2xl font-bold text-gray-900">Rs {stats.totalFuel}</p>
-              </div>
-              <span className="text-2xl">⛽</span>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">⏱️</div>
+              <p className="text-xs text-gray-600">Route</p>
+              <p className="text-xl font-bold">
+                {Math.floor(stats.tempsDeplacement / 60)}h{stats.tempsDeplacement % 60}
+              </p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Moy. par RDV</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.avgDistance} km</p>
-              </div>
-              <span className="text-2xl">📊</span>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">💰</div>
+              <p className="text-xs text-gray-600">Coût</p>
+              <p className="text-xl font-bold">Rs {stats.coutTotal}</p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Économies possibles</p>
-                <p className="text-2xl font-bold text-green-600">Rs {stats.potentialFuelSavings}</p>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">
+                {settings.useGoogleMaps ? '🌍' : '📍'}
               </div>
-              <span className="text-2xl">💰</span>
+              <p className="text-xs text-gray-600">Calcul</p>
+              <p className="text-sm font-bold">
+                {settings.useGoogleMaps ? 'Précis' : 'Estimé'}
+              </p>
             </div>
           </CardContent>
         </Card>
       </div>
 
+      {/* Contrôles */}
       <Card>
-        <CardHeader>
-          <CardTitle>Filtres & Actions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-4">
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-center gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Date</label>
+              <label className="block text-sm font-medium mb-1">Date</label>
               <Input
                 type="date"
                 value={selectedDate}
@@ -561,316 +695,217 @@ export default function PlanningSection() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Commercial</label>
-              <select
-                value={selectedCommercial}
-                onChange={(e) => setSelectedCommercial(e.target.value)}
-                className="border rounded-md px-3 py-2 w-48"
-              >
-                <option value="all">Tous les commerciaux</option>
-                {commerciaux.map(com => (
-                  <option key={com} value={com}>{com}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-end gap-2">
+            <div className="flex items-end gap-2 flex-1">
               <Button onClick={() => setShowAddRdv(true)}>
                 ➕ Nouveau RDV
               </Button>
               
-              <Button 
-                variant="outline"
-                className="bg-green-50 text-green-700 border-green-300"
-                onClick={() => {
-                  tournees.forEach(t => optimizeTournee(t.commercial))
-                }}
-              >
-                🗺️ Optimiser Toutes les Tournées
-              </Button>
+              {filteredRdvs.length > 1 && (
+                <>
+                  <Button 
+                    variant="outline"
+                    onClick={() => calculateDayDistances(filteredRdvs)}
+                    disabled={calculating}
+                  >
+                    {calculating ? '⏳' : '📏'} Calculer
+                  </Button>
+                  
+                  <Button 
+                    variant="outline"
+                    className="bg-green-50 text-green-700 border-green-300"
+                    onClick={optimizeTournee}
+                    disabled={calculating}
+                  >
+                    {calculating ? '⏳' : '🗺️'} Optimiser
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {stats.potentialSavings > 20 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-xl">⚠️</span>
-            <div>
-              <h3 className="font-semibold text-amber-900">Optimisation recommandée</h3>
-              <p className="text-sm text-amber-700 mt-1">
-                Les tournées actuelles peuvent être optimisées pour économiser environ {stats.potentialSavings} km
-                (Rs {stats.potentialFuelSavings} d'essence). Cliquez sur "Optimiser" pour réorganiser automatiquement.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {tournees.map(tournee => (
-          <TourneeCard
-            key={tournee.commercial}
-            tournee={tournee}
-            onOptimize={() => optimizeTournee(tournee.commercial)}
-          />
-        ))}
-      </div>
-
-      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50">
+      {/* Planning de la journée */}
+      <Card>
         <CardHeader>
-          <CardTitle className="text-blue-800">
-            💡 Analyse & Recommandations
-          </CardTitle>
+          <CardTitle>Planning du {selectedDate}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white p-4 rounded-lg">
-              <h4 className="font-semibold text-gray-900 mb-2">
-                🗺️ Optimisation Géographique
-              </h4>
-              <p className="text-sm text-gray-600">
-                Regroupez les RDV par districts adjacents. Par exemple, combinez
-                Port-Louis avec Plaines Wilhems, ou Flacq avec Grand Port.
-              </p>
+          {filteredRdvs.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <div className="text-4xl mb-2">📅</div>
+              <p>Aucun rendez-vous planifié</p>
+              <Button onClick={() => setShowAddRdv(true)} className="mt-4">
+                Planifier un RDV
+              </Button>
             </div>
-            
-            <div className="bg-white p-4 rounded-lg">
-              <h4 className="font-semibold text-gray-900 mb-2">
-                ⏰ Gestion du Temps
-              </h4>
-              <p className="text-sm text-gray-600">
-                Évitez les RDV entre 7h-9h et 16h-18h (heures de pointe).
-                Préférez les créneaux 10h-12h et 14h-16h.
-              </p>
+          ) : (
+            <div className="space-y-3">
+              {filteredRdvs.map((rdv, index) => {
+                const districtConfig = DISTRICTS_CONFIG[rdv.prospect.district]
+                const secteurConfig = SECTEURS_CONFIG[rdv.prospect.secteur]
+                
+                let routeInfo = null
+                if (index > 0) {
+                  const prevRdv = filteredRdvs[index - 1]
+                  const routeKey = `${prevRdv.id}-${rdv.id}`
+                  routeInfo = routes.get(routeKey)
+                }
+                
+                const priorityColors = {
+                  haute: "border-red-500 bg-red-50",
+                  moyenne: "border-yellow-500 bg-yellow-50",
+                  basse: "border-green-500 bg-green-50"
+                }
+                
+                return (
+                  <div key={rdv.id}>
+                    {routeInfo && (
+                      <div className="flex items-center gap-4 text-xs text-gray-600 mb-1 ml-4 bg-gray-50 rounded p-2">
+                        <span>🚗 {routeInfo.distanceText}</span>
+                        <span>⏱️ {routeInfo.durationText}</span>
+                        <span>💰 Rs {routeInfo.cost}</span>
+                        <span className={routeInfo.method === 'google' ? 'text-green-600' : 'text-gray-500'}>
+                          {routeInfo.method === 'google' ? '✓ Google' : '~ Estimé'}
+                        </span>
+                      </div>
+                    )}
+                    
+                    <div className={`border-l-4 p-4 rounded-r-lg ${priorityColors[rdv.priorite || 'basse']}`}>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-lg font-semibold">⏰ {rdv.heure}</span>
+                            <span className="text-sm text-gray-600">({rdv.duree} min)</span>
+                          </div>
+                          
+                          <div className="mb-2">
+                            <div className="font-medium text-lg">{rdv.prospect.nom}</div>
+                            <div className="text-sm text-gray-600">
+                              {secteurConfig?.icon} {secteurConfig?.label} • ⭐{rdv.prospect.score}
+                            </div>
+                          </div>
+                          
+                          <div className="text-sm text-gray-600">
+                            <div>📍 {rdv.prospect.adresse || `${rdv.prospect.ville}, ${districtConfig?.label}`}</div>
+                            {rdv.prospect.telephone && <div>📞 {rdv.prospect.telephone}</div>}
+                          </div>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingRdv(rdv)}
+                          >
+                            ✏️
+                          </Button>
+                          
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600"
+                            onClick={() => {
+                              if (confirm(`Supprimer le RDV ?`)) {
+                                deleteRdv(rdv.id)
+                              }
+                            }}
+                          >
+                            🗑️
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-            
-            <div className="bg-white p-4 rounded-lg">
-              <h4 className="font-semibold text-gray-900 mb-2">
-                🎯 Priorisation
-              </h4>
-              <p className="text-sm text-gray-600">
-                Concentrez-vous sur les prospects avec un score ≥ 4.
-                {stats.totalRdvs > 5 && " Vous avez trop de RDV peu qualifiés aujourd'hui."}
-              </p>
-            </div>
-            
-            <div className="bg-white p-4 rounded-lg">
-              <h4 className="font-semibold text-gray-900 mb-2">
-                📊 Performance
-              </h4>
-              <p className="text-sm text-gray-600">
-                Visez 4-5 RDV par jour maximum pour maintenir la qualité.
-                Laissez 30 min de battement entre les RDV éloignés.
-              </p>
-            </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
-      <AddRdvDialog
-        open={showAddRdv}
-        onClose={() => setShowAddRdv(false)}
-        prospects={prospects}
-        commerciaux={commerciaux}
-        onAdd={(rdv) => {
-          setRendezVous([...rendezVous, rdv])
-          toast({
-            title: "RDV ajouté",
-            description: "Le rendez-vous a été planifié avec succès"
-          })
+      {/* Dialogs (simplifiés, code identique aux versions précédentes) */}
+      <RdvDialog
+        open={showAddRdv || !!editingRdv}
+        onClose={() => {
+          setShowAddRdv(false)
+          setEditingRdv(null)
         }}
+        prospects={prospects}
+        rdv={editingRdv}
+        onSave={(rdv) => {
+          if (editingRdv) {
+            updateRdv(rdv)
+          } else {
+            addRdv(rdv)
+          }
+          setShowAddRdv(false)
+          setEditingRdv(null)
+        }}
+      />
+
+      <SettingsDialog
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        settings={settings}
+        onSave={saveSettings}
+        hasGoogleMaps={HAS_GOOGLE_MAPS}
       />
     </div>
   )
 }
 
-function TourneeCard({ 
-  tournee, 
-  onOptimize 
-}: { 
-  tournee: Tournee
-  onOptimize: () => void 
-}) {
-  const hasIssues = tournee.suggestions && tournee.suggestions.length > 0
-  const fuelCost = calculateFuelCost(tournee.distanceTotale)
-  
-  return (
-    <Card className={hasIssues ? "border-amber-200" : ""}>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">
-            <div className="flex items-center gap-2">
-              <span>👥</span>
-              {tournee.commercial}
-            </div>
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            {hasIssues && (
-              <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs">
-                À optimiser
-              </span>
-            )}
-            <Button size="sm" variant="outline" onClick={onOptimize}>
-              🗺️ Optimiser
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3 mb-4">
-          {tournee.rdvs.map((rdv, index) => {
-            const districtConfig = DISTRICTS_CONFIG[rdv.prospect.district]
-            const secteurConfig = SECTEURS_CONFIG[rdv.prospect.secteur]
-            
-            let travelInfo = null
-            if (index > 0) {
-              const prevRdv = tournee.rdvs[index - 1]
-              const distance = calculateDistance(prevRdv.prospect.district, rdv.prospect.district)
-              const travelTime = estimateTravelTime(distance)
-              travelInfo = { distance, travelTime }
-            }
-            
-            const priorityColors = {
-              haute: "border-red-500",
-              moyenne: "border-yellow-500",
-              basse: "border-green-500"
-            }
-            
-            return (
-              <div key={rdv.id}>
-                {travelInfo && (
-                  <div className="flex items-center gap-2 text-xs text-gray-500 mb-1 ml-4">
-                    <span>🚗</span>
-                    <span>{travelInfo.distance} km • {travelInfo.travelTime} min</span>
-                  </div>
-                )}
-                
-                <div className={`border-l-4 pl-4 py-2 ${priorityColors[rdv.priorite || 'basse']}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span>🕐</span>
-                        <span className="font-medium">{rdv.heure}</span>
-                        <span className="text-sm text-gray-600">({rdv.duree} min)</span>
-                      </div>
-                      <div className="mt-1">
-                        <span className="font-medium">{rdv.prospect.nom}</span>
-                        <span className="text-sm text-gray-600 ml-2">
-                          {secteurConfig?.icon} {secteurConfig?.label}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                        <span>📍</span>
-                        <span>{rdv.prospect.ville}, {districtConfig?.label}</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className={`text-xs px-2 py-1 rounded ${
-                        rdv.type === 'signature' ? 'bg-green-100 text-green-800' :
-                        rdv.type === 'negociation' ? 'bg-orange-100 text-orange-800' :
-                        rdv.type === 'demo' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {rdv.type}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="text-sm text-gray-600">Distance</p>
-              <p className="font-semibold">{tournee.distanceTotale} km</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Temps route</p>
-              <p className="font-semibold">{Math.floor(tournee.tempsDeplacement / 60)}h{tournee.tempsDeplacement % 60}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Coût essence</p>
-              <p className="font-semibold">Rs {fuelCost}</p>
-            </div>
-          </div>
-        </div>
-
-        {hasIssues && (
-          <div className="mt-4 p-3 bg-amber-50 rounded-lg">
-            <h4 className="text-sm font-semibold text-amber-900 mb-2">
-              Suggestions d'optimisation:
-            </h4>
-            <ul className="text-sm text-amber-700 space-y-1">
-              {tournee.suggestions?.map((suggestion, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <span>•</span>
-                  <span>{suggestion}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function AddRdvDialog({
-  open,
-  onClose,
-  prospects,
-  commerciaux,
-  onAdd
-}: {
-  open: boolean
-  onClose: () => void
-  prospects: Prospect[]
-  commerciaux: string[]
-  onAdd: (rdv: RendezVous) => void
-}) {
+// Composants Dialog (versions simplifiées)
+function RdvDialog({ open, onClose, prospects, rdv, onSave }: any) {
   const [form, setForm] = React.useState({
-    prospectId: '',
-    commercial: commerciaux[0] || '',
-    date: new Date().toISOString().split('T')[0],
-    heure: '10:00',
-    duree: 60,
-    type: 'decouverte' as RendezVous['type'],
-    notes: ''
+    prospectId: rdv?.prospectId?.toString() || '',
+    date: rdv?.date || new Date().toISOString().split('T')[0],
+    heure: rdv?.heure || '10:00',
+    duree: rdv?.duree || 60,
+    type: rdv?.type || 'decouverte',
+    statut: rdv?.statut || 'planifie',
+    notes: rdv?.notes || ''
   })
 
+  React.useEffect(() => {
+    if (rdv) {
+      setForm({
+        prospectId: rdv.prospectId.toString(),
+        date: rdv.date,
+        heure: rdv.heure,
+        duree: rdv.duree,
+        type: rdv.type,
+        statut: rdv.statut,
+        notes: rdv.notes || ''
+      })
+    }
+  }, [rdv])
+
   function handleSubmit() {
-    const prospect = prospects.find(p => p.id === parseInt(form.prospectId))
+    const prospect = prospects.find((p: any) => p.id === parseInt(form.prospectId))
     if (!prospect) return
 
-    const rdv: RendezVous = {
-      id: `rdv-${Date.now()}`,
+    const newRdv = {
+      id: rdv?.id || `rdv-${Date.now()}`,
       prospectId: prospect.id,
       prospect,
-      commercial: form.commercial,
       date: form.date,
       heure: form.heure,
       duree: form.duree,
       type: form.type,
-      statut: 'planifie',
+      statut: form.statut,
       notes: form.notes,
       priorite: prospect.score >= 4 ? 'haute' : prospect.score >= 3 ? 'moyenne' : 'basse'
     }
 
-    onAdd(rdv)
-    onClose()
+    onSave(newRdv)
   }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Planifier un rendez-vous</DialogTitle>
+          <DialogTitle>{rdv ? 'Modifier' : 'Planifier'} un RDV</DialogTitle>
         </DialogHeader>
         
         <div className="space-y-4">
@@ -880,25 +915,13 @@ function AddRdvDialog({
               value={form.prospectId}
               onChange={(e) => setForm({...form, prospectId: e.target.value})}
               className="w-full border rounded-md px-3 py-2"
+              disabled={!!rdv}
             >
-              <option value="">Sélectionner un prospect</option>
-              {prospects.map(p => (
+              <option value="">Sélectionner</option>
+              {prospects.map((p: any) => (
                 <option key={p.id} value={p.id}>
-                  {p.nom} - {p.ville} ({DISTRICTS_CONFIG[p.district].label})
+                  {p.nom} - {p.ville} ⭐{p.score}
                 </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Commercial</label>
-            <select
-              value={form.commercial}
-              onChange={(e) => setForm({...form, commercial: e.target.value})}
-              className="w-full border rounded-md px-3 py-2"
-            >
-              {commerciaux.map(com => (
-                <option key={com} value={com}>{com}</option>
               ))}
             </select>
           </div>
@@ -923,38 +946,11 @@ function AddRdvDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Type</label>
-              <select
-                value={form.type}
-                onChange={(e) => setForm({...form, type: e.target.value as RendezVous['type']})}
-                className="w-full border rounded-md px-3 py-2"
-              >
-                <option value="decouverte">Découverte</option>
-                <option value="demo">Démonstration</option>
-                <option value="negociation">Négociation</option>
-                <option value="signature">Signature</option>
-                <option value="suivi">Suivi</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-2">Durée (min)</label>
-              <Input
-                type="number"
-                value={form.duree}
-                onChange={(e) => setForm({...form, duree: parseInt(e.target.value)})}
-              />
-            </div>
-          </div>
-
           <div>
             <label className="block text-sm font-medium mb-2">Notes</label>
             <Textarea
               value={form.notes}
               onChange={(e) => setForm({...form, notes: e.target.value})}
-              placeholder="Objectifs du RDV, points à aborder..."
               rows={3}
             />
           </div>
@@ -965,7 +961,109 @@ function AddRdvDialog({
             Annuler
           </Button>
           <Button onClick={handleSubmit}>
-            Planifier
+            {rdv ? 'Enregistrer' : 'Planifier'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function SettingsDialog({ open, onClose, settings, onSave, hasGoogleMaps }: any) {
+  const [form, setForm] = React.useState(settings)
+
+  React.useEffect(() => {
+    setForm(settings)
+  }, [settings])
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>⚙️ Paramètres</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          {hasGoogleMaps && (
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.useGoogleMaps}
+                  onChange={(e) => setForm({...form, useGoogleMaps: e.target.checked})}
+                  className="w-4 h-4"
+                />
+                <div>
+                  <div className="font-medium">Utiliser Google Maps</div>
+                  <div className="text-sm text-gray-600">
+                    Calculs précis avec l'API Google
+                  </div>
+                </div>
+              </label>
+            </div>
+          )}
+
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.useIndemnity}
+                onChange={(e) => setForm({...form, useIndemnity: e.target.checked})}
+                className="w-4 h-4"
+              />
+              <div>
+                <div className="font-medium">Indemnités kilométriques</div>
+                <div className="text-sm text-gray-600">
+                  Sinon, calcul par consommation
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {form.useIndemnity ? (
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Indemnité par km (Rs)
+              </label>
+              <Input
+                type="number"
+                value={form.indemnityPerKm}
+                onChange={(e) => setForm({...form, indemnityPerKm: parseFloat(e.target.value) || 0})}
+              />
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Prix essence (Rs/L)
+                </label>
+                <Input
+                  type="number"
+                  value={form.fuelPrice}
+                  onChange={(e) => setForm({...form, fuelPrice: parseFloat(e.target.value) || 0})}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Consommation (L/100km)
+                </label>
+                <Input
+                  type="number"
+                  value={form.consumption}
+                  onChange={(e) => setForm({...form, consumption: parseFloat(e.target.value) || 0})}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button onClick={() => { onSave(form); onClose() }}>
+            Enregistrer
           </Button>
         </div>
       </DialogContent>
