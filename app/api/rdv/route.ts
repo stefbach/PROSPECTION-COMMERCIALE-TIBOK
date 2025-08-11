@@ -9,12 +9,12 @@ export async function GET(request: NextRequest) {
     
     // Si un prospect_id est fourni, retourner uniquement les RDV de ce prospect
     if (prospect_id) {
-      const rdvs = rdvDB.getRDVs(parseInt(prospect_id))
+      const rdvs = await rdvDB.getRDVs(parseInt(prospect_id))
       return NextResponse.json(rdvs)
     }
     
     // Sinon retourner tous les RDV
-    const allRdvs = rdvDB.getRDVs()
+    const allRdvs = await rdvDB.getRDVs()
     return NextResponse.json(allRdvs)
   } catch (error) {
     console.error('Erreur GET /api/rdv:', error)
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    const newRDV = rdvDB.createRDV({
+    const newRDV = await rdvDB.createRDV({
       prospect_id: body.prospect_id,
       prospect_nom: body.prospect_nom || '',
       commercial: body.commercial,
@@ -66,7 +66,8 @@ export async function PATCH(request: NextRequest) {
       )
     }
     
-    const updated = rdvDB.updateRDV(body.id, body)
+    const { id, ...updates } = body
+    const updated = await rdvDB.updateRDV(id, updates)
     
     if (!updated) {
       return NextResponse.json(
@@ -94,7 +95,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
     
-    const success = rdvDB.deleteRDV(parseInt(id))
+    const success = await rdvDB.deleteRDV(parseInt(id))
     
     if (!success) {
       return NextResponse.json(
