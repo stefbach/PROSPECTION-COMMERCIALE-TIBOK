@@ -492,33 +492,8 @@ export default function MauritiusProspectsSection() {
       {/* Liste des prospects */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {filtered.map((p) => (
-          <ProspectCard
-            key={p.id}
-            prospect={p}
-            onStatusChange={(statut) => updateStatus(p.id, statut)}
-            onUpdate={updateProspect}
-            onDelete={() => deleteProspect(p.id)}
-          />
-        ))}
-        {!loading && filtered.length === 0 && (
-          <div className="col-span-full text-center py-8 text-gray-600 bg-white rounded-lg border border-gray-200">
-            Aucun prospect ne correspond aux filtres sélectionnés.
-          </div>
-        )}
-        {loading && (
-          <div className="col-span-full text-center py-8 text-gray-600 bg-white rounded-lg border border-gray-200">
-            <div className="space-y-2">
-              <div className="animate-spin inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-              <div>{loadingMessage || 'Chargement des prospects...'}</div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
+       import { Calendar, Phone, MapPin, Clock, AlertCircle, User, Eye, Trash2, CheckCircle } from 'lucide-react'
 
-// ProspectCard avec boutons RDV et Contrat
 function ProspectCard({ 
   prospect, 
   onStatusChange,
@@ -533,11 +508,48 @@ function ProspectCard({
   const [showDetail, setShowDetail] = React.useState(false)
   const [showRdvDialog, setShowRdvDialog] = React.useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false)
+  const [upcomingRdv, setUpcomingRdv] = React.useState<any | null>(null)
+  const [rdvCount, setRdvCount] = React.useState(0)
   
   const statutConfig = MAURITIUS_CONFIG.statuts[prospect.statut]
   const secteurConfig = MAURITIUS_CONFIG.secteurs[prospect.secteur]
   const districtConfig = MAURITIUS_CONFIG.districts[prospect.district]
   const stars = getStars(prospect.score)
+  
+  // Charger les RDV du prospect
+  React.useEffect(() => {
+    loadProspectRdvs()
+  }, [prospect.id])
+  
+  async function loadProspectRdvs() {
+    try {
+      const res = await fetch(`/api/rdv?prospect_id=${prospect.id}`)
+      if (res.ok) {
+        const rdvs = await res.json()
+        setRdvCount(rdvs.length)
+        
+        // Trouver le prochain RDV non terminé
+        const now = new Date()
+        const futureRdvs = rdvs
+          .filter((rdv: any) => 
+            new Date(rdv.date_time) >= now && 
+            rdv.statut !== 'annule' && 
+            rdv.statut !== 'termine'
+          )
+          .sort((a: any, b: any) => 
+            new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
+          )
+        
+        if (futureRdvs.length > 0) {
+          setUpcomingRdv(futureRdvs[0])
+        } else {
+          setUpcomingRdv(null)
+        }
+      }
+    } catch (error) {
+      console.error('Erreur chargement RDV:', error)
+    }
+  }
   
   const statutColors: Record<string, string> = {
     gray: "bg-gray-100 text-gray-800 border border-gray-300",
@@ -549,19 +561,56 @@ function ProspectCard({
     red: "bg-red-100 text-red-800 border border-red-300"
   }
 
+  // Calculer le délai jusqu'au prochain RDV
+  const getTimeUntilRdv = () => {
+    if (!upcomingRdv) return null
+    
+    const now = new Date()
+    const rdvDate = new Date(upcomingRdv.date_time)
+    const diffMs = rdvDate.getTime() - now.getTime()
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+    
+    if (diffDays > 0) {
+      return `Dans ${diffDays} jour${diffDays > 1 ? 's' : ''}`
+    } else if (diffHours > 0) {
+      return `Dans ${diffHours}h`
+    } else {
+      return "Aujourd'hui"
+    }
+  }
+
   return (
     <>
       <Card 
         className="transition-all hover:shadow-lg cursor-pointer relative group bg-white border-gray-200 hover:border-blue-300"
         onClick={() => setShowDetail(true)}
       >
-        {prospect.priority === 'Haute' && (
-          <div className="absolute -top-2 -right-2 z-10">
+        {/* Badges en haut de la carte */}
+        <div className="absolute -top-2 -right-2 z-10 flex gap-2">
+          {prospect.priority === 'Haute' && (
             <div className="bg-red-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
               Priorité
             </div>
-          </div>
-        )}
+          )}
+          
+          {upcomingRdv && (
+            <div className={`text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 ${
+              upcomingRdv.priorite === 'urgente' ? 'bg-orange-500' :
+              upcomingRdv.priorite === 'haute' ? 'bg-red-500' :
+              'bg-blue-500'
+            }`}>
+              <Calendar className="h-3 w-3" />
+              {getTimeUntilRdv()}
+            </div>
+          )}
+          
+          {rdvCount > 0 && !upcomingRdv && (
+            <div className="bg-gray-500 text-white text-xs px-2 py-1 rounded-full">
+              {rdvCount} RDV passé{rdvCount > 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
         
         <CardContent className="p-6">
           <div className="flex items-start justify-between mb-3">
@@ -581,6 +630,39 @@ function ProspectCard({
             </span>
           </div>
 
+          {/* Afficher le prochain RDV si existant */}
+          {upcomingRdv && (
+            <div className="mb-3 p-2 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center gap-2 text-sm">
+                <Calendar className="h-4 w-4 text-blue-600" />
+                <span className="font-medium text-blue-900">
+                  Prochain RDV : {new Date(upcomingRdv.date_time).toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'short'
+                  })}
+                </span>
+                <span className="text-blue-700">
+                  à {new Date(upcomingRdv.date_time).toLocaleTimeString('fr-FR', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </span>
+              </div>
+              {upcomingRdv.statut === 'confirme' && (
+                <div className="flex items-center gap-1 mt-1 text-xs text-green-700">
+                  <CheckCircle className="h-3 w-3" />
+                  Confirmé
+                </div>
+              )}
+              {upcomingRdv.statut === 'planifie' && (
+                <div className="flex items-center gap-1 mt-1 text-xs text-orange-600">
+                  <AlertCircle className="h-3 w-3" />
+                  À confirmer
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-2 mb-4 text-sm">
             <div className="flex items-center gap-2 text-gray-700">
               <MapPin className="h-4 w-4 text-gray-400" />
@@ -589,7 +671,7 @@ function ProspectCard({
             
             {prospect.contact && (
               <div className="flex items-center gap-2 text-gray-700">
-                <span className="text-gray-400">👤</span>
+                <User className="h-4 w-4 text-gray-400" />
                 <span>{prospect.contact}</span>
               </div>
             )}
@@ -604,6 +686,11 @@ function ProspectCard({
             <div className="flex items-center gap-2">
               <span className="text-yellow-500">{stars}</span>
               <span className="text-xs text-gray-600">Score: {prospect.score}/5</span>
+              {rdvCount > 0 && (
+                <span className="text-xs text-gray-600 ml-2">
+                  • {rdvCount} RDV au total
+                </span>
+              )}
             </div>
           </div>
 
@@ -616,14 +703,14 @@ function ProspectCard({
           <div className="grid grid-cols-2 gap-2">
             <Button 
               size="sm" 
-              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              className={`${upcomingRdv ? 'bg-orange-600 hover:bg-orange-700' : 'bg-indigo-600 hover:bg-indigo-700'} text-white`}
               onClick={(e) => {
                 e.stopPropagation()
                 setShowRdvDialog(true)
               }}
             >
               <Calendar className="h-4 w-4 mr-1" />
-              RDV
+              {upcomingRdv ? 'Modifier RDV' : 'Planifier RDV'}
             </Button>
             
             <Button 
@@ -631,8 +718,11 @@ function ProspectCard({
               className="bg-green-600 hover:bg-green-700 text-white"
               onClick={(e) => {
                 e.stopPropagation()
-                window.location.href = `tel:${prospect.telephone}`
+                if (prospect.telephone) {
+                  window.location.href = `tel:${prospect.telephone}`
+                }
               }}
+              disabled={!prospect.telephone}
             >
               <Phone className="h-4 w-4 mr-1" />
               Appeler
@@ -665,6 +755,73 @@ function ProspectCard({
           </div>
         </CardContent>
       </Card>
+      
+      <ProspectDetailModal
+        prospect={prospect}
+        open={showDetail}
+        onClose={() => {
+          setShowDetail(false)
+          // Recharger les RDV après fermeture de la modal
+          loadProspectRdvs()
+        }}
+        onUpdate={(updated) => {
+          onUpdate(updated)
+          onStatusChange(updated.statut)
+        }}
+        onDelete={() => {
+          setShowDetail(false)
+          onDelete()
+        }}
+      />
+
+      <RdvDialog
+        prospect={prospect}
+        open={showRdvDialog}
+        onClose={() => setShowRdvDialog(false)}
+        onSuccess={() => {
+          loadProspectRdvs() // Recharger les RDV après création/modification
+          setShowRdvDialog(false)
+        }}
+      />
+
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="bg-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-gray-900">Êtes-vous sûr ?</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-gray-600">
+              Cette action supprimera définitivement le prospect "{prospect.nom}". 
+              {rdvCount > 0 && (
+                <span className="block mt-2 text-orange-600 font-medium">
+                  ⚠️ Attention : {rdvCount} rendez-vous associé{rdvCount > 1 ? 's' : ''} seront également supprimés.
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button 
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              className="bg-white text-gray-700 border-gray-300"
+            >
+              Annuler
+            </Button>
+            <Button 
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+                setShowDeleteDialog(false)
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Supprimer
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
       
       <ProspectDetailModal
         prospect={prospect}
