@@ -1,6 +1,3 @@
-// components/sections/planning.tsx
-// Version unifiée qui détecte automatiquement Google Maps
-
 "use client"
 
 import * as React from "react"
@@ -11,25 +8,130 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 
-// Import conditionnel du service Google Maps
-let GoogleMapsService: any = null
-try {
-  GoogleMapsService = require('@/lib/google-maps-service').default
-} catch (error) {
-  console.log('Service Google Maps non disponible, utilisation du mode estimation')
-}
-
-// Configuration
-const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
-const HAS_GOOGLE_MAPS = !!(GOOGLE_MAPS_API_KEY && GoogleMapsService)
-
-// Types (identiques pour les deux modes)
+// Types
 type District = 'port-louis' | 'pamplemousses' | 'riviere-du-rempart' | 'flacq' | 'grand-port' | 'savanne' | 'plaines-wilhems' | 'moka' | 'riviere-noire'
 type Secteur = 'hotel' | 'restaurant' | 'clinique' | 'pharmacie' | 'supermarche' | 'entreprise' | 'ecole' | 'autre'
 type Statut = 'nouveau' | 'contacte' | 'qualifie' | 'proposition' | 'negociation' | 'signe' | 'perdu'
 
-// Matrice de distances pour le fallback
-const DISTANCE_MATRIX: Record<District, Record<District, number>> = {
+// Configuration des districts
+const DISTRICTS_CONFIG = {
+  'port-louis': { label: 'Port Louis' },
+  'pamplemousses': { label: 'Pamplemousses' },
+  'riviere-du-rempart': { label: 'Rivière du Rempart' },
+  'flacq': { label: 'Flacq' },
+  'grand-port': { label: 'Grand Port' },
+  'savanne': { label: 'Savanne' },
+  'plaines-wilhems': { label: 'Plaines Wilhems' },
+  'moka': { label: 'Moka' },
+  'riviere-noire': { label: 'Rivière Noire' }
+}
+
+const SECTEURS_CONFIG = {
+  'hotel': { label: 'Hôtel', icon: '🏨' },
+  'restaurant': { label: 'Restaurant', icon: '🍽️' },
+  'clinique': { label: 'Clinique', icon: '🏥' },
+  'pharmacie': { label: 'Pharmacie', icon: '💊' },
+  'supermarche': { label: 'Supermarché', icon: '🛒' },
+  'entreprise': { label: 'Entreprise', icon: '🏢' },
+  'ecole': { label: 'École', icon: '🎓' },
+  'autre': { label: 'Autre', icon: '📍' }
+}
+
+// Interfaces
+interface Prospect {
+  id: number
+  nom: string
+  secteur: Secteur
+  ville: string
+  district: District
+  statut: Statut
+  contact?: string
+  telephone?: string
+  email?: string
+  score: 1 | 2 | 3 | 4 | 5
+  budget?: string
+  notes?: string
+  website?: string
+  adresse?: string
+  priority?: string
+  quality_score?: number
+}
+
+interface RendezVous {
+  id: string
+  prospectId: number
+  prospect: Prospect
+  date: string
+  heure: string
+  duree: number
+  type: 'decouverte' | 'demo' | 'negociation' | 'signature' | 'suivi'
+  statut: 'planifie' | 'confirme' | 'reporte' | 'annule' | 'termine'
+  notes?: string
+  priorite?: 'haute' | 'moyenne' | 'basse'
+}
+
+interface CommercialInfo {
+  nom: string
+  adresse: string
+  ville: string
+  district: District
+  telephone?: string
+  email?: string
+  vehicule?: string
+  startHour?: string // Heure de début par défaut
+  endHour?: string // Heure de fin par défaut
+}
+
+interface CustomDistance {
+  id: string
+  from: string
+  to: string
+  distance: number
+  duration: number
+  notes?: string
+}
+
+interface RouteInfo {
+  distance: number
+  duration: number
+  cost: number
+  method: 'custom' | 'matrix' | 'estimation'
+  fromHome?: boolean // Si le trajet part du domicile
+}
+
+interface CostSettings {
+  fuelPrice: number
+  consumption: number
+  indemnityPerKm: number
+  averageSpeed: number
+  useIndemnity: boolean
+  rushHourStart: string
+  rushHourEnd: string
+  rushHourSpeed: number
+}
+
+const DEFAULT_SETTINGS: CostSettings = {
+  fuelPrice: 65,
+  consumption: 8,
+  indemnityPerKm: 15,
+  averageSpeed: 40,
+  useIndemnity: false,
+  rushHourStart: '07:00',
+  rushHourEnd: '09:00',
+  rushHourSpeed: 25
+}
+
+const DEFAULT_COMMERCIAL: CommercialInfo = {
+  nom: 'Commercial',
+  adresse: '',
+  ville: '',
+  district: 'port-louis',
+  startHour: '08:00',
+  endHour: '18:00'
+}
+
+// Matrice de base pour les districts
+const BASE_DISTANCE_MATRIX: Record<District, Record<District, number>> = {
   'port-louis': {
     'port-louis': 0,
     'pamplemousses': 12,
@@ -131,160 +233,65 @@ const DISTANCE_MATRIX: Record<District, Record<District, number>> = {
   }
 }
 
-const DISTRICTS_CONFIG = {
-  'port-louis': { label: 'Port Louis' },
-  'pamplemousses': { label: 'Pamplemousses' },
-  'riviere-du-rempart': { label: 'Rivière du Rempart' },
-  'flacq': { label: 'Flacq' },
-  'grand-port': { label: 'Grand Port' },
-  'savanne': { label: 'Savanne' },
-  'plaines-wilhems': { label: 'Plaines Wilhems' },
-  'moka': { label: 'Moka' },
-  'riviere-noire': { label: 'Rivière Noire' }
-}
-
-const SECTEURS_CONFIG = {
-  'hotel': { label: 'Hôtel', icon: '🏨' },
-  'restaurant': { label: 'Restaurant', icon: '🍽️' },
-  'clinique': { label: 'Clinique', icon: '🏥' },
-  'pharmacie': { label: 'Pharmacie', icon: '💊' },
-  'supermarche': { label: 'Supermarché', icon: '🛒' },
-  'entreprise': { label: 'Entreprise', icon: '🏢' },
-  'ecole': { label: 'École', icon: '🎓' },
-  'autre': { label: 'Autre', icon: '📍' }
-}
-
-// Interfaces
-interface Prospect {
-  id: number
-  nom: string
-  secteur: Secteur
-  ville: string
-  district: District
-  statut: Statut
-  contact?: string
-  telephone?: string
-  email?: string
-  score: 1 | 2 | 3 | 4 | 5
-  budget?: string
-  notes?: string
-  website?: string
-  adresse?: string
-}
-
-interface RendezVous {
-  id: string
-  prospectId: number
-  prospect: Prospect
-  date: string
-  heure: string
-  duree: number
-  type: 'decouverte' | 'demo' | 'negociation' | 'signature' | 'suivi'
-  statut: 'planifie' | 'confirme' | 'reporte' | 'annule' | 'termine'
-  notes?: string
-  priorite?: 'haute' | 'moyenne' | 'basse'
-}
-
-interface RouteInfo {
-  distance: number
-  duration: number
-  distanceText: string
-  durationText: string
-  cost: number
-  method: 'google' | 'estimation'
-}
-
-interface CostSettings {
-  fuelPrice: number
-  consumption: number
-  indemnityPerKm: number
-  averageSpeed: number
-  useIndemnity: boolean
-  useGoogleMaps: boolean
-}
-
-const DEFAULT_SETTINGS: CostSettings = {
-  fuelPrice: 65,
-  consumption: 8,
-  indemnityPerKm: 15,
-  averageSpeed: 40,
-  useIndemnity: false,
-  useGoogleMaps: HAS_GOOGLE_MAPS // Auto-détection
-}
-
+// Clés de stockage
+const COMMERCIAL_KEY = 'planning_commercial_info'
+const CUSTOM_DISTANCES_KEY = 'planning_custom_distances'
 const SETTINGS_KEY = 'planning_cost_settings'
 
-/**
- * Composant Planning unifié
- * Utilise Google Maps si disponible, sinon mode estimation
- */
-export default function PlanningSection() {
+export default function PlanningAdvancedSection() {
   const [loading, setLoading] = React.useState(true)
-  const [calculating, setCalculating] = React.useState(false)
   const [prospects, setProspects] = React.useState<Prospect[]>([])
+  const [allProspects, setAllProspects] = React.useState<Prospect[]>([])
   const [rendezVous, setRendezVous] = React.useState<RendezVous[]>([])
-  const [routes, setRoutes] = React.useState<Map<string, RouteInfo>>(new Map())
   const [selectedDate, setSelectedDate] = React.useState(new Date().toISOString().split('T')[0])
+  const [commercialInfo, setCommercialInfo] = React.useState<CommercialInfo>(DEFAULT_COMMERCIAL)
+  const [customDistances, setCustomDistances] = React.useState<CustomDistance[]>([])
+  const [settings, setSettings] = React.useState<CostSettings>(DEFAULT_SETTINGS)
+  
+  // États des dialogues
   const [showAddRdv, setShowAddRdv] = React.useState(false)
   const [showSettings, setShowSettings] = React.useState(false)
+  const [showCommercialConfig, setShowCommercialConfig] = React.useState(false)
+  const [showDistanceConfig, setShowDistanceConfig] = React.useState(false)
+  const [showSearch, setShowSearch] = React.useState(false)
   const [editingRdv, setEditingRdv] = React.useState<RendezVous | null>(null)
-  const [settings, setSettings] = React.useState<CostSettings>(DEFAULT_SETTINGS)
+  
   const { toast } = useToast()
 
-  // Instance du service Google Maps (si disponible)
-  const googleMapsRef = React.useRef<any>(null)
-
-  // Initialisation
+  // Charger les configurations sauvegardées
   React.useEffect(() => {
-    if (HAS_GOOGLE_MAPS && GoogleMapsService) {
+    // Commercial info
+    const savedCommercial = localStorage.getItem(COMMERCIAL_KEY)
+    if (savedCommercial) {
       try {
-        googleMapsRef.current = new GoogleMapsService(GOOGLE_MAPS_API_KEY)
-        console.log('✅ Google Maps activé')
-        toast({
-          title: "Google Maps activé",
-          description: "Calculs de distance précis disponibles"
-        })
-      } catch (error) {
-        console.error('Erreur Google Maps:', error)
+        setCommercialInfo(JSON.parse(savedCommercial))
+      } catch (e) {
+        console.error('Erreur chargement info commercial:', e)
       }
-    } else {
-      console.log('📍 Mode estimation (pas de Google Maps)')
     }
-  }, [])
 
-  // Charger les paramètres
-  React.useEffect(() => {
+    // Distances personnalisées
+    const savedDistances = localStorage.getItem(CUSTOM_DISTANCES_KEY)
+    if (savedDistances) {
+      try {
+        setCustomDistances(JSON.parse(savedDistances))
+      } catch (e) {
+        console.error('Erreur chargement distances:', e)
+      }
+    }
+
+    // Paramètres
     const savedSettings = localStorage.getItem(SETTINGS_KEY)
     if (savedSettings) {
       try {
-        const parsed = JSON.parse(savedSettings)
-        setSettings({ 
-          ...DEFAULT_SETTINGS, 
-          ...parsed,
-          useGoogleMaps: HAS_GOOGLE_MAPS && parsed.useGoogleMaps // Forcer false si pas d'API
-        })
+        setSettings(JSON.parse(savedSettings))
       } catch (e) {
         console.error('Erreur chargement paramètres:', e)
       }
     }
   }, [])
 
-  function saveSettings(newSettings: CostSettings) {
-    // Forcer useGoogleMaps à false si l'API n'est pas disponible
-    const finalSettings = {
-      ...newSettings,
-      useGoogleMaps: HAS_GOOGLE_MAPS && newSettings.useGoogleMaps
-    }
-    setSettings(finalSettings)
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings))
-    toast({
-      title: "Paramètres sauvegardés",
-      description: finalSettings.useGoogleMaps ? 
-        "Google Maps activé" : 
-        "Mode estimation activé"
-    })
-  }
-
+  // Charger les prospects
   React.useEffect(() => {
     loadProspects()
     loadRdvs()
@@ -307,12 +314,35 @@ export default function PlanningSection() {
     }
   }
 
+  // Charger TOUS les prospects pour la recherche
+  async function loadAllProspects() {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/prospects?limit=10000')
+      const result = await res.json()
+      const data = result.data || result
+      setAllProspects(Array.isArray(data) ? data : [])
+      setShowSearch(true)
+      toast({
+        title: "Base complète chargée",
+        description: `${data.length} prospects disponibles pour la recherche`
+      })
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de charger la base complète",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   function loadRdvs() {
     const savedRdvs = localStorage.getItem('planning_rdvs')
     if (savedRdvs) {
       try {
-        const parsed = JSON.parse(savedRdvs)
-        setRendezVous(parsed)
+        setRendezVous(JSON.parse(savedRdvs))
       } catch (e) {
         console.error('Erreur chargement RDV:', e)
       }
@@ -323,222 +353,121 @@ export default function PlanningSection() {
     localStorage.setItem('planning_rdvs', JSON.stringify(rdvs))
   }
 
-  // Calcul de distance unifié
-  async function calculateDistance(
-    origin: Prospect,
-    destination: Prospect
-  ): Promise<RouteInfo> {
-    // Essayer Google Maps si disponible et activé
-    if (settings.useGoogleMaps && googleMapsRef.current) {
-      try {
-        const originAddress = origin.adresse || 
-          `${origin.ville}, ${DISTRICTS_CONFIG[origin.district].label}, Mauritius`
-        const destAddress = destination.adresse || 
-          `${destination.ville}, ${DISTRICTS_CONFIG[destination.district].label}, Mauritius`
+  // Sauvegarder les infos du commercial
+  function saveCommercialInfo(info: CommercialInfo) {
+    setCommercialInfo(info)
+    localStorage.setItem(COMMERCIAL_KEY, JSON.stringify(info))
+    toast({
+      title: "Informations sauvegardées",
+      description: "L'adresse du commercial a été mise à jour"
+    })
+  }
 
-        const result = await googleMapsRef.current.calculateDistance(
-          originAddress,
-          destAddress
-        )
+  // Sauvegarder les distances personnalisées
+  function saveCustomDistances(distances: CustomDistance[]) {
+    setCustomDistances(distances)
+    localStorage.setItem(CUSTOM_DISTANCES_KEY, JSON.stringify(distances))
+  }
 
-        const cost = settings.useIndemnity ?
-          Math.round(result.distance * settings.indemnityPerKm) :
-          Math.round((result.distance * settings.consumption * settings.fuelPrice) / 100)
-
-        return {
-          distance: result.distance,
-          duration: result.duration,
-          distanceText: result.distanceText,
-          durationText: result.durationText,
-          cost,
-          method: 'google'
-        }
-      } catch (error) {
-        console.error('Erreur Google Maps, fallback sur estimation:', error)
+  // Calculer la distance (avec priorité aux distances personnalisées)
+  function calculateDistance(
+    from: { adresse?: string; ville?: string; district: District },
+    to: { adresse?: string; ville?: string; district: District }
+  ): RouteInfo {
+    // 1. Chercher dans les distances personnalisées
+    const fromAddress = from.adresse || `${from.ville}, ${from.district}`
+    const toAddress = to.adresse || `${to.ville}, ${to.district}`
+    
+    const customDistance = customDistances.find(
+      d => (d.from === fromAddress && d.to === toAddress) ||
+           (d.from === toAddress && d.to === fromAddress)
+    )
+    
+    if (customDistance) {
+      const cost = settings.useIndemnity ?
+        Math.round(customDistance.distance * settings.indemnityPerKm) :
+        Math.round((customDistance.distance * settings.consumption * settings.fuelPrice) / 100)
+      
+      return {
+        distance: customDistance.distance,
+        duration: customDistance.duration,
+        cost,
+        method: 'custom'
       }
     }
-
-    // Fallback : calcul par matrice de districts
-    const distance = DISTANCE_MATRIX[origin.district]?.[destination.district] || 25
-    const duration = Math.round(distance / settings.averageSpeed * 60)
+    
+    // 2. Utiliser la matrice des districts
+    const distance = BASE_DISTANCE_MATRIX[from.district]?.[to.district] || 25
+    
+    // Vérifier si on est en heure de pointe
+    const now = new Date()
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const isRushHour = currentTime >= settings.rushHourStart && currentTime <= settings.rushHourEnd
+    const speed = isRushHour ? settings.rushHourSpeed : settings.averageSpeed
+    
+    const duration = Math.round(distance / speed * 60)
     const cost = settings.useIndemnity ?
       Math.round(distance * settings.indemnityPerKm) :
       Math.round((distance * settings.consumption * settings.fuelPrice) / 100)
-
+    
     return {
       distance,
       duration,
-      distanceText: `~${distance} km`,
-      durationText: `~${duration} min`,
       cost,
-      method: 'estimation'
+      method: 'matrix'
     }
   }
 
-  // Calculer toutes les distances
-  async function calculateDayDistances(rdvs: RendezVous[]) {
-    if (rdvs.length < 2) return
-
-    setCalculating(true)
-    const newRoutes = new Map<string, RouteInfo>()
-
-    try {
-      for (let i = 0; i < rdvs.length - 1; i++) {
-        const key = `${rdvs[i].id}-${rdvs[i + 1].id}`
-        const route = await calculateDistance(
-          rdvs[i].prospect,
-          rdvs[i + 1].prospect
-        )
-        newRoutes.set(key, route)
-      }
-
-      setRoutes(newRoutes)
-      
-      let totalDistance = 0
-      let totalCost = 0
-      
-      newRoutes.forEach(route => {
-        totalDistance += route.distance
-        totalCost += route.cost
-      })
-
-      toast({
-        title: "Distances calculées",
-        description: `${Math.round(totalDistance)} km - Rs ${totalCost} (${
-          settings.useGoogleMaps ? 'Google Maps' : 'Estimation'
-        })`
-      })
-    } catch (error) {
-      console.error('Erreur calcul distances:', error)
-    } finally {
-      setCalculating(false)
+  // Calculer la distance depuis le domicile
+  function calculateFromHome(to: Prospect): RouteInfo {
+    const homeLocation = {
+      adresse: commercialInfo.adresse,
+      ville: commercialInfo.ville,
+      district: commercialInfo.district
     }
-  }
-
-  // Optimiser la tournée
-  async function optimizeTournee() {
-    setCalculating(true)
     
-    try {
-      let optimizedOrder: number[] = []
-      
-      // Si Google Maps disponible, utiliser son optimisation
-      if (settings.useGoogleMaps && googleMapsRef.current) {
-        const addresses = filteredRdvs.map(rdv => 
-          rdv.prospect.adresse || 
-          `${rdv.prospect.ville}, ${DISTRICTS_CONFIG[rdv.prospect.district].label}, Mauritius`
-        )
-
-        const result = await googleMapsRef.current.optimizeRoute(addresses)
-        optimizedOrder = result.optimizedOrder
-        
-        toast({
-          title: "Tournée optimisée (Google)",
-          description: `Économie de ${result.savings} km`
-        })
-      } else {
-        // Algorithme simple du plus proche voisin
-        const visited = new Set<number>()
-        optimizedOrder = [0]
-        visited.add(0)
-        
-        let current = 0
-        
-        while (visited.size < filteredRdvs.length) {
-          let nearest = -1
-          let minDistance = Infinity
-          
-          for (let i = 0; i < filteredRdvs.length; i++) {
-            if (!visited.has(i)) {
-              const dist = DISTANCE_MATRIX[
-                filteredRdvs[current].prospect.district
-              ]?.[filteredRdvs[i].prospect.district] || 999
-              
-              if (dist < minDistance) {
-                minDistance = dist
-                nearest = i
-              }
-            }
-          }
-          
-          if (nearest !== -1) {
-            optimizedOrder.push(nearest)
-            visited.add(nearest)
-            current = nearest
-          }
-        }
-        
-        toast({
-          title: "Tournée optimisée",
-          description: "Ordre réorganisé pour minimiser les distances"
-        })
-      }
-      
-      // Réorganiser les RDV
-      const optimizedRdvs = optimizedOrder.map(index => filteredRdvs[index])
-      
-      // Recalculer les heures
-      const updatedRdvs = rendezVous.map(rdv => {
-        if (rdv.date === selectedDate) {
-          const index = optimizedRdvs.findIndex(o => o.id === rdv.id)
-          if (index !== -1 && index > 0) {
-            const prevRdv = optimizedRdvs[index - 1]
-            const routeKey = `${prevRdv.id}-${rdv.id}`
-            const route = routes.get(routeKey)
-            const travelTime = route?.duration || 30
-            
-            const [prevHour, prevMin] = prevRdv.heure.split(':').map(Number)
-            const totalMinutes = prevHour * 60 + prevMin + prevRdv.duree + travelTime
-            const newHour = Math.floor(totalMinutes / 60)
-            const newMin = totalMinutes % 60
-            
-            return {
-              ...rdv,
-              heure: `${String(newHour).padStart(2, '0')}:${String(newMin).padStart(2, '0')}`
-            }
-          }
-        }
-        return rdv
-      })
-      
-      setRendezVous(updatedRdvs)
-      saveRdvs(updatedRdvs)
-      
-      // Recalculer les distances
-      await calculateDayDistances(optimizedRdvs)
-    } catch (error) {
-      console.error('Erreur optimisation:', error)
-      toast({
-        title: "Erreur",
-        description: "Impossible d'optimiser la tournée",
-        variant: "destructive"
-      })
-    } finally {
-      setCalculating(false)
-    }
+    const route = calculateDistance(homeLocation, to)
+    return { ...route, fromHome: true }
   }
 
+  // Filtrer les RDV de la journée
   const filteredRdvs = React.useMemo(() => {
     return rendezVous.filter(rdv => rdv.date === selectedDate)
       .sort((a, b) => a.heure.localeCompare(b.heure))
   }, [rendezVous, selectedDate])
 
-  React.useEffect(() => {
-    if (filteredRdvs.length >= 2) {
-      calculateDayDistances(filteredRdvs)
-    }
-  }, [filteredRdvs])
-
+  // Calculer les statistiques
   const stats = React.useMemo(() => {
     let distanceTotale = 0
     let tempsDeplacement = 0
     let coutTotal = 0
     
-    routes.forEach(route => {
+    // Distance depuis le domicile au premier RDV
+    if (filteredRdvs.length > 0 && commercialInfo.adresse) {
+      const fromHome = calculateFromHome(filteredRdvs[0].prospect)
+      distanceTotale += fromHome.distance
+      tempsDeplacement += fromHome.duration
+      coutTotal += fromHome.cost
+    }
+    
+    // Distances entre les RDV
+    for (let i = 0; i < filteredRdvs.length - 1; i++) {
+      const route = calculateDistance(
+        filteredRdvs[i].prospect,
+        filteredRdvs[i + 1].prospect
+      )
       distanceTotale += route.distance
       tempsDeplacement += route.duration
       coutTotal += route.cost
-    })
+    }
+    
+    // Retour au domicile depuis le dernier RDV
+    if (filteredRdvs.length > 0 && commercialInfo.adresse) {
+      const toHome = calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect)
+      distanceTotale += toHome.distance
+      tempsDeplacement += toHome.duration
+      coutTotal += toHome.cost
+    }
     
     const tempsTotal = tempsDeplacement + filteredRdvs.reduce((sum, rdv) => sum + rdv.duree, 0)
     
@@ -547,10 +476,12 @@ export default function PlanningSection() {
       distanceTotale: Math.round(distanceTotale * 10) / 10,
       tempsDeplacement: Math.round(tempsDeplacement),
       tempsTotal: Math.round(tempsTotal),
-      coutTotal: Math.round(coutTotal)
+      coutTotal: Math.round(coutTotal),
+      customDistancesUsed: customDistances.length
     }
-  }, [filteredRdvs, routes])
+  }, [filteredRdvs, commercialInfo, customDistances, settings])
 
+  // Fonctions CRUD RDV
   function addRdv(rdv: RendezVous) {
     const newRdvs = [...rendezVous, rdv]
     setRendezVous(newRdvs)
@@ -587,43 +518,64 @@ export default function PlanningSection() {
 
   return (
     <div className="space-y-6">
-      {/* Header avec indicateur de mode */}
+      {/* Header avec infos commercial */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">
-            Planning & Optimisation
+            Planning de {commercialInfo.nom || 'Commercial'}
           </h2>
           <p className="text-gray-600">
-            Mode : {settings.useGoogleMaps && HAS_GOOGLE_MAPS ? 
-              '🌍 Google Maps (précis)' : 
-              '📍 Estimation par district'
+            {commercialInfo.adresse ? 
+              `📍 ${commercialInfo.adresse}, ${commercialInfo.ville}` : 
+              '⚠️ Adresse non configurée'
             }
           </p>
         </div>
         
         <div className="flex gap-2">
-          {!HAS_GOOGLE_MAPS && (
-            <Button
-              onClick={() => window.open('https://console.cloud.google.com', '_blank')}
-              variant="outline"
-              className="bg-yellow-50 text-yellow-700 border-yellow-300"
-            >
-              📚 Configurer Google Maps
-            </Button>
-          )}
+          <Button
+            onClick={() => setShowCommercialConfig(true)}
+            variant="outline"
+            className={commercialInfo.adresse ? "bg-green-50" : "bg-yellow-50 text-yellow-700"}
+          >
+            👤 Mon Profil
+          </Button>
+          
+          <Button
+            onClick={() => setShowDistanceConfig(true)}
+            variant="outline"
+          >
+            📏 Distances ({customDistances.length})
+          </Button>
           
           <Button
             onClick={() => setShowSettings(true)}
             variant="outline"
-            className="bg-gray-50"
           >
             ⚙️ Paramètres
           </Button>
         </div>
       </div>
 
+      {/* Alerte si pas d'adresse */}
+      {!commercialInfo.adresse && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <span className="text-xl">⚠️</span>
+              <div>
+                <h3 className="font-semibold text-amber-900">Configuration requise</h3>
+                <p className="text-sm text-amber-700 mt-1">
+                  Configurez votre adresse pour calculer les distances depuis votre domicile/bureau.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Statistiques */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="text-center">
@@ -638,7 +590,7 @@ export default function PlanningSection() {
           <CardContent className="p-4">
             <div className="text-center">
               <div className="text-2xl mb-1">🗺️</div>
-              <p className="text-xs text-gray-600">Distance</p>
+              <p className="text-xs text-gray-600">Distance totale</p>
               <p className="text-xl font-bold">{stats.distanceTotale} km</p>
             </div>
           </CardContent>
@@ -648,7 +600,7 @@ export default function PlanningSection() {
           <CardContent className="p-4">
             <div className="text-center">
               <div className="text-2xl mb-1">⏱️</div>
-              <p className="text-xs text-gray-600">Route</p>
+              <p className="text-xs text-gray-600">Temps route</p>
               <p className="text-xl font-bold">
                 {Math.floor(stats.tempsDeplacement / 60)}h{stats.tempsDeplacement % 60}
               </p>
@@ -669,12 +621,20 @@ export default function PlanningSection() {
         <Card>
           <CardContent className="p-4">
             <div className="text-center">
-              <div className="text-2xl mb-1">
-                {settings.useGoogleMaps ? '🌍' : '📍'}
-              </div>
-              <p className="text-xs text-gray-600">Calcul</p>
+              <div className="text-2xl mb-1">📍</div>
+              <p className="text-xs text-gray-600">Distances perso</p>
+              <p className="text-xl font-bold">{stats.customDistancesUsed}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">🏠</div>
+              <p className="text-xs text-gray-600">Départ</p>
               <p className="text-sm font-bold">
-                {settings.useGoogleMaps ? 'Précis' : 'Estimé'}
+                {commercialInfo.startHour || '08:00'}
               </p>
             </div>
           </CardContent>
@@ -700,25 +660,22 @@ export default function PlanningSection() {
                 ➕ Nouveau RDV
               </Button>
               
+              <Button 
+                variant="outline"
+                className="bg-purple-50 text-purple-700 border-purple-300"
+                onClick={loadAllProspects}
+                disabled={loading}
+              >
+                🔍 Rechercher dans la base
+              </Button>
+              
               {filteredRdvs.length > 1 && (
-                <>
-                  <Button 
-                    variant="outline"
-                    onClick={() => calculateDayDistances(filteredRdvs)}
-                    disabled={calculating}
-                  >
-                    {calculating ? '⏳' : '📏'} Calculer
-                  </Button>
-                  
-                  <Button 
-                    variant="outline"
-                    className="bg-green-50 text-green-700 border-green-300"
-                    onClick={optimizeTournee}
-                    disabled={calculating}
-                  >
-                    {calculating ? '⏳' : '🗺️'} Optimiser
-                  </Button>
-                </>
+                <Button 
+                  variant="outline"
+                  className="bg-green-50 text-green-700 border-green-300"
+                >
+                  🗺️ Optimiser tournée
+                </Button>
               )}
             </div>
           </div>
@@ -728,7 +685,14 @@ export default function PlanningSection() {
       {/* Planning de la journée */}
       <Card>
         <CardHeader>
-          <CardTitle>Planning du {selectedDate}</CardTitle>
+          <CardTitle>
+            Tournée du {new Date(selectedDate).toLocaleDateString('fr-FR', { 
+              weekday: 'long', 
+              day: 'numeric', 
+              month: 'long', 
+              year: 'numeric' 
+            })}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {filteredRdvs.length === 0 ? (
@@ -741,15 +705,36 @@ export default function PlanningSection() {
             </div>
           ) : (
             <div className="space-y-3">
+              {/* Départ du domicile */}
+              {commercialInfo.adresse && (
+                <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                  <span className="text-2xl">🏠</span>
+                  <div className="flex-1">
+                    <div className="font-medium">Départ de {commercialInfo.adresse}</div>
+                    <div className="text-sm text-gray-600">
+                      Heure de départ prévue : {commercialInfo.startHour || '08:00'}
+                    </div>
+                  </div>
+                  {filteredRdvs.length > 0 && (
+                    <div className="text-sm text-gray-600">
+                      → {calculateFromHome(filteredRdvs[0].prospect).distance} km 
+                      ({calculateFromHome(filteredRdvs[0].prospect).duration} min)
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* RDV de la journée */}
               {filteredRdvs.map((rdv, index) => {
                 const districtConfig = DISTRICTS_CONFIG[rdv.prospect.district]
                 const secteurConfig = SECTEURS_CONFIG[rdv.prospect.secteur]
                 
                 let routeInfo = null
                 if (index > 0) {
-                  const prevRdv = filteredRdvs[index - 1]
-                  const routeKey = `${prevRdv.id}-${rdv.id}`
-                  routeInfo = routes.get(routeKey)
+                  routeInfo = calculateDistance(
+                    filteredRdvs[index - 1].prospect,
+                    rdv.prospect
+                  )
                 }
                 
                 const priorityColors = {
@@ -761,13 +746,13 @@ export default function PlanningSection() {
                 return (
                   <div key={rdv.id}>
                     {routeInfo && (
-                      <div className="flex items-center gap-4 text-xs text-gray-600 mb-1 ml-4 bg-gray-50 rounded p-2">
-                        <span>🚗 {routeInfo.distanceText}</span>
-                        <span>⏱️ {routeInfo.durationText}</span>
+                      <div className="flex items-center gap-4 text-xs text-gray-600 mb-1 ml-4 p-2">
+                        <span>🚗 Trajet: {routeInfo.distance} km</span>
+                        <span>⏱️ {routeInfo.duration} min</span>
                         <span>💰 Rs {routeInfo.cost}</span>
-                        <span className={routeInfo.method === 'google' ? 'text-green-600' : 'text-gray-500'}>
-                          {routeInfo.method === 'google' ? '✓ Google' : '~ Estimé'}
-                        </span>
+                        {routeInfo.method === 'custom' && (
+                          <span className="text-green-600">✓ Distance personnalisée</span>
+                        )}
                       </div>
                     )}
                     
@@ -790,6 +775,12 @@ export default function PlanningSection() {
                             <div>📍 {rdv.prospect.adresse || `${rdv.prospect.ville}, ${districtConfig?.label}`}</div>
                             {rdv.prospect.telephone && <div>📞 {rdv.prospect.telephone}</div>}
                           </div>
+                          
+                          {rdv.notes && (
+                            <div className="mt-2 p-2 bg-white rounded text-sm">
+                              📝 {rdv.notes}
+                            </div>
+                          )}
                         </div>
                         
                         <div className="flex gap-2">
@@ -819,12 +810,66 @@ export default function PlanningSection() {
                   </div>
                 )
               })}
+
+              {/* Retour au domicile */}
+              {commercialInfo.adresse && filteredRdvs.length > 0 && (
+                <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                  <span className="text-2xl">🏠</span>
+                  <div className="flex-1">
+                    <div className="font-medium">Retour à {commercialInfo.adresse}</div>
+                    <div className="text-sm text-gray-600">
+                      Heure d'arrivée estimée : {commercialInfo.endHour || '18:00'}
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    ← {calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect).distance} km 
+                    ({calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect).duration} min)
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Dialogs (simplifiés, code identique aux versions précédentes) */}
+      {/* Dialogs */}
+      <CommercialConfigDialog
+        open={showCommercialConfig}
+        onClose={() => setShowCommercialConfig(false)}
+        commercialInfo={commercialInfo}
+        onSave={saveCommercialInfo}
+      />
+
+      <DistanceConfigDialog
+        open={showDistanceConfig}
+        onClose={() => setShowDistanceConfig(false)}
+        distances={customDistances}
+        onSave={saveCustomDistances}
+        prospects={prospects}
+      />
+
+      <SearchProspectsDialog
+        open={showSearch}
+        onClose={() => setShowSearch(false)}
+        prospects={allProspects.length > 0 ? allProspects : prospects}
+        onAddToPlanning={(prospect) => {
+          // Créer un RDV pour ce prospect
+          const rdv: RendezVous = {
+            id: `rdv-${Date.now()}`,
+            prospectId: prospect.id,
+            prospect,
+            date: selectedDate,
+            heure: '10:00',
+            duree: 60,
+            type: 'decouverte',
+            statut: 'planifie',
+            priorite: prospect.score >= 4 ? 'haute' : prospect.score >= 3 ? 'moyenne' : 'basse'
+          }
+          addRdv(rdv)
+          setShowSearch(false)
+        }}
+      />
+
       <RdvDialog
         open={showAddRdv || !!editingRdv}
         onClose={() => {
@@ -848,14 +893,512 @@ export default function PlanningSection() {
         open={showSettings}
         onClose={() => setShowSettings(false)}
         settings={settings}
-        onSave={saveSettings}
-        hasGoogleMaps={HAS_GOOGLE_MAPS}
+        onSave={(newSettings) => {
+          setSettings(newSettings)
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings))
+          toast({ title: "Paramètres sauvegardés" })
+        }}
       />
     </div>
   )
 }
 
-// Composants Dialog (versions simplifiées)
+// Dialog Configuration Commercial
+function CommercialConfigDialog({
+  open,
+  onClose,
+  commercialInfo,
+  onSave
+}: {
+  open: boolean
+  onClose: () => void
+  commercialInfo: CommercialInfo
+  onSave: (info: CommercialInfo) => void
+}) {
+  const [form, setForm] = React.useState(commercialInfo)
+
+  React.useEffect(() => {
+    setForm(commercialInfo)
+  }, [commercialInfo])
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>👤 Configuration du Commercial</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Nom</label>
+            <Input
+              value={form.nom}
+              onChange={(e) => setForm({...form, nom: e.target.value})}
+              placeholder="Votre nom"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Adresse de départ (domicile/bureau)</label>
+            <Input
+              value={form.adresse}
+              onChange={(e) => setForm({...form, adresse: e.target.value})}
+              placeholder="Ex: 10 Royal Road"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Ville</label>
+              <Input
+                value={form.ville}
+                onChange={(e) => setForm({...form, ville: e.target.value})}
+                placeholder="Ex: Port Louis"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">District</label>
+              <select
+                value={form.district}
+                onChange={(e) => setForm({...form, district: e.target.value as District})}
+                className="w-full border rounded-md px-3 py-2"
+              >
+                {Object.entries(DISTRICTS_CONFIG).map(([key, config]) => (
+                  <option key={key} value={key}>{config.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Heure de départ habituelle</label>
+              <Input
+                type="time"
+                value={form.startHour || '08:00'}
+                onChange={(e) => setForm({...form, startHour: e.target.value})}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Heure de retour souhaitée</label>
+              <Input
+                type="time"
+                value={form.endHour || '18:00'}
+                onChange={(e) => setForm({...form, endHour: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Téléphone</label>
+            <Input
+              value={form.telephone || ''}
+              onChange={(e) => setForm({...form, telephone: e.target.value})}
+              placeholder="+230 5XXX XXXX"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Véhicule</label>
+            <Input
+              value={form.vehicule || ''}
+              onChange={(e) => setForm({...form, vehicule: e.target.value})}
+              placeholder="Marque, modèle (optionnel)"
+            />
+          </div>
+
+          <div className="p-4 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">
+              💡 Ces informations permettent de calculer les distances depuis votre point de départ
+              et d'optimiser vos tournées en fonction de vos horaires.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button onClick={() => {
+            onSave(form)
+            onClose()
+          }}>
+            Enregistrer
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Dialog Configuration Distances
+function DistanceConfigDialog({
+  open,
+  onClose,
+  distances,
+  onSave,
+  prospects
+}: {
+  open: boolean
+  onClose: () => void
+  distances: CustomDistance[]
+  onSave: (distances: CustomDistance[]) => void
+  prospects: Prospect[]
+}) {
+  const [list, setList] = React.useState(distances)
+  const [newDistance, setNewDistance] = React.useState({
+    from: '',
+    to: '',
+    distance: 0,
+    duration: 0,
+    notes: ''
+  })
+
+  React.useEffect(() => {
+    setList(distances)
+  }, [distances])
+
+  function addDistance() {
+    if (newDistance.from && newDistance.to && newDistance.distance > 0) {
+      setList([...list, {
+        id: `dist-${Date.now()}`,
+        ...newDistance
+      }])
+      setNewDistance({
+        from: '',
+        to: '',
+        distance: 0,
+        duration: 0,
+        notes: ''
+      })
+    }
+  }
+
+  function removeDistance(id: string) {
+    setList(list.filter(d => d.id !== id))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>📏 Configuration des Distances Personnalisées</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          <div className="p-4 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">
+              Définissez des distances précises entre des adresses spécifiques.
+              Ces distances seront prioritaires sur les estimations par district.
+            </p>
+          </div>
+
+          {/* Formulaire d'ajout */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Ajouter une distance</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">De</label>
+                  <Input
+                    value={newDistance.from}
+                    onChange={(e) => setNewDistance({...newDistance, from: e.target.value})}
+                    placeholder="Adresse de départ"
+                    list="addresses"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">À</label>
+                  <Input
+                    value={newDistance.to}
+                    onChange={(e) => setNewDistance({...newDistance, to: e.target.value})}
+                    placeholder="Adresse d'arrivée"
+                    list="addresses"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Distance (km)</label>
+                  <Input
+                    type="number"
+                    value={newDistance.distance}
+                    onChange={(e) => setNewDistance({...newDistance, distance: parseFloat(e.target.value) || 0})}
+                    min="0"
+                    step="0.1"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">Durée (min)</label>
+                  <Input
+                    type="number"
+                    value={newDistance.duration}
+                    onChange={(e) => setNewDistance({...newDistance, duration: parseInt(e.target.value) || 0})}
+                    min="0"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">Notes</label>
+                  <Input
+                    value={newDistance.notes}
+                    onChange={(e) => setNewDistance({...newDistance, notes: e.target.value})}
+                    placeholder="Optionnel"
+                  />
+                </div>
+              </div>
+
+              <Button 
+                onClick={addDistance}
+                disabled={!newDistance.from || !newDistance.to || newDistance.distance <= 0}
+                className="w-full"
+              >
+                ➕ Ajouter cette distance
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Liste des distances */}
+          <div className="space-y-2">
+            <h3 className="font-medium">Distances configurées ({list.length})</h3>
+            {list.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">
+                Aucune distance personnalisée configurée
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {list.map(dist => (
+                  <div key={dist.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <div className="text-sm">
+                        <span className="font-medium">{dist.from}</span>
+                        <span className="mx-2">→</span>
+                        <span className="font-medium">{dist.to}</span>
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">
+                        {dist.distance} km • {dist.duration} min
+                        {dist.notes && ` • ${dist.notes}`}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600"
+                      onClick={() => removeDistance(dist.id)}
+                    >
+                      🗑️
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Suggestions d'adresses */}
+          <datalist id="addresses">
+            {prospects.map(p => (
+              <option key={p.id} value={p.adresse || `${p.ville}, ${p.district}`} />
+            ))}
+          </datalist>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button onClick={() => {
+            onSave(list)
+            onClose()
+          }}>
+            Enregistrer ({list.length} distances)
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Dialog Recherche Prospects
+function SearchProspectsDialog({
+  open,
+  onClose,
+  prospects,
+  onAddToPlanning
+}: {
+  open: boolean
+  onClose: () => void
+  prospects: Prospect[]
+  onAddToPlanning: (prospect: Prospect) => void
+}) {
+  const [search, setSearch] = React.useState('')
+  const [filters, setFilters] = React.useState({
+    district: '',
+    secteur: '',
+    statut: '',
+    score: 0
+  })
+
+  const filtered = React.useMemo(() => {
+    return prospects.filter(p => {
+      const matchSearch = !search || 
+        p.nom.toLowerCase().includes(search.toLowerCase()) ||
+        p.ville?.toLowerCase().includes(search.toLowerCase()) ||
+        p.adresse?.toLowerCase().includes(search.toLowerCase()) ||
+        p.contact?.toLowerCase().includes(search.toLowerCase())
+      
+      const matchDistrict = !filters.district || p.district === filters.district
+      const matchSecteur = !filters.secteur || p.secteur === filters.secteur
+      const matchStatut = !filters.statut || p.statut === filters.statut
+      const matchScore = !filters.score || p.score >= filters.score
+      
+      return matchSearch && matchDistrict && matchSecteur && matchStatut && matchScore
+    })
+  }, [prospects, search, filters])
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>🔍 Recherche dans la base ({prospects.length} prospects)</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          {/* Barre de recherche */}
+          <div>
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher par nom, ville, adresse, contact..."
+              className="w-full"
+            />
+          </div>
+
+          {/* Filtres */}
+          <div className="grid grid-cols-4 gap-3">
+            <select
+              value={filters.district}
+              onChange={(e) => setFilters({...filters, district: e.target.value})}
+              className="border rounded-md px-3 py-2"
+            >
+              <option value="">Tous les districts</option>
+              {Object.entries(DISTRICTS_CONFIG).map(([key, config]) => (
+                <option key={key} value={key}>{config.label}</option>
+              ))}
+            </select>
+
+            <select
+              value={filters.secteur}
+              onChange={(e) => setFilters({...filters, secteur: e.target.value})}
+              className="border rounded-md px-3 py-2"
+            >
+              <option value="">Tous les secteurs</option>
+              {Object.entries(SECTEURS_CONFIG).map(([key, config]) => (
+                <option key={key} value={key}>
+                  {config.icon} {config.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={filters.statut}
+              onChange={(e) => setFilters({...filters, statut: e.target.value})}
+              className="border rounded-md px-3 py-2"
+            >
+              <option value="">Tous les statuts</option>
+              <option value="nouveau">Nouveau</option>
+              <option value="contacte">Contacté</option>
+              <option value="qualifie">Qualifié</option>
+              <option value="proposition">Proposition</option>
+              <option value="negociation">Négociation</option>
+              <option value="signe">Signé</option>
+              <option value="perdu">Perdu</option>
+            </select>
+
+            <select
+              value={filters.score}
+              onChange={(e) => setFilters({...filters, score: parseInt(e.target.value)})}
+              className="border rounded-md px-3 py-2"
+            >
+              <option value="0">Tous les scores</option>
+              <option value="3">⭐⭐⭐ et plus</option>
+              <option value="4">⭐⭐⭐⭐ et plus</option>
+              <option value="5">⭐⭐⭐⭐⭐</option>
+            </select>
+          </div>
+
+          {/* Résultats */}
+          <div className="border rounded-lg max-h-96 overflow-y-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="px-4 py-2 text-left text-sm font-medium">Nom</th>
+                  <th className="px-4 py-2 text-left text-sm font-medium">Secteur</th>
+                  <th className="px-4 py-2 text-left text-sm font-medium">Ville</th>
+                  <th className="px-4 py-2 text-left text-sm font-medium">District</th>
+                  <th className="px-4 py-2 text-left text-sm font-medium">Score</th>
+                  <th className="px-4 py-2 text-left text-sm font-medium">Contact</th>
+                  <th className="px-4 py-2 text-left text-sm font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.slice(0, 100).map(p => (
+                  <tr key={p.id} className="border-t hover:bg-gray-50">
+                    <td className="px-4 py-2 text-sm font-medium">{p.nom}</td>
+                    <td className="px-4 py-2 text-sm">
+                      {SECTEURS_CONFIG[p.secteur]?.icon} {SECTEURS_CONFIG[p.secteur]?.label}
+                    </td>
+                    <td className="px-4 py-2 text-sm">{p.ville}</td>
+                    <td className="px-4 py-2 text-sm">{DISTRICTS_CONFIG[p.district]?.label}</td>
+                    <td className="px-4 py-2 text-sm">{'⭐'.repeat(p.score)}</td>
+                    <td className="px-4 py-2 text-sm">{p.contact || '-'}</td>
+                    <td className="px-4 py-2">
+                      <Button
+                        size="sm"
+                        onClick={() => onAddToPlanning(p)}
+                      >
+                        ➕ Planifier
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            
+            {filtered.length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                Aucun prospect ne correspond aux critères
+              </div>
+            )}
+            
+            {filtered.length > 100 && (
+              <div className="text-center py-2 text-sm text-gray-500 bg-gray-50">
+                Affichage limité aux 100 premiers résultats. Affinez votre recherche.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-between items-center mt-6">
+          <span className="text-sm text-gray-600">
+            {filtered.length} prospect(s) trouvé(s)
+          </span>
+          <Button variant="outline" onClick={onClose}>
+            Fermer
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Dialog RDV (simplifié)
 function RdvDialog({ open, onClose, prospects, rdv, onSave }: any) {
   const [form, setForm] = React.useState({
     prospectId: rdv?.prospectId?.toString() || '',
@@ -946,6 +1489,34 @@ function RdvDialog({ open, onClose, prospects, rdv, onSave }: any) {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Durée (min)</label>
+              <Input
+                type="number"
+                value={form.duree}
+                onChange={(e) => setForm({...form, duree: parseInt(e.target.value) || 60})}
+                min="15"
+                step="15"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Type</label>
+              <select
+                value={form.type}
+                onChange={(e) => setForm({...form, type: e.target.value})}
+                className="w-full border rounded-md px-3 py-2"
+              >
+                <option value="decouverte">Découverte</option>
+                <option value="demo">Démonstration</option>
+                <option value="negociation">Négociation</option>
+                <option value="signature">Signature</option>
+                <option value="suivi">Suivi</option>
+              </select>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium mb-2">Notes</label>
             <Textarea
@@ -969,7 +1540,8 @@ function RdvDialog({ open, onClose, prospects, rdv, onSave }: any) {
   )
 }
 
-function SettingsDialog({ open, onClose, settings, onSave, hasGoogleMaps }: any) {
+// Dialog Paramètres (simplifié)
+function SettingsDialog({ open, onClose, settings, onSave }: any) {
   const [form, setForm] = React.useState(settings)
 
   React.useEffect(() => {
@@ -980,29 +1552,10 @@ function SettingsDialog({ open, onClose, settings, onSave, hasGoogleMaps }: any)
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>⚙️ Paramètres</DialogTitle>
+          <DialogTitle>⚙️ Paramètres de calcul</DialogTitle>
         </DialogHeader>
         
         <div className="space-y-4">
-          {hasGoogleMaps && (
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.useGoogleMaps}
-                  onChange={(e) => setForm({...form, useGoogleMaps: e.target.checked})}
-                  className="w-4 h-4"
-                />
-                <div>
-                  <div className="font-medium">Utiliser Google Maps</div>
-                  <div className="text-sm text-gray-600">
-                    Calculs précis avec l'API Google
-                  </div>
-                </div>
-              </label>
-            </div>
-          )}
-
           <div className="p-4 bg-gray-50 rounded-lg">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
@@ -1056,6 +1609,52 @@ function SettingsDialog({ open, onClose, settings, onSave, hasGoogleMaps }: any)
               </div>
             </>
           )}
+
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Vitesse moyenne normale (km/h)
+            </label>
+            <Input
+              type="number"
+              value={form.averageSpeed}
+              onChange={(e) => setForm({...form, averageSpeed: parseFloat(e.target.value) || 40})}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Début heures de pointe
+              </label>
+              <Input
+                type="time"
+                value={form.rushHourStart}
+                onChange={(e) => setForm({...form, rushHourStart: e.target.value})}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Fin heures de pointe
+              </label>
+              <Input
+                type="time"
+                value={form.rushHourEnd}
+                onChange={(e) => setForm({...form, rushHourEnd: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Vitesse en heures de pointe (km/h)
+            </label>
+            <Input
+              type="number"
+              value={form.rushHourSpeed}
+              onChange={(e) => setForm({...form, rushHourSpeed: parseFloat(e.target.value) || 25})}
+            />
+          </div>
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
