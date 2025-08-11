@@ -1,4 +1,6 @@
 // lib/rdv-database.ts
+import fs from 'fs'
+import path from 'path'
 
 export interface RDV {
   id: number
@@ -17,38 +19,64 @@ export interface RDV {
   updated_at: string
 }
 
-// Stockage en mémoire pour l'environnement serveur
-let rdvStorage: { [key: string]: any } = {
-  rdvs: []
-}
-
 // Détection de l'environnement
 const isServer = typeof window === 'undefined'
 
+// Structure de stockage partagée
+let rdvStore: {
+  rdvs: RDV[]
+  lastUpdated: string
+} = {
+  rdvs: [],
+  lastUpdated: new Date().toISOString()
+}
+
 class RDVDatabase {
-  private storageKey = 'mauritius_rdvs_db'
+  private initialized = false
   
   constructor() {
-    if (!isServer) {
-      this.loadFromLocalStorage()
+    this.initialize()
+  }
+  
+  private initialize() {
+    if (this.initialized) return
+    
+    if (isServer) {
+      this.loadServerData()
     } else {
-      this.initializeServerData()
+      this.loadClientData()
     }
+    
+    this.initialized = true
   }
   
-  private initializeServerData() {
-    if (!rdvStorage.rdvs || rdvStorage.rdvs.length === 0) {
-      rdvStorage.rdvs = []
+  private loadServerData() {
+    try {
+      // Charger depuis le fichier data/rdvs.json s'il existe
+      const dataPath = path.join(process.cwd(), 'data', 'rdvs.json')
+      if (fs.existsSync(dataPath)) {
+        const fileContent = fs.readFileSync(dataPath, 'utf-8')
+        const data = JSON.parse(fileContent)
+        rdvStore.rdvs = data.rdvs || data || []
+        console.log(`✅ Base RDV chargée: ${rdvStore.rdvs.length} rendez-vous`)
+        return
+      }
+    } catch (error) {
+      console.log('Pas de fichier data/rdvs.json')
     }
+    
+    // Initialiser vide si pas de fichier
+    rdvStore.rdvs = []
+    console.log('⚠️ Base RDV initialisée vide')
   }
   
-  private loadFromLocalStorage() {
-    if (!isServer && typeof window !== 'undefined' && window.localStorage) {
+  private loadClientData() {
+    if (typeof window !== 'undefined' && window.localStorage) {
       try {
-        const stored = localStorage.getItem(this.storageKey)
+        const stored = localStorage.getItem('mauritius_rdvs_db')
         if (stored) {
           const data = JSON.parse(stored)
-          rdvStorage = data
+          rdvStore = data
         }
       } catch (error) {
         console.error('Erreur chargement localStorage RDV:', error)
@@ -56,10 +84,23 @@ class RDVDatabase {
     }
   }
   
-  private saveToLocalStorage() {
-    if (!isServer && typeof window !== 'undefined' && window.localStorage) {
+  private saveData() {
+    rdvStore.lastUpdated = new Date().toISOString()
+    
+    if (isServer) {
       try {
-        localStorage.setItem(this.storageKey, JSON.stringify(rdvStorage))
+        const dataDir = path.join(process.cwd(), 'data')
+        if (!fs.existsSync(dataDir)) {
+          fs.mkdirSync(dataDir, { recursive: true })
+        }
+        const dataPath = path.join(dataDir, 'rdvs.json')
+        fs.writeFileSync(dataPath, JSON.stringify(rdvStore, null, 2))
+      } catch (error) {
+        console.error('Erreur sauvegarde RDV:', error)
+      }
+    } else if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        localStorage.setItem('mauritius_rdvs_db', JSON.stringify(rdvStore))
       } catch (error) {
         console.error('Erreur sauvegarde localStorage RDV:', error)
       }
@@ -67,99 +108,104 @@ class RDVDatabase {
   }
   
   getRDVs(prospect_id?: number): RDV[] {
-    const rdvs = rdvStorage.rdvs || []
+    this.initialize()
     if (prospect_id) {
-      return rdvs.filter((r: RDV) => r.prospect_id === prospect_id)
+      return rdvStore.rdvs.filter(r => r.prospect_id === prospect_id)
     }
-    return rdvs
+    return [...rdvStore.rdvs]
   }
   
   getRDV(id: number): RDV | undefined {
-    const rdvs = this.getRDVs()
-    return rdvs.find(r => r.id === id)
+    this.initialize()
+    return rdvStore.rdvs.find(r => r.id === id)
   }
   
   createRDV(rdv: Omit<RDV, 'id' | 'created_at' | 'updated_at'>): RDV {
-    const rdvs = this.getRDVs()
+    this.initialize()
+    
     const newRDV: RDV = {
       ...rdv,
-      id: Date.now(),
+      id: this.generateId(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
     
-    rdvStorage.rdvs = [newRDV, ...rdvs]
-    this.saveToLocalStorage()
+    rdvStore.rdvs = [newRDV, ...rdvStore.rdvs]
+    this.saveData()
     
     return newRDV
   }
   
   updateRDV(id: number, updates: Partial<RDV>): RDV | null {
-    const rdvs = this.getRDVs()
-    const index = rdvs.findIndex(r => r.id === id)
+    this.initialize()
     
-    if (index === -1) {
-      return null
-    }
+    const index = rdvStore.rdvs.findIndex(r => r.id === id)
+    if (index === -1) return null
     
-    const updated = {
-      ...rdvs[index],
+    const updated: RDV = {
+      ...rdvStore.rdvs[index],
       ...updates,
-      id: rdvs[index].id,
-      created_at: rdvs[index].created_at,
+      id: rdvStore.rdvs[index].id,
+      created_at: rdvStore.rdvs[index].created_at,
       updated_at: new Date().toISOString()
     }
     
-    rdvs[index] = updated
-    rdvStorage.rdvs = rdvs
-    this.saveToLocalStorage()
+    rdvStore.rdvs[index] = updated
+    this.saveData()
     
     return updated
   }
   
   deleteRDV(id: number): boolean {
-    const rdvs = this.getRDVs()
-    const filtered = rdvs.filter(r => r.id !== id)
+    this.initialize()
     
-    if (filtered.length === rdvs.length) {
-      return false
+    const initialLength = rdvStore.rdvs.length
+    rdvStore.rdvs = rdvStore.rdvs.filter(r => r.id !== id)
+    
+    if (rdvStore.rdvs.length < initialLength) {
+      this.saveData()
+      return true
     }
     
-    rdvStorage.rdvs = filtered
-    this.saveToLocalStorage()
-    
-    return true
+    return false
   }
   
-  // Supprimer tous les RDV d'un prospect
   deleteProspectRDVs(prospect_id: number): number {
-    const rdvs = this.getRDVs()
-    const filtered = rdvs.filter(r => r.prospect_id !== prospect_id)
-    const deletedCount = rdvs.length - filtered.length
+    this.initialize()
     
-    rdvStorage.rdvs = filtered
-    this.saveToLocalStorage()
+    const initialLength = rdvStore.rdvs.length
+    rdvStore.rdvs = rdvStore.rdvs.filter(r => r.prospect_id !== prospect_id)
+    const deletedCount = initialLength - rdvStore.rdvs.length
+    
+    if (deletedCount > 0) {
+      this.saveData()
+    }
     
     return deletedCount
   }
   
-  // Obtenir les prochains RDV
+  private generateId(): number {
+    const maxId = rdvStore.rdvs.reduce((max, r) => Math.max(max, r.id || 0), 0)
+    return maxId + 1
+  }
+  
   getUpcomingRDVs(limit: number = 10): RDV[] {
+    this.initialize()
     const now = new Date()
-    return this.getRDVs()
+    return rdvStore.rdvs
       .filter(r => new Date(r.date_time) >= now && r.statut !== 'annule' && r.statut !== 'termine')
       .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
       .slice(0, limit)
   }
   
-  // Obtenir les RDV du jour
   getTodayRDVs(): RDV[] {
+    this.initialize()
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
     
-    return this.getRDVs()
+    return rdvStore.rdvs
       .filter(r => {
         const rdvDate = new Date(r.date_time)
         return rdvDate >= today && rdvDate < tomorrow
@@ -167,35 +213,30 @@ class RDVDatabase {
       .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
   }
   
-  // Statistiques des RDV
   getStats() {
-    const rdvs = this.getRDVs()
+    this.initialize()
     const now = new Date()
     
     return {
-      total: rdvs.length,
-      planifie: rdvs.filter(r => r.statut === 'planifie').length,
-      confirme: rdvs.filter(r => r.statut === 'confirme').length,
-      termine: rdvs.filter(r => r.statut === 'termine').length,
-      annule: rdvs.filter(r => r.statut === 'annule').length,
-      futurs: rdvs.filter(r => new Date(r.date_time) > now && r.statut !== 'annule' && r.statut !== 'termine').length,
-      passes: rdvs.filter(r => new Date(r.date_time) <= now || r.statut === 'termine').length,
-      aujourdhui: this.getTodayRDVs().length,
-      par_type: Object.entries(
-        rdvs.reduce((acc, r) => {
-          acc[r.type_visite] = (acc[r.type_visite] || 0) + 1
-          return acc
-        }, {} as Record<string, number>)
-      ),
-      par_priorite: Object.entries(
-        rdvs.reduce((acc, r) => {
-          acc[r.priorite] = (acc[r.priorite] || 0) + 1
-          return acc
-        }, {} as Record<string, number>)
-      )
+      total: rdvStore.rdvs.length,
+      planifie: rdvStore.rdvs.filter(r => r.statut === 'planifie').length,
+      confirme: rdvStore.rdvs.filter(r => r.statut === 'confirme').length,
+      termine: rdvStore.rdvs.filter(r => r.statut === 'termine').length,
+      annule: rdvStore.rdvs.filter(r => r.statut === 'annule').length,
+      futurs: rdvStore.rdvs.filter(r => new Date(r.date_time) > now && r.statut !== 'annule' && r.statut !== 'termine').length,
+      passes: rdvStore.rdvs.filter(r => new Date(r.date_time) <= now || r.statut === 'termine').length,
+      aujourdhui: this.getTodayRDVs().length
     }
+  }
+  
+  reset() {
+    rdvStore.rdvs = []
+    this.saveData()
   }
 }
 
+// Export de l'instance unique
 export const rdvDB = new RDVDatabase()
+
+// Export des types
 export type { RDV as RDVType }
