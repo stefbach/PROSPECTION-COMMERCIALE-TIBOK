@@ -1,14 +1,13 @@
 // app/api/prospects/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '../../../lib/database'
-import { rdvDB } from '../../../lib/rdv-database'
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     
-    // Récupérer tous les prospects de la base de données
-    let prospects = db.getProspects()
+    // Récupérer tous les prospects de manière asynchrone
+    let prospects = await db.getProspects()
     
     // Filtres
     const search = searchParams.get('q')
@@ -82,11 +81,12 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    const newProspect = db.createProspect({
+    // Mapper les champs pour compatibilité
+    const prospectData = {
       nom: body.nom,
       secteur: body.secteur || 'autre',
       ville: body.ville,
-      district: body.district || 'port-louis',
+      district: body.district || 'Port Louis',
       statut: body.statut || 'nouveau',
       contact: body.contact || '',
       telephone: body.telephone || '',
@@ -97,8 +97,11 @@ export async function POST(request: NextRequest) {
       website: body.website || '',
       adresse: body.adresse || '',
       priority: body.priority || '',
-      quality_score: body.quality_score || 50
-    })
+      quality_score: body.quality_score || 50,
+      pays: 'Maurice'
+    }
+    
+    const newProspect = await db.createProspect(prospectData)
     
     return NextResponse.json(newProspect, { status: 201 })
   } catch (error) {
@@ -118,7 +121,8 @@ export async function PATCH(request: NextRequest) {
       )
     }
     
-    const updated = db.updateProspect(body.id, body)
+    const { id, ...updates } = body
+    const updated = await db.updateProspect(id, updates)
     
     if (!updated) {
       return NextResponse.json(
@@ -146,13 +150,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
     
-    const prospectId = parseInt(id)
-    
-    // Supprimer d'abord tous les RDV associés au prospect
-    const deletedRdvCount = rdvDB.deleteProspectRDVs(prospectId)
-    
-    // Puis supprimer le prospect
-    const success = db.deleteProspect(prospectId)
+    const success = await db.deleteProspect(parseInt(id))
     
     if (!success) {
       return NextResponse.json(
@@ -161,10 +159,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
     
-    return NextResponse.json({ 
-      success: true,
-      deletedRdvs: deletedRdvCount 
-    })
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Erreur DELETE /api/prospects:', error)
     return NextResponse.json({ error: 'Erreur lors de la suppression' }, { status: 500 })
