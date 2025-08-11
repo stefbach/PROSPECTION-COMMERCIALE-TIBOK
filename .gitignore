@@ -1,279 +1,68 @@
-# =============================================
-# VARIABLES D'ENVIRONNEMENT - TRÈS IMPORTANT !
-# =============================================
-# Ne JAMAIS commiter les fichiers d'environnement
-.env
-.env.local
-.env.production
-.env.development
-.env.test
-.env*.local
-*.env
-
-# Backup des variables (si vous en faites)
-.env.backup
-.env.*.backup
-
-# =============================================
-# NEXT.JS
-# =============================================
-# Dépendances
+# Dependencies
 node_modules/
-/.pnp
+.pnp
 .pnp.js
-.yarn/install-state.gz
 
-# Build et production
-/.next/
-/out/
-/build/
-/dist/
+# Testing
+coverage/
+
+# Next.js
+.next/
+out/
+build/
+
+# Production
+dist/
+
+# Misc
+.DS_Store
+*.pem
 
 # Debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
 
-# Fichiers de test
-/coverage/
-/.nyc_output
+# Local env files
+.env*.local
+.env
 
-# Next.js
-.next/
-out/
-public/sitemap.xml
-public/robots.txt
-
-# Production
-build/
-
-# =============================================
-# VERCEL
-# =============================================
+# Vercel
 .vercel
 
-# =============================================
-# TYPESCRIPT
-# =============================================
+# TypeScript
 *.tsbuildinfo
 next-env.d.ts
 
-# =============================================
-# ÉDITEURS ET IDE
-# =============================================
-# VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/*.code-snippets
-*.code-workspace
-.history/
-*.vsix
+# ==================================
+# IMPORTANT : Données de la base
+# ==================================
+# Ne pas versionner les données réelles
+data/
+*.backup.json
+*-backup.json
+backup-*/
+backups/
 
-# IntelliJ / WebStorm
+# Mais garder les exemples
+!data/.gitkeep
+!data/example.json
+
+# Fichiers de base alternatifs
+database.json
+db.json
+mauritius_prospects_db.json
+mauritius_rdvs_db.json
+localStorage-backup.json
+
+# Logs et temporaires
+*.log
+*.tmp
+.cache/
+
+# IDE
+.vscode/
 .idea/
-*.iml
-*.iws
-*.ipr
-
-# Sublime Text
-*.sublime-workspace
-*.sublime-project
-
-# Vim
 *.swp
 *.swo
 *~
-
-# =============================================
-# SYSTÈME D'EXPLOITATION
-# =============================================
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-Icon
-._*
-.DocumentRevisions-V100
-.fseventsd
-.Spotlight-V100
-.TemporaryItems
-.Trashes
-.VolumeIcon.icns
-.com.apple.timemachine.donotpresent
-.AppleDB
-.AppleDesktop
-Network Trash Folder
-Temporary Items
-.apdisk
-
-# Windows
-Thumbs.db
-Thumbs.db:encryptable
-ehthumbs.db
-ehthumbs_vista.db
-*.stackdump
-[Dd]esktop.ini
-$RECYCLE.BIN/
-*.cab
-*.msi
-*.msix
-*.msm
-*.msp
-*.lnk
-
-# Linux
-.fuse_hidden*
-.directory
-.Trash-*
-.nfs*
-
-# =============================================
-# PACKAGES ET DÉPENDANCES
-# =============================================
-# Logs des package managers
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-.pnpm-debug.log*
-pnpm-lock.yaml
-package-lock.json
-yarn.lock
-
-# =============================================
-# SUPABASE
-# =============================================
-# Supabase local
-supabase/.branches/
-supabase/.temp/
-.supabase/
-
-# =============================================
-# FICHIERS TEMPORAIRES
-# =============================================
-*.tmp
-*.temp
-*.cache
-.cache/
-tmp/
-temp/
-
-# =============================================
-# TESTS
-# =============================================
-# Testing
-coverage/
-.nyc_output/
-test-results/
-playwright-report/
-playwright/.cache/
-e2e/screenshots/
-e2e/videos/
-cypress/screenshots/
-cypress/videos/
-
-# =============================================
-# FICHIERS SENSIBLES
-# =============================================
-# Clés et certificats
-*.pem
-*.key
-*.crt
-*.p12
-private.key
-certificate.crt
-
-# Secrets
-secrets/
-.secrets/
-credentials.json
-service-account.json
-
-# =============================================
-# FICHIERS DE CONFIGURATION LOCALE
-# =============================================
-# Configuration locale (peut contenir des infos sensibles)
-config.local.js
-config.local.json
-settings.local.json
-
-# =============================================
-# BASES DE DONNÉES LOCALES
-# =============================================
-*.sqlite
-*.sqlite3
-*.db
-data/
-
-# =============================================
-# FICHIERS DE BUILD
-# =============================================
-# Bundler
-.cache/
-.parcel-cache/
-.turbo/
-
-# Gatsby
-.cache/
-public/
-
-# Vuepress
-.vuepress/dist/
-
-# =============================================
-# DIVERS
-# =============================================
-# Misc
-Fichiers uploadés
-/public/uploads/*
-!/public/uploads/.gitkeep
-!/public/uploads/contrats/.gitkeep
-*.bak
-*.backup
-*.old
-.eslintcache
-.stylelintcache
-
-# Archives
-*.zip
-*.tar.gz
-*.rar
-*.7z
-
-# Images uploadées (si stockées localement)
-uploads/
-public/uploads/
-
-# Fichiers générés
-generated/
-*.generated.*
-
-# =============================================
-# IMPORTANT - NE PAS IGNORER
-# =============================================
-# Ces fichiers DOIVENT être commités
-!.gitignore
-!.gitkeep
-!README.md
-!package.json
-!tsconfig.json
-!next.config.js
-!tailwind.config.js
-!postcss.config.js
-
-# =============================================
-# NOTES POUR L'ÉQUIPE
-# =============================================
-# Si vous avez besoin de partager des variables d'exemple,
-# créez un fichier .env.example avec des valeurs fictives :
-# 
-# SUPABASE_URL=https://votre-project-id.supabase.co
-# NEXT_PUBLIC_SUPABASE_URL=https://votre-project-id.supabase.co
-# NEXT_PUBLIC_SUPABASE_ANON_KEY=votre-cle-anon-ici
-# SUPABASE_SERVICE_ROLE_KEY=votre-cle-service-ici
