@@ -683,7 +683,7 @@ export default function PlanningAdvancedSection() {
       filtered = filtered.filter(rdv => rdv.prospect_id.toString() === filterProspect)
     }
     
-    if (filterDistrict && rdv => rdv.prospect) {
+    if (filterDistrict) {
       filtered = filtered.filter(rdv => rdv.prospect?.district === filterDistrict)
     }
     
