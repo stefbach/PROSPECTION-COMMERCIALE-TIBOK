@@ -1,10 +1,19 @@
 // app/api/contrats/route.ts
-// API pour la gestion des contrats
+// API pour la gestion des contrats avec documents en Base64
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '../../../lib/database'
 
 // Types pour les contrats
+export interface DocumentBase64 {
+  id: string
+  nom: string
+  type: string
+  taille: number
+  data: string // Base64
+  uploaded_at: string
+}
+
 export interface Contrat {
   id: number
   prospect_id: number
@@ -18,7 +27,7 @@ export interface Contrat {
   statut: 'brouillon' | 'envoye' | 'negocie' | 'signe' | 'actif' | 'termine' | 'annule'
   type: 'vente' | 'service' | 'maintenance' | 'location' | 'autre'
   conditions?: string
-  fichier_url?: string
+  documents?: DocumentBase64[]
   created_at: string
   updated_at: string
 }
@@ -57,6 +66,7 @@ function initializeContrats(): Contrat[] {
         statut: prospect.statut === 'signe' ? 'actif' : 'negocie',
         type: 'service',
         conditions: 'Conditions générales de vente appliquées',
+        documents: [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
@@ -79,18 +89,23 @@ export async function GET(request: NextRequest) {
     const statut = searchParams.get('statut')
     const type = searchParams.get('type')
     
+    console.log(`📄 GET /contrats - Total: ${contrats.length} contrats`)
+    
     let filtered = [...contrats]
     
     if (prospect_id) {
       filtered = filtered.filter(c => c.prospect_id === parseInt(prospect_id))
+      console.log(`  Filtre prospect_id: ${prospect_id} → ${filtered.length} contrats`)
     }
     
     if (statut) {
       filtered = filtered.filter(c => c.statut === statut)
+      console.log(`  Filtre statut: ${statut} → ${filtered.length} contrats`)
     }
     
     if (type) {
       filtered = filtered.filter(c => c.type === type)
+      console.log(`  Filtre type: ${type} → ${filtered.length} contrats`)
     }
     
     // Enrichir avec les noms des prospects
@@ -102,6 +117,8 @@ export async function GET(request: NextRequest) {
         prospect_nom: prospect?.nom || contrat.prospect_nom
       }
     })
+    
+    console.log(`✅ Retour de ${enrichedContrats.length} contrats`)
     
     return NextResponse.json(enrichedContrats)
     
@@ -119,6 +136,9 @@ export async function POST(request: NextRequest) {
   try {
     const contrats = initializeContrats()
     const body = await request.json()
+    
+    console.log('📝 POST /contrats - Nouveau contrat')
+    console.log(`  Documents joints: ${body.documents?.length || 0}`)
     
     if (!body.prospect_id || !body.titre || !body.montant) {
       return NextResponse.json(
@@ -139,6 +159,23 @@ export async function POST(request: NextRequest) {
     const newId = (global.lastContratId || 0) + 1
     global.lastContratId = newId
     
+    // Traiter les documents si présents
+    const documents: DocumentBase64[] = []
+    if (body.documents && Array.isArray(body.documents)) {
+      body.documents.forEach((doc: any) => {
+        if (doc.data && doc.nom) {
+          documents.push({
+            id: doc.id || `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            nom: doc.nom,
+            type: doc.type || 'application/octet-stream',
+            taille: doc.taille || 0,
+            data: doc.data,
+            uploaded_at: doc.uploaded_at || new Date().toISOString()
+          })
+        }
+      })
+    }
+    
     const newContrat: Contrat = {
       id: newId,
       prospect_id: body.prospect_id,
@@ -152,7 +189,7 @@ export async function POST(request: NextRequest) {
       statut: body.statut || 'brouillon',
       type: body.type || 'service',
       conditions: body.conditions,
-      fichier_url: body.fichier_url,
+      documents: documents,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
@@ -160,6 +197,7 @@ export async function POST(request: NextRequest) {
     contrats.push(newContrat)
     
     console.log(`✅ Contrat créé: ${newContrat.numero} pour ${prospect.nom}`)
+    console.log(`  📎 ${documents.length} document(s) attaché(s)`)
     
     return NextResponse.json(newContrat, { status: 201 })
     
@@ -179,6 +217,9 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json()
     const { id, ...updateData } = body
     
+    console.log(`📝 PATCH /contrats/${id}`)
+    console.log(`  Documents: ${updateData.documents?.length || 0}`)
+    
     if (!id) {
       return NextResponse.json(
         { error: 'ID du contrat requis' },
@@ -194,6 +235,24 @@ export async function PATCH(request: NextRequest) {
       )
     }
     
+    // Traiter les documents si présents
+    if (updateData.documents) {
+      const documents: DocumentBase64[] = []
+      updateData.documents.forEach((doc: any) => {
+        if (doc.data && doc.nom) {
+          documents.push({
+            id: doc.id || `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            nom: doc.nom,
+            type: doc.type || 'application/octet-stream',
+            taille: doc.taille || 0,
+            data: doc.data,
+            uploaded_at: doc.uploaded_at || new Date().toISOString()
+          })
+        }
+      })
+      updateData.documents = documents
+    }
+    
     contrats[index] = {
       ...contrats[index],
       ...updateData,
@@ -203,6 +262,7 @@ export async function PATCH(request: NextRequest) {
     }
     
     console.log(`✅ Contrat ${id} mis à jour`)
+    console.log(`  📎 ${contrats[index].documents?.length || 0} document(s)`)
     
     return NextResponse.json(contrats[index])
     
@@ -221,6 +281,8 @@ export async function DELETE(request: NextRequest) {
     const contrats = initializeContrats()
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
+    
+    console.log(`🗑️ DELETE /contrats?id=${id}`)
     
     if (!id) {
       return NextResponse.json(
