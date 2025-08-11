@@ -1,33 +1,53 @@
 "use client"
 
 import * as React from "react"
-import { MAURITIUS_CONFIG, type Prospect, type District, type Secteur, type Statut } from "@/lib/mauritius-config"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useToast } from "@/hooks/use-toast"
 import { 
   CalendarPlus, Phone, Plus, Search, Mail, Globe, MapPin, Building2, Eye, 
-  FileText, TrendingUp, Users, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Trash2, Edit, X, Save, Calendar, Clock, CheckCircle, AlertCircle, DollarSign,
-  FileSignature, Download, Upload, Star, Activity, Target, Timer, User
+  FileText, TrendingUp, Users, Trash2, Edit, X, Save, Calendar, Clock, 
+  CheckCircle, AlertCircle, DollarSign, FileSignature, Download, Upload, 
+  Star, Activity, Target, Timer, User, RefreshCw, Filter, Database
 } from 'lucide-react'
-import { Textarea } from "@/components/ui/textarea"
-import { useToast } from "@/hooks/use-toast"
-import { ImportAnalyzer } from '@/components/import-analyzer'
 
-function getStars(score: number | undefined): string {
-  const normalizedScore = Math.min(5, Math.max(1, Math.ceil((score || 50) / 20)))
-  return "★".repeat(normalizedScore) + "☆".repeat(5 - normalizedScore)
+// ========== TYPES ET INTERFACES ==========
+type District = 'port-louis' | 'pamplemousses' | 'riviere-du-rempart' | 'flacq' | 'grand-port' | 'savanne' | 'plaines-wilhems' | 'moka' | 'riviere-noire'
+type Secteur = 'hotel' | 'restaurant' | 'clinique' | 'pharmacie' | 'supermarche' | 'entreprise' | 'ecole' | 'autre'
+type Statut = 'nouveau' | 'contacte' | 'qualifie' | 'proposition' | 'negociation' | 'signe' | 'perdu'
+
+interface Prospect {
+  id: number
+  nom: string
+  secteur: Secteur
+  ville: string
+  district: District
+  statut: Statut
+  contact?: string
+  telephone?: string
+  email?: string
+  score: number
+  budget?: string
+  notes?: string
+  website?: string
+  adresse?: string
+  priority?: string
+  quality_score?: number
+  created_at?: string
+  updated_at?: string
 }
 
-// Types pour RDV et Contrats
 interface RDV {
   id: number
   prospect_id: number
   prospect_nom?: string
+  prospect?: Prospect
   commercial: string
   titre: string
   date_time: string
@@ -37,30 +57,51 @@ interface RDV {
   statut: 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
   notes?: string
   lieu?: string
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
-interface Contrat {
-  id: number
-  prospect_id: number
-  numero: string
-  titre: string
-  date_debut: string
-  date_fin: string
-  montant: number
-  devise: string
-  statut: 'brouillon' | 'envoye' | 'negocie' | 'signe' | 'actif' | 'termine' | 'annule'
-  type: 'vente' | 'service' | 'maintenance' | 'location' | 'autre'
-  conditions?: string
-  fichier_url?: string
-  created_at: string
-  updated_at: string
+// ========== CONFIGURATION ==========
+const MAURITIUS_CONFIG = {
+  districts: {
+    'port-louis': { label: 'Port Louis', color: 'blue' },
+    'pamplemousses': { label: 'Pamplemousses', color: 'green' },
+    'riviere-du-rempart': { label: 'Rivière du Rempart', color: 'purple' },
+    'flacq': { label: 'Flacq', color: 'orange' },
+    'grand-port': { label: 'Grand Port', color: 'red' },
+    'savanne': { label: 'Savanne', color: 'yellow' },
+    'plaines-wilhems': { label: 'Plaines Wilhems', color: 'indigo' },
+    'moka': { label: 'Moka', color: 'pink' },
+    'riviere-noire': { label: 'Rivière Noire', color: 'cyan' }
+  },
+  secteurs: {
+    'hotel': { label: 'Hôtel', icon: '🏨' },
+    'restaurant': { label: 'Restaurant', icon: '🍽️' },
+    'clinique': { label: 'Clinique', icon: '🏥' },
+    'pharmacie': { label: 'Pharmacie', icon: '💊' },
+    'supermarche': { label: 'Supermarché', icon: '🛒' },
+    'entreprise': { label: 'Entreprise', icon: '🏢' },
+    'ecole': { label: 'École', icon: '🎓' },
+    'autre': { label: 'Autre', icon: '📍' }
+  },
+  statuts: {
+    'nouveau': { label: 'Nouveau', color: 'gray' },
+    'contacte': { label: 'Contacté', color: 'blue' },
+    'qualifie': { label: 'Qualifié', color: 'yellow' },
+    'proposition': { label: 'Proposition', color: 'purple' },
+    'negociation': { label: 'Négociation', color: 'orange' },
+    'signe': { label: 'Signé', color: 'green' },
+    'perdu': { label: 'Perdu', color: 'red' }
+  },
+  labels: {
+    currency: 'Rs'
+  }
 }
 
+// ========== COMPOSANT PRINCIPAL ==========
 export default function MauritiusProspectsSection() {
+  // États principaux
   const [loading, setLoading] = React.useState(false)
-  const [loadingMessage, setLoadingMessage] = React.useState('')
   const [prospects, setProspects] = React.useState<Prospect[]>([])
   const [allProspects, setAllProspects] = React.useState<Prospect[]>([])
   const [viewMode, setViewMode] = React.useState<'paginated' | 'all'>('paginated')
@@ -70,14 +111,23 @@ export default function MauritiusProspectsSection() {
     total: 0,
     totalPages: 0
   })
+  
+  // États des filtres
   const [filters, setFilters] = React.useState({
     secteur: '',
     district: '',
     statut: '',
     search: ''
   })
+  
+  // États UI
+  const [showAddDialog, setShowAddDialog] = React.useState(false)
+  const [refreshing, setRefreshing] = React.useState(false)
+  
   const { toast } = useToast()
 
+  // ========== CHARGEMENT DES DONNÉES ==========
+  
   // Charger avec pagination
   async function loadProspects(page = 1, limit = pagination.limit) {
     setLoading(true)
@@ -112,8 +162,13 @@ export default function MauritiusProspectsSection() {
           totalPages: Math.ceil(data.length / limit)
         })
       }
-    } catch {
-      toast({ title: 'Erreur', description: 'Impossible de charger les prospects' })
+    } catch (error) {
+      console.error('Erreur chargement prospects:', error)
+      toast({ 
+        title: 'Erreur', 
+        description: 'Impossible de charger les prospects',
+        variant: 'destructive'
+      })
     } finally {
       setLoading(false)
     }
@@ -141,8 +196,8 @@ export default function MauritiusProspectsSection() {
       setAllProspects(allData)
       
       toast({
-        title: 'Chargement complet',
-        description: `${allData.length} prospects chargés en mémoire`
+        title: '✅ Chargement complet',
+        description: `${allData.length} prospects chargés`
       })
     } catch (error) {
       toast({
@@ -156,9 +211,93 @@ export default function MauritiusProspectsSection() {
     }
   }
 
+  // Rafraîchir les données
+  async function refreshData() {
+    setRefreshing(true)
+    if (viewMode === 'all') {
+      await loadAllProspects()
+    } else {
+      await loadProspects(pagination.page)
+    }
+    setRefreshing(false)
+  }
+
+  // Charger au démarrage
   React.useEffect(() => {
     loadProspects(1)
   }, [])
+
+  // ========== GESTION DES PROSPECTS ==========
+  
+  // Ajouter un prospect
+  async function addProspect(p: Omit<Prospect, "id">) {
+    try {
+      const res = await fetch('/api/prospects', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(p) 
+      })
+      
+      if (!res.ok) throw new Error(await res.text())
+      
+      const created = await res.json()
+      
+      if (viewMode === 'all') {
+        setAllProspects(prev => [created, ...prev])
+      } else {
+        loadProspects(pagination.page)
+      }
+      
+      toast({ 
+        title: "✅ Prospect ajouté", 
+        description: `${created.nom} a été ajouté avec succès.` 
+      })
+      
+      return created
+    } catch (e: any) {
+      toast({ 
+        title: "Erreur", 
+        description: e.message || "Impossible d'ajouter le prospect",
+        variant: "destructive"
+      })
+      return null
+    }
+  }
+
+  // Mettre à jour un prospect
+  async function updateProspect(id: number, updates: Partial<Prospect>) {
+    try {
+      const res = await fetch(`/api/prospects`, { 
+        method: 'PATCH', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ id, ...updates }) 
+      })
+      
+      if (!res.ok) throw new Error(await res.text())
+      
+      const updated = await res.json()
+      
+      if (viewMode === 'all') {
+        setAllProspects(prev => prev.map(p => p.id === id ? updated : p))
+      } else {
+        setProspects(prev => prev.map(p => p.id === id ? updated : p))
+      }
+      
+      toast({ 
+        title: "✅ Prospect modifié", 
+        description: "Les modifications ont été enregistrées"
+      })
+      
+      return updated
+    } catch (e: any) {
+      toast({ 
+        title: "Erreur", 
+        description: e.message || "Impossible de modifier le prospect",
+        variant: "destructive"
+      })
+      return null
+    }
+  }
 
   // Supprimer un prospect
   async function deleteProspect(id: number) {
@@ -176,16 +315,25 @@ export default function MauritiusProspectsSection() {
         title: "Prospect supprimé", 
         description: "Le prospect a été supprimé avec succès." 
       })
+      
+      return true
     } catch (e: any) {
       toast({ 
         title: "Erreur", 
         description: e.message || "Impossible de supprimer le prospect",
         variant: "destructive"
       })
+      return false
     }
   }
 
-  // Appliquer les filtres
+  // Mettre à jour le statut
+  async function updateStatus(id: number, statut: Statut) {
+    return updateProspect(id, { statut })
+  }
+
+  // ========== FILTRES ET RECHERCHE ==========
+  
   const applyFilters = () => {
     if (viewMode === 'all') {
       loadAllProspects()
@@ -194,7 +342,6 @@ export default function MauritiusProspectsSection() {
     }
   }
 
-  // Réinitialiser les filtres
   const resetFilters = () => {
     setFilters({ secteur: '', district: '', statut: '', search: '' })
     setTimeout(() => {
@@ -222,7 +369,8 @@ export default function MauritiusProspectsSection() {
     })
   }, [prospects, allProspects, filters, viewMode])
 
-  // Statistiques
+  // ========== STATISTIQUES ==========
+  
   const stats = React.useMemo(() => {
     return {
       total: viewMode === 'all' ? allProspects.length : pagination.total,
@@ -233,69 +381,8 @@ export default function MauritiusProspectsSection() {
     }
   }, [filtered, pagination.total, viewMode, allProspects])
 
-  async function addProspect(p: Omit<Prospect, "id">) {
-    try {
-      const res = await fetch('/api/prospects', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(p) 
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const created = await res.json()
-      
-      if (viewMode === 'all') {
-        setAllProspects(prev => [created, ...prev])
-      } else {
-        loadProspects(pagination.page)
-      }
-      
-      toast({ 
-        title: "Prospect ajouté", 
-        description: `${created.nom} a été ajouté avec succès.` 
-      })
-    } catch (e: any) {
-      toast({ 
-        title: "Erreur", 
-        description: e.message || "Impossible d'ajouter le prospect" 
-      })
-    }
-  }
-
-  async function updateStatus(id: number, statut: Statut) {
-    try {
-      const res = await fetch(`/api/prospects`, { 
-        method: 'PATCH', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ id, statut }) 
-      })
-      if (!res.ok) throw new Error(await res.text())
-      
-      if (viewMode === 'all') {
-        setAllProspects(prev => prev.map(p => (p.id === id ? { ...p, statut } : p)))
-      } else {
-        setProspects(prev => prev.map(p => (p.id === id ? { ...p, statut } : p)))
-      }
-      
-      toast({ 
-        title: "Statut mis à jour", 
-        description: `Le statut a été changé en ${MAURITIUS_CONFIG.statuts[statut].label}` 
-      })
-    } catch (e: any) {
-      toast({ 
-        title: "Erreur", 
-        description: e.message || "Impossible de mettre à jour le statut" 
-      })
-    }
-  }
-
-  function updateProspect(updated: Prospect) {
-    if (viewMode === 'all') {
-      setAllProspects(prev => prev.map(p => p.id === updated.id ? updated : p))
-    } else {
-      setProspects(prev => prev.map(p => p.id === updated.id ? updated : p))
-    }
-  }
-
+  // ========== RENDU ==========
+  
   return (
     <div className="space-y-6 bg-gray-50 min-h-screen p-6">
       {/* Header avec statistiques */}
@@ -361,15 +448,16 @@ export default function MauritiusProspectsSection() {
         </Card>
       </div>
 
-      {/* Filtres */}
+      {/* Filtres et actions */}
       <Card className="bg-white border-gray-200">
         <CardHeader>
           <CardTitle className="text-base text-gray-900">Filtres & Actions</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Ligne de filtres */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
             <div>
-              <label className="block text-sm font-medium mb-2 text-gray-700">Recherche par nom</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">Recherche</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input 
@@ -377,12 +465,13 @@ export default function MauritiusProspectsSection() {
                   onChange={(e) => setFilters({...filters, search: e.target.value})} 
                   placeholder="Nom, ville, contact..." 
                   className="pl-10 bg-white text-gray-900 border-gray-300"
+                  onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2 text-gray-700">Secteur d'activité</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">Secteur</label>
               <select 
                 value={filters.secteur} 
                 onChange={(e) => setFilters({...filters, secteur: e.target.value})} 
@@ -432,12 +521,13 @@ export default function MauritiusProspectsSection() {
                 onClick={applyFilters} 
                 className="w-full bg-blue-600 text-white hover:bg-blue-700"
               >
-                <Search className="h-4 w-4 mr-1" />
+                <Filter className="h-4 w-4 mr-1" />
                 Filtrer
               </Button>
             </div>
           </div>
 
+          {/* Ligne d'actions */}
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
               <Button 
@@ -466,11 +556,26 @@ export default function MauritiusProspectsSection() {
               >
                 {loading ? 'Chargement...' : viewMode === 'all' ? '✓ Vue complète' : 'Charger tout'}
               </Button>
+              
+              <Button
+                variant="outline"
+                onClick={refreshData}
+                disabled={refreshing}
+                className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+              >
+                <RefreshCw className={`h-4 w-4 mr-1 ${refreshing ? 'animate-spin' : ''}`} />
+                Actualiser
+              </Button>
             </div>
 
             <div className="flex gap-2">
-              <ImportAnalyzer onImportComplete={() => viewMode === 'all' ? loadAllProspects() : loadProspects(pagination.page)} />
-              <AddProspectDialog onAdd={addProspect} />
+              <Button 
+                onClick={() => setShowAddDialog(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Nouveau Prospect
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -483,50 +588,118 @@ export default function MauritiusProspectsSection() {
             key={p.id}
             prospect={p}
             onStatusChange={(statut) => updateStatus(p.id, statut)}
-            onUpdate={updateProspect}
+            onUpdate={(updated) => updateProspect(p.id, updated)}
             onDelete={() => deleteProspect(p.id)}
+            refreshList={refreshData}
           />
         ))}
+        
         {!loading && filtered.length === 0 && (
           <div className="col-span-full text-center py-8 text-gray-600 bg-white rounded-lg border border-gray-200">
-            Aucun prospect ne correspond aux filtres sélectionnés.
+            <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+            <p className="mb-1">Aucun prospect ne correspond aux filtres sélectionnés.</p>
+            <Button onClick={resetFilters} variant="outline" className="mt-2">
+              Réinitialiser les filtres
+            </Button>
           </div>
         )}
+        
         {loading && (
           <div className="col-span-full text-center py-8 text-gray-600 bg-white rounded-lg border border-gray-200">
             <div className="space-y-2">
               <div className="animate-spin inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-              <div>{loadingMessage || 'Chargement des prospects...'}</div>
+              <div>Chargement des prospects...</div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {viewMode === 'paginated' && pagination.totalPages > 1 && (
+        <Card className="bg-white">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Page {pagination.page} sur {pagination.totalPages} • {pagination.total} prospects
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadProspects(1)}
+                  disabled={pagination.page === 1}
+                >
+                  Première
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadProspects(pagination.page - 1)}
+                  disabled={pagination.page === 1}
+                >
+                  Précédent
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadProspects(pagination.page + 1)}
+                  disabled={pagination.page === pagination.totalPages}
+                >
+                  Suivant
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadProspects(pagination.totalPages)}
+                  disabled={pagination.page === pagination.totalPages}
+                >
+                  Dernière
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Dialog Ajout Prospect */}
+      <AddProspectDialog 
+        open={showAddDialog}
+        onClose={() => setShowAddDialog(false)}
+        onAdd={async (p) => {
+          const created = await addProspect(p)
+          if (created) {
+            setShowAddDialog(false)
+          }
+        }}
+      />
     </div>
   )
 }
 
-// ProspectCard amélioré avec indicateur de RDV
+// ========== COMPOSANT CARTE PROSPECT ==========
 function ProspectCard({ 
   prospect, 
   onStatusChange,
   onUpdate,
-  onDelete
+  onDelete,
+  refreshList
 }: { 
   prospect: Prospect
   onStatusChange: (statut: Statut) => void
-  onUpdate: (updated: Prospect) => void
+  onUpdate: (updates: Partial<Prospect>) => void
   onDelete: () => void
+  refreshList: () => void
 }) {
   const [showDetail, setShowDetail] = React.useState(false)
   const [showRdvDialog, setShowRdvDialog] = React.useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false)
-  const [upcomingRdv, setUpcomingRdv] = React.useState<any | null>(null)
+  const [upcomingRdv, setUpcomingRdv] = React.useState<RDV | null>(null)
   const [rdvCount, setRdvCount] = React.useState(0)
+  const [loadingRdv, setLoadingRdv] = React.useState(true)
   
   const statutConfig = MAURITIUS_CONFIG.statuts[prospect.statut]
   const secteurConfig = MAURITIUS_CONFIG.secteurs[prospect.secteur]
   const districtConfig = MAURITIUS_CONFIG.districts[prospect.district]
-  const stars = getStars(prospect.score)
   
   // Charger les RDV du prospect
   React.useEffect(() => {
@@ -534,46 +707,34 @@ function ProspectCard({
   }, [prospect.id])
   
   async function loadProspectRdvs() {
+    setLoadingRdv(true)
     try {
       const res = await fetch(`/api/rdv?prospect_id=${prospect.id}`)
       if (res.ok) {
         const rdvs = await res.json()
         setRdvCount(rdvs.length)
         
-        // Trouver le prochain RDV non terminé
+        // Trouver le prochain RDV
         const now = new Date()
         const futureRdvs = rdvs
-          .filter((rdv: any) => 
+          .filter((rdv: RDV) => 
             new Date(rdv.date_time) >= now && 
             rdv.statut !== 'annule' && 
             rdv.statut !== 'termine'
           )
-          .sort((a: any, b: any) => 
+          .sort((a: RDV, b: RDV) => 
             new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
           )
         
-        if (futureRdvs.length > 0) {
-          setUpcomingRdv(futureRdvs[0])
-        } else {
-          setUpcomingRdv(null)
-        }
+        setUpcomingRdv(futureRdvs[0] || null)
       }
     } catch (error) {
       console.error('Erreur chargement RDV:', error)
+    } finally {
+      setLoadingRdv(false)
     }
   }
   
-  const statutColors: Record<string, string> = {
-    gray: "bg-gray-100 text-gray-800 border border-gray-300",
-    blue: "bg-blue-100 text-blue-800 border border-blue-300",
-    yellow: "bg-yellow-100 text-yellow-800 border border-yellow-300",
-    purple: "bg-purple-100 text-purple-800 border border-purple-300",
-    orange: "bg-orange-100 text-orange-800 border border-orange-300",
-    green: "bg-green-100 text-green-800 border border-green-300",
-    red: "bg-red-100 text-red-800 border border-red-300"
-  }
-
-  // Calculer le délai jusqu'au prochain RDV
   const getTimeUntilRdv = () => {
     if (!upcomingRdv) return null
     
@@ -584,12 +745,22 @@ function ProspectCard({
     const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
     
     if (diffDays > 0) {
-      return `Dans ${diffDays} jour${diffDays > 1 ? 's' : ''}`
+      return `Dans ${diffDays}j`
     } else if (diffHours > 0) {
       return `Dans ${diffHours}h`
     } else {
       return "Aujourd'hui"
     }
+  }
+
+  const statutColors: Record<string, string> = {
+    gray: "bg-gray-100 text-gray-800 border-gray-300",
+    blue: "bg-blue-100 text-blue-800 border-blue-300",
+    yellow: "bg-yellow-100 text-yellow-800 border-yellow-300",
+    purple: "bg-purple-100 text-purple-800 border-purple-300",
+    orange: "bg-orange-100 text-orange-800 border-orange-300",
+    green: "bg-green-100 text-green-800 border-green-300",
+    red: "bg-red-100 text-red-800 border-red-300"
   }
 
   return (
@@ -598,18 +769,18 @@ function ProspectCard({
         className="transition-all hover:shadow-lg cursor-pointer relative group bg-white border-gray-200 hover:border-blue-300"
         onClick={() => setShowDetail(true)}
       >
-        {/* Badges en haut de la carte */}
+        {/* Badges */}
         <div className="absolute -top-2 -right-2 z-10 flex gap-2">
           {prospect.priority === 'Haute' && (
             <div className="bg-red-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
-              Priorité
+              ⚡ Priorité
             </div>
           )}
           
           {upcomingRdv && (
             <div className={`text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 ${
-              upcomingRdv.priorite === 'urgente' ? 'bg-orange-500' :
-              upcomingRdv.priorite === 'haute' ? 'bg-red-500' :
+              upcomingRdv.priorite === 'urgente' ? 'bg-red-500' :
+              upcomingRdv.priorite === 'haute' ? 'bg-orange-500' :
               'bg-blue-500'
             }`}>
               <Calendar className="h-3 w-3" />
@@ -635,20 +806,18 @@ function ProspectCard({
                 {secteurConfig?.label}
               </p>
             </div>
-            <span className={`px-2 py-1 rounded text-xs ${
-              statutColors[statutConfig?.color || 'gray'] || statutColors.gray
-            }`}>
+            <Badge className={`${statutColors[statutConfig?.color || 'gray']} border`}>
               {statutConfig?.label}
-            </span>
+            </Badge>
           </div>
 
-          {/* Afficher le prochain RDV si existant */}
-          {upcomingRdv && (
+          {/* RDV Info */}
+          {!loadingRdv && upcomingRdv && (
             <div className="mb-3 p-2 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="h-4 w-4 text-blue-600" />
                 <span className="font-medium text-blue-900">
-                  Prochain RDV : {new Date(upcomingRdv.date_time).toLocaleDateString('fr-FR', {
+                  RDV : {new Date(upcomingRdv.date_time).toLocaleDateString('fr-FR', {
                     day: 'numeric',
                     month: 'short'
                   })}
@@ -666,15 +835,10 @@ function ProspectCard({
                   Confirmé
                 </div>
               )}
-              {upcomingRdv.statut === 'planifie' && (
-                <div className="flex items-center gap-1 mt-1 text-xs text-orange-600">
-                  <AlertCircle className="h-3 w-3" />
-                  À confirmer
-                </div>
-              )}
             </div>
           )}
 
+          {/* Infos principales */}
           <div className="space-y-2 mb-4 text-sm">
             <div className="flex items-center gap-2 text-gray-700">
               <MapPin className="h-4 w-4 text-gray-400" />
@@ -696,23 +860,28 @@ function ProspectCard({
             )}
             
             <div className="flex items-center gap-2">
-              <span className="text-yellow-500">{stars}</span>
+              <span className="text-yellow-500">
+                {"★".repeat(Math.min(5, Math.max(1, prospect.score)))}
+                {"☆".repeat(Math.max(0, 5 - prospect.score))}
+              </span>
               <span className="text-xs text-gray-600">Score: {prospect.score}/5</span>
               {rdvCount > 0 && (
                 <span className="text-xs text-gray-600 ml-2">
-                  • {rdvCount} RDV au total
+                  • {rdvCount} RDV
                 </span>
               )}
             </div>
           </div>
 
+          {/* Notes */}
           {prospect.notes && (
             <div className="bg-gray-50 border border-gray-200 p-3 rounded text-sm text-gray-700 mb-4 line-clamp-2">
               {prospect.notes}
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
+          {/* Actions */}
+          <div className="grid grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
             <Button 
               size="sm" 
               className={`${upcomingRdv ? 'bg-orange-600 hover:bg-orange-700' : 'bg-indigo-600 hover:bg-indigo-700'} text-white`}
@@ -722,7 +891,7 @@ function ProspectCard({
               }}
             >
               <Calendar className="h-4 w-4 mr-1" />
-              {upcomingRdv ? 'Modifier RDV' : 'Planifier RDV'}
+              {upcomingRdv ? 'Gérer RDV' : 'Planifier'}
             </Button>
             
             <Button 
@@ -768,17 +937,15 @@ function ProspectCard({
         </CardContent>
       </Card>
       
+      {/* Dialogs */}
       <ProspectDetailModal
         prospect={prospect}
         open={showDetail}
         onClose={() => {
           setShowDetail(false)
-          loadProspectRdvs() // Recharger les RDV après fermeture
+          loadProspectRdvs()
         }}
-        onUpdate={(updated) => {
-          onUpdate(updated)
-          onStatusChange(updated.statut)
-        }}
+        onUpdate={onUpdate}
         onDelete={() => {
           setShowDetail(false)
           onDelete()
@@ -792,20 +959,22 @@ function ProspectCard({
         onSuccess={() => {
           loadProspectRdvs()
           setShowRdvDialog(false)
+          refreshList()
         }}
+        existingRdv={upcomingRdv}
       />
 
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent className="bg-white max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-gray-900">Êtes-vous sûr ?</DialogTitle>
+            <DialogTitle className="text-gray-900">Confirmer la suppression</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <p className="text-gray-600">
-              Cette action supprimera définitivement le prospect "{prospect.nom}". 
+              Voulez-vous vraiment supprimer "{prospect.nom}" ?
               {rdvCount > 0 && (
                 <span className="block mt-2 text-orange-600 font-medium">
-                  ⚠️ Attention : {rdvCount} rendez-vous associé{rdvCount > 1 ? 's' : ''} seront également supprimés.
+                  ⚠️ Attention : {rdvCount} rendez-vous seront également supprimés.
                 </span>
               )}
             </p>
@@ -834,7 +1003,7 @@ function ProspectCard({
   )
 }
 
-// Modal de détails avec onglets RDV et Contrats
+// ========== MODAL DÉTAILS PROSPECT ==========
 function ProspectDetailModal({
   prospect,
   open,
@@ -845,16 +1014,13 @@ function ProspectDetailModal({
   prospect: Prospect
   open: boolean
   onClose: () => void
-  onUpdate: (updated: Prospect) => void
+  onUpdate: (updates: Partial<Prospect>) => void
   onDelete?: () => void
 }) {
   const [editMode, setEditMode] = React.useState(false)
   const [form, setForm] = React.useState(prospect)
-  const [showDeleteDialog, setShowDeleteDialog] = React.useState(false)
   const [rdvs, setRdvs] = React.useState<RDV[]>([])
-  const [contrats, setContrats] = React.useState<Contrat[]>([])
   const [loadingRdvs, setLoadingRdvs] = React.useState(false)
-  const [loadingContrats, setLoadingContrats] = React.useState(false)
   const { toast } = useToast()
 
   React.useEffect(() => {
@@ -862,7 +1028,6 @@ function ProspectDetailModal({
     setEditMode(false)
     if (open) {
       loadRdvs()
-      loadContrats()
     }
   }, [prospect, open])
 
@@ -881,41 +1046,9 @@ function ProspectDetailModal({
     }
   }
 
-  async function loadContrats() {
-    setLoadingContrats(true)
-    try {
-      // API contrats à implémenter
-      setContrats([])
-    } catch (error) {
-      console.error('Erreur chargement contrats:', error)
-    } finally {
-      setLoadingContrats(false)
-    }
-  }
-
   async function saveChanges() {
-    try {
-      const res = await fetch(`/api/prospects`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: prospect.id, ...form })
-      })
-      if (!res.ok) throw new Error(await res.text())
-      
-      const updated = await res.json()
-      onUpdate(updated)
-      setEditMode(false)
-      toast({
-        title: "Modifications enregistrées",
-        description: "Le prospect a été mis à jour avec succès."
-      })
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e.message || "Impossible de sauvegarder les modifications",
-        variant: "destructive"
-      })
-    }
+    onUpdate(form)
+    setEditMode(false)
   }
 
   const statutConfig = MAURITIUS_CONFIG.statuts[form.statut]
@@ -923,321 +1056,255 @@ function ProspectDetailModal({
   const districtConfig = MAURITIUS_CONFIG.districts[form.district]
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto bg-white">
-          <DialogHeader>
-            <DialogTitle className="text-2xl text-gray-900 flex items-center justify-between">
-              <span className="flex items-center gap-3">
-                <span className="text-3xl">{secteurConfig?.icon}</span>
-                {editMode ? (
-                  <Input 
-                    value={form.nom}
-                    onChange={(e) => setForm({...form, nom: e.target.value})}
-                    className="text-2xl font-semibold bg-white text-gray-900 border-gray-300"
-                  />
-                ) : (
-                  prospect.nom
-                )}
-              </span>
-              <div className="flex items-center gap-2">
-                {editMode ? (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setForm(prospect)
-                        setEditMode(false)
-                      }}
-                      className="bg-white text-gray-700 border-gray-300"
-                    >
-                      <X className="h-4 w-4 mr-1" />
-                      Annuler
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={saveChanges}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      <Save className="h-4 w-4 mr-1" />
-                      Enregistrer
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setEditMode(true)}
-                      className="bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
-                    >
-                      <Edit className="h-4 w-4 mr-1" />
-                      Modifier
-                    </Button>
-                    {onDelete && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setShowDeleteDialog(true)}
-                        className="bg-white text-red-600 border-red-300 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4 mr-1" />
-                        Supprimer
-                      </Button>
-                    )}
-                  </>
-                )}
-              </div>
-            </DialogTitle>
-          </DialogHeader>
-
-          <Tabs defaultValue="informations" className="mt-6">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="informations">Informations</TabsTrigger>
-              <TabsTrigger value="rdv" className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                RDV ({rdvs.length})
-              </TabsTrigger>
-              <TabsTrigger value="contrats" className="flex items-center gap-2">
-                <FileSignature className="h-4 w-4" />
-                Contrats ({contrats.length})
-              </TabsTrigger>
-              <TabsTrigger value="historique">Historique</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="informations" className="space-y-4 mt-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className="bg-gray-50 border-gray-200">
-                  <CardHeader>
-                    <CardTitle className="text-lg text-gray-900">Informations générales</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Statut</label>
-                      {editMode ? (
-                        <select
-                          value={form.statut}
-                          onChange={(e) => setForm({...form, statut: e.target.value as Statut})}
-                          className="w-full mt-1 border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
-                        >
-                          {Object.entries(MAURITIUS_CONFIG.statuts).map(([key, config]) => (
-                            <option key={key} value={key}>{config.label}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <p className="mt-1">
-                          <Badge className={`${
-                            statutConfig?.color === 'green' ? 'bg-green-100 text-green-800' :
-                            statutConfig?.color === 'blue' ? 'bg-blue-100 text-blue-800' :
-                            statutConfig?.color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
-                            statutConfig?.color === 'orange' ? 'bg-orange-100 text-orange-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {statutConfig?.label}
-                          </Badge>
-                        </p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Score</label>
-                      <p className="mt-1 text-yellow-500">
-                        {getStars(form.score)} ({form.score}/5)
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Budget</label>
-                      <p className="mt-1 text-gray-900">
-                        {form.budget ? `${MAURITIUS_CONFIG.labels.currency} ${form.budget}` : 'Non spécifié'}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-gray-50 border-gray-200">
-                  <CardHeader>
-                    <CardTitle className="text-lg text-gray-900">Contact</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Personne de contact</label>
-                      <p className="mt-1 text-gray-900">{form.contact || 'Non spécifié'}</p>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Téléphone</label>
-                      <p className="mt-1 text-gray-900">{form.telephone || 'Non spécifié'}</p>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Email</label>
-                      <p className="mt-1 text-gray-900">{form.email || 'Non spécifié'}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="rdv" className="space-y-4 mt-4">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Rendez-vous</h3>
-                <RdvDialog prospect={prospect} onSuccess={loadRdvs}>
-                  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Nouveau RDV
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-white">
+        <DialogHeader>
+          <DialogTitle className="text-2xl text-gray-900 flex items-center justify-between">
+            <span className="flex items-center gap-3">
+              <span className="text-3xl">{secteurConfig?.icon}</span>
+              {editMode ? (
+                <Input 
+                  value={form.nom}
+                  onChange={(e) => setForm({...form, nom: e.target.value})}
+                  className="text-2xl font-semibold bg-white text-gray-900 border-gray-300"
+                />
+              ) : (
+                prospect.nom
+              )}
+            </span>
+            <div className="flex items-center gap-2">
+              {editMode ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setForm(prospect)
+                      setEditMode(false)
+                    }}
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Annuler
                   </Button>
-                </RdvDialog>
+                  <Button
+                    size="sm"
+                    onClick={saveChanges}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Save className="h-4 w-4 mr-1" />
+                    Enregistrer
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setEditMode(true)}
+                    className="bg-white text-blue-600 border-blue-300 hover:bg-blue-50"
+                  >
+                    <Edit className="h-4 w-4 mr-1" />
+                    Modifier
+                  </Button>
+                  {onDelete && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={onDelete}
+                      className="bg-white text-red-600 border-red-300 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Supprimer
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          </DialogTitle>
+        </DialogHeader>
+
+        <Tabs defaultValue="informations" className="mt-6">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="informations">Informations</TabsTrigger>
+            <TabsTrigger value="rdv" className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              RDV ({rdvs.length})
+            </TabsTrigger>
+            <TabsTrigger value="historique">Historique</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="informations" className="space-y-4 mt-4">
+            {/* Contenu informations */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Colonne gauche */}
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Statut</label>
+                  {editMode ? (
+                    <select
+                      value={form.statut}
+                      onChange={(e) => setForm({...form, statut: e.target.value as Statut})}
+                      className="w-full mt-1 border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
+                    >
+                      {Object.entries(MAURITIUS_CONFIG.statuts).map(([key, config]) => (
+                        <option key={key} value={key}>{config.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="mt-1">
+                      <Badge className={`${
+                        statutConfig?.color === 'green' ? 'bg-green-100 text-green-800' :
+                        statutConfig?.color === 'blue' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {statutConfig?.label}
+                      </Badge>
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Score</label>
+                  {editMode ? (
+                    <Input
+                      type="number"
+                      min="1"
+                      max="5"
+                      value={form.score}
+                      onChange={(e) => setForm({...form, score: parseInt(e.target.value) || 3})}
+                      className="mt-1"
+                    />
+                  ) : (
+                    <p className="mt-1 text-yellow-500">
+                      {"★".repeat(form.score)}{"☆".repeat(5-form.score)} ({form.score}/5)
+                    </p>
+                  )}
+                </div>
               </div>
 
-              {loadingRdvs ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin inline-block w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
+              {/* Colonne droite */}
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Contact</label>
+                  {editMode ? (
+                    <Input
+                      value={form.contact || ''}
+                      onChange={(e) => setForm({...form, contact: e.target.value})}
+                      className="mt-1"
+                    />
+                  ) : (
+                    <p className="mt-1">{form.contact || 'Non spécifié'}</p>
+                  )}
                 </div>
-              ) : rdvs.length > 0 ? (
-                <div className="space-y-3">
-                  {rdvs.map((rdv) => (
-                    <Card key={rdv.id} className="bg-white border-gray-200">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="flex items-center gap-3">
-                              <Calendar className="h-5 w-5 text-indigo-600" />
-                              <div>
-                                <p className="font-medium text-gray-900">
-                                  {new Date(rdv.date_time).toLocaleDateString('fr-FR', {
-                                    weekday: 'long',
-                                    day: 'numeric',
-                                    month: 'long',
-                                    year: 'numeric'
-                                  })}
-                                </p>
-                                <p className="text-sm text-gray-600">
-                                  {new Date(rdv.date_time).toLocaleTimeString('fr-FR', {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })} • {rdv.duree_min} min • {rdv.type_visite}
-                                </p>
-                              </div>
-                            </div>
-                            {rdv.notes && (
-                              <p className="text-sm text-gray-600 mt-2 ml-8">{rdv.notes}</p>
-                            )}
-                          </div>
-                          <Badge className={
-                            rdv.statut === 'termine' ? 'bg-green-100 text-green-800' :
-                            rdv.statut === 'annule' ? 'bg-red-100 text-red-800' :
-                            rdv.statut === 'confirme' ? 'bg-blue-100 text-blue-800' :
-                            'bg-gray-100 text-gray-800'
-                          }>
-                            {rdv.statut}
-                          </Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ) : (
-                <Card className="bg-gray-50 border-gray-200">
-                  <CardContent className="p-8 text-center">
-                    <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-600">Aucun rendez-vous planifié</p>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
 
-            <TabsContent value="contrats" className="space-y-4 mt-4">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Contrats</h3>
-                <Button className="bg-green-600 hover:bg-green-700 text-white">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Téléphone</label>
+                  {editMode ? (
+                    <Input
+                      value={form.telephone || ''}
+                      onChange={(e) => setForm({...form, telephone: e.target.value})}
+                      className="mt-1"
+                    />
+                  ) : (
+                    <p className="mt-1">{form.telephone || 'Non spécifié'}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="rdv" className="space-y-4 mt-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Rendez-vous</h3>
+              <RdvDialog prospect={prospect} onSuccess={loadRdvs}>
+                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white">
                   <Plus className="h-4 w-4 mr-2" />
-                  Nouveau Contrat
+                  Nouveau RDV
                 </Button>
+              </RdvDialog>
+            </div>
+
+            {loadingRdvs ? (
+              <div className="text-center py-8">
+                <div className="animate-spin inline-block w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
               </div>
-
-              {loadingContrats ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin inline-block w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full"></div>
-                </div>
-              ) : contrats.length > 0 ? (
-                <div className="space-y-3">
-                  {/* Liste des contrats */}
-                </div>
-              ) : (
-                <Card className="bg-gray-50 border-gray-200">
-                  <CardContent className="p-8 text-center">
-                    <FileSignature className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-600">Aucun contrat enregistré</p>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
-
-            <TabsContent value="historique" className="space-y-4 mt-4">
+            ) : rdvs.length > 0 ? (
+              <div className="space-y-3">
+                {rdvs.map((rdv) => (
+                  <Card key={rdv.id} className="bg-white border-gray-200">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-gray-900">
+                            {new Date(rdv.date_time).toLocaleDateString('fr-FR', {
+                              weekday: 'long',
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric'
+                            })}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            {new Date(rdv.date_time).toLocaleTimeString('fr-FR', {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })} • {rdv.duree_min} min • {rdv.type_visite}
+                          </p>
+                          {rdv.notes && (
+                            <p className="text-sm text-gray-600 mt-2">{rdv.notes}</p>
+                          )}
+                        </div>
+                        <Badge className={
+                          rdv.statut === 'termine' ? 'bg-green-100 text-green-800' :
+                          rdv.statut === 'annule' ? 'bg-red-100 text-red-800' :
+                          rdv.statut === 'confirme' ? 'bg-blue-100 text-blue-800' :
+                          'bg-gray-100 text-gray-800'
+                        }>
+                          {rdv.statut}
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
               <Card className="bg-gray-50 border-gray-200">
                 <CardContent className="p-8 text-center">
-                  <Activity className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-600">Historique des interactions à venir</p>
+                  <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-gray-600">Aucun rendez-vous planifié</p>
                 </CardContent>
               </Card>
-            </TabsContent>
-          </Tabs>
-        </DialogContent>
-      </Dialog>
+            )}
+          </TabsContent>
 
-      {showDeleteDialog && onDelete && (
-        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-          <DialogContent className="bg-white max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-gray-900">Confirmer la suppression</DialogTitle>
-            </DialogHeader>
-            <div className="py-4">
-              <p className="text-gray-600">
-                Êtes-vous sûr de vouloir supprimer "{prospect.nom}" ?
-                Cette action est irréversible.
-              </p>
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setShowDeleteDialog(false)}
-                className="bg-white text-gray-700 border-gray-300"
-              >
-                Annuler
-              </Button>
-              <Button
-                onClick={() => {
-                  onDelete()
-                  setShowDeleteDialog(false)
-                  onClose()
-                }}
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                Supprimer
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-    </>
+          <TabsContent value="historique" className="space-y-4 mt-4">
+            <Card className="bg-gray-50 border-gray-200">
+              <CardContent className="p-8 text-center">
+                <Activity className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-600">Historique des interactions à venir</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-// Dialog pour créer un RDV
+// ========== DIALOG CRÉATION RDV ==========
 function RdvDialog({ 
   prospect, 
   open, 
   onClose,
   onSuccess,
-  children 
+  children,
+  existingRdv
 }: { 
   prospect: Prospect
   open?: boolean
   onClose?: () => void
   onSuccess?: () => void
   children?: React.ReactNode
+  existingRdv?: RDV | null
 }) {
   const [isOpen, setIsOpen] = React.useState(false)
   const [form, setForm] = React.useState({
@@ -1247,12 +1314,28 @@ function RdvDialog({
     type_visite: 'decouverte' as RDV['type_visite'],
     priorite: 'normale' as RDV['priorite'],
     notes: '',
-    lieu: `${prospect.ville}, ${prospect.district || ''}`
+    lieu: ''
   })
   const { toast } = useToast()
 
   const actualOpen = open !== undefined ? open : isOpen
   const actualOnClose = onClose || (() => setIsOpen(false))
+
+  React.useEffect(() => {
+    // Initialiser le formulaire
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    
+    setForm({
+      date: tomorrow.toISOString().split('T')[0],
+      time: '10:00',
+      duree_min: 60,
+      type_visite: 'decouverte',
+      priorite: prospect.score >= 4 ? 'haute' : 'normale',
+      notes: '',
+      lieu: prospect.adresse || `${prospect.ville}, ${prospect.district}`
+    })
+  }, [prospect, actualOpen])
 
   async function createRdv() {
     if (!form.date || !form.time) {
@@ -1265,17 +1348,35 @@ function RdvDialog({
     }
 
     try {
+      // IMPORTANT: Inclure l'objet prospect complet pour la synchronisation avec planning
       const rdvData = {
         prospect_id: prospect.id,
-        commercial: "Karine MOMUS",
+        prospect_nom: prospect.nom,
+        commercial: "Karine MOMUS", // À récupérer depuis les paramètres utilisateur
         titre: `RDV - ${prospect.nom}`,
         date_time: `${form.date}T${form.time}:00`,
         duree_min: form.duree_min,
         type_visite: form.type_visite,
         priorite: form.priorite,
-        statut: 'planifie',
+        statut: 'planifie' as const,
         notes: form.notes,
-        lieu: form.lieu
+        lieu: form.lieu,
+        // Données complètes du prospect pour la page planning
+        prospect: {
+          id: prospect.id,
+          nom: prospect.nom,
+          secteur: prospect.secteur,
+          ville: prospect.ville,
+          district: prospect.district,
+          statut: prospect.statut,
+          contact: prospect.contact,
+          telephone: prospect.telephone,
+          email: prospect.email,
+          score: prospect.score,
+          budget: prospect.budget,
+          adresse: prospect.adresse,
+          notes: prospect.notes
+        }
       }
 
       const res = await fetch('/api/rdv', {
@@ -1284,16 +1385,21 @@ function RdvDialog({
         body: JSON.stringify(rdvData)
       })
 
-      if (!res.ok) throw new Error(await res.text())
+      if (!res.ok) {
+        const error = await res.text()
+        throw new Error(error)
+      }
 
       toast({
-        title: "RDV créé",
-        description: `Rendez-vous planifié avec ${prospect.nom}`
+        title: "✅ RDV créé",
+        description: `Rendez-vous planifié avec ${prospect.nom} le ${new Date(rdvData.date_time).toLocaleDateString('fr-FR')}`
       })
 
       actualOnClose()
       onSuccess?.()
+      
     } catch (error: any) {
+      console.error('Erreur création RDV:', error)
       toast({
         title: "Erreur",
         description: error.message || "Impossible de créer le RDV",
@@ -1311,6 +1417,7 @@ function RdvDialog({
       </DialogHeader>
 
       <div className="space-y-4 mt-4">
+        {/* Date et heure */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Date *</label>
@@ -1334,6 +1441,7 @@ function RdvDialog({
           </div>
         </div>
 
+        {/* Type et durée */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Type de visite</label>
@@ -1366,6 +1474,7 @@ function RdvDialog({
           </div>
         </div>
 
+        {/* Priorité et lieu */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Priorité</label>
@@ -1374,7 +1483,7 @@ function RdvDialog({
               onChange={(e) => setForm({...form, priorite: e.target.value as RDV['priorite']})}
               className="w-full border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
             >
-              <option value="normale">🔵 Normale</option>
+              <option value="normale">🟢 Normale</option>
               <option value="haute">🟠 Haute</option>
               <option value="urgente">🔴 Urgente</option>
             </select>
@@ -1391,6 +1500,7 @@ function RdvDialog({
           </div>
         </div>
 
+        {/* Notes */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Notes / Objectifs</label>
           <Textarea
@@ -1402,26 +1512,31 @@ function RdvDialog({
           />
         </div>
 
+        {/* Info prospect */}
         <Card className="bg-blue-50 border-blue-200">
           <CardContent className="p-4">
-            <h4 className="font-medium text-blue-900 mb-2">Critères de qualification</h4>
+            <h4 className="font-medium text-blue-900 mb-2">Informations prospect</h4>
             <div className="space-y-2 text-sm text-blue-800">
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-4 w-4" />
-                <span>Budget confirmé : {prospect.budget || 'À définir'}</span>
+                <span>Score : {prospect.score}/5 ⭐</span>
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-4 w-4" />
-                <span>Décideur identifié : {prospect.contact || 'À identifier'}</span>
+                <span>Statut : {MAURITIUS_CONFIG.statuts[prospect.statut].label}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4" />
-                <span>Besoin qualifié : {prospect.statut === 'qualifie' ? 'Oui' : 'À qualifier'}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Star className="h-4 w-4" />
-                <span>Score actuel : {prospect.score}/5</span>
-              </div>
+              {prospect.budget && (
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  <span>Budget : Rs {prospect.budget}</span>
+                </div>
+              )}
+              {prospect.contact && (
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  <span>Contact : {prospect.contact}</span>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1464,9 +1579,16 @@ function RdvDialog({
   )
 }
 
-// AddProspectDialog
-function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void }) {
-  const [open, setOpen] = React.useState(false)
+// ========== DIALOG AJOUT PROSPECT ==========
+function AddProspectDialog({ 
+  open,
+  onClose,
+  onAdd 
+}: { 
+  open: boolean
+  onClose: () => void
+  onAdd: (p: Omit<Prospect, "id">) => void 
+}) {
   const [form, setForm] = React.useState<Omit<Prospect, "id">>({
     nom: "",
     secteur: "autre",
@@ -1488,7 +1610,7 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
       return
     }
     onAdd(form)
-    setOpen(false)
+    // Réinitialiser le formulaire
     setForm({
       ...form,
       nom: "",
@@ -1504,18 +1626,13 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-          <Plus className="h-4 w-4 mr-2" />
-          Nouveau Prospect
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl bg-white">
         <DialogHeader>
           <DialogTitle className="text-xl text-gray-900">Ajouter un nouveau prospect</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
           <div>
             <label className="text-sm font-medium text-gray-700 mb-1 block">Nom de l'entreprise *</label>
             <Input 
@@ -1583,6 +1700,39 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
               className="bg-white text-gray-900 border-gray-300"
             />
           </div>
+
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Email</label>
+            <Input 
+              type="email"
+              placeholder="email@exemple.com" 
+              value={form.email} 
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              className="bg-white text-gray-900 border-gray-300"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Score (1-5)</label>
+            <Input 
+              type="number"
+              min="1"
+              max="5"
+              value={form.score} 
+              onChange={(e) => setForm({ ...form, score: parseInt(e.target.value) || 3 })}
+              className="bg-white text-gray-900 border-gray-300"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Adresse complète</label>
+            <Input 
+              placeholder="Adresse complète" 
+              value={form.adresse} 
+              onChange={(e) => setForm({ ...form, adresse: e.target.value })}
+              className="bg-white text-gray-900 border-gray-300"
+            />
+          </div>
           
           <div className="sm:col-span-2">
             <label className="text-sm font-medium text-gray-700 mb-1 block">Notes et commentaires</label>
@@ -1595,16 +1745,18 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
             />
           </div>
         </div>
+        
         <div className="flex justify-end gap-3 mt-6">
           <Button 
             variant="outline" 
-            onClick={() => setOpen(false)}
+            onClick={onClose}
             className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
           >
             Annuler
           </Button>
           <Button 
             onClick={submit}
+            disabled={!form.nom || !form.ville}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             Enregistrer le prospect
