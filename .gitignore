@@ -230,6 +230,10 @@ public/
 # DIVERS
 # =============================================
 # Misc
+Fichiers uploadés
+/public/uploads/*
+!/public/uploads/.gitkeep
+!/public/uploads/contrats/.gitkeep
 *.bak
 *.backup
 *.old
