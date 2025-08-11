@@ -931,9 +931,11 @@ function ProspectDetailModal({
 
                     <div>
                       <label className="text-sm font-medium text-gray-700">Score</label>
-                      <p className="mt-1 text-yellow-500">
-                        {"★".repeat(form.score) + "☆".repeat(5 - form.score)} ({form.score}/5)
-                      </p>
+                     <p className="mt-1 text-yellow-500">
+  {"★".repeat(Math.min(5, Math.max(1, Math.ceil((form.score || 50) / 20)))) + 
+   "☆".repeat(Math.max(0, 5 - Math.min(5, Math.max(1, Math.ceil((form.score || 50) / 20)))))} 
+  ({Math.min(5, Math.max(1, Math.ceil((form.score || 50) / 20)))}/5)
+</p>
                     </div>
 
                     <div>
