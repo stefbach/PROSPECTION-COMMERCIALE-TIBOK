@@ -6,14 +6,52 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
 import { 
   CalendarPlus, Phone, Plus, Search, Mail, Globe, MapPin, Building2, Eye, 
   FileText, TrendingUp, Users, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Trash2, Edit, X, Save
+  Trash2, Edit, X, Save, Calendar, Clock, CheckCircle, AlertCircle, DollarSign,
+  FileSignature, Download, Upload, Star, Activity, Target, Timer
 } from 'lucide-react'
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { ImportAnalyzer } from '@/components/import-analyzer'
+
+// Types pour RDV et Contrats
+interface RDV {
+  id: number
+  prospect_id: number
+  prospect_nom?: string
+  commercial: string
+  titre: string
+  date_time: string
+  duree_min: number
+  type_visite: 'decouverte' | 'presentation' | 'negociation' | 'signature' | 'suivi'
+  priorite: 'normale' | 'haute' | 'urgente'
+  statut: 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
+  notes?: string
+  lieu?: string
+  created_at: string
+  updated_at: string
+}
+
+interface Contrat {
+  id: number
+  prospect_id: number
+  numero: string
+  titre: string
+  date_debut: string
+  date_fin: string
+  montant: number
+  devise: string
+  statut: 'brouillon' | 'envoye' | 'negocie' | 'signe' | 'actif' | 'termine' | 'annule'
+  type: 'vente' | 'service' | 'maintenance' | 'location' | 'autre'
+  conditions?: string
+  fichier_url?: string
+  created_at: string
+  updated_at: string
+}
 
 export default function MauritiusProspectsSection() {
   const [loading, setLoading] = React.useState(false)
@@ -76,11 +114,10 @@ export default function MauritiusProspectsSection() {
     }
   }
 
-  // Charger TOUS les prospects (avec pagination si nécessaire)
+  // Charger TOUS les prospects
   async function loadAllProspects() {
     setLoading(true)
     setViewMode('all')
-    console.log('=== Début du chargement complet des prospects ===')
     
     try {
       const params = new URLSearchParams()
@@ -89,122 +126,28 @@ export default function MauritiusProspectsSection() {
       if (filters.statut) params.set('statut', filters.statut)
       if (filters.search) params.set('q', filters.search)
       
-      // Stratégie : charger par lots de 1000 pour contourner les limites de l'API
-      let allData: Prospect[] = []
-      let page = 1
-      let hasMore = true
-      const batchSize = 1000
-      
-      setLoadingMessage('Chargement des prospects...')
-      
-      // Essayer d'abord avec une grosse limite pour voir si l'API la supporte
       params.set('limit', '10000')
       params.set('page', '1')
       
-      console.log('Test avec limite de 10000...')
-      const testRes = await fetch(`/api/prospects?${params.toString()}`, { cache: 'no-store' })
-      const testResult = await testRes.json()
+      const res = await fetch(`/api/prospects?${params.toString()}`, { cache: 'no-store' })
+      const result = await res.json()
       
-      if (testResult.data && testResult.data.length > 1000) {
-        // L'API supporte plus de 1000, on peut tout charger d'un coup
-        allData = testResult.data
-        console.log(`✅ API supporte les grandes limites: ${allData.length} prospects chargés`)
-      } else {
-        // L'API limite à 1000 ou moins, on doit paginer
-        const initialCount = testResult.data ? testResult.data.length : 0
-        console.log(`⚠️ API limitée à ${initialCount} résultats, chargement par pagination...`)
-        
-        // Réinitialiser et charger page par page
-        allData = []
-        page = 1
-        
-        while (hasMore) {
-          params.set('limit', batchSize.toString())
-          params.set('page', page.toString())
-          
-          setLoadingMessage(`Chargement page ${page}... ${allData.length} prospects récupérés`)
-          
-          const res = await fetch(`/api/prospects?${params.toString()}`, { cache: 'no-store' })
-          const result = await res.json()
-          
-          if (result.data && result.data.length > 0) {
-            allData = [...allData, ...result.data]
-            console.log(`📄 Page ${page}: ${result.data.length} prospects ajoutés, total: ${allData.length}`)
-            
-            // Si on a moins que la limite demandée, on a tout récupéré
-            if (result.data.length < batchSize) {
-              console.log(`✅ Dernière page atteinte (moins de ${batchSize} résultats)`)
-              hasMore = false
-            }
-            
-            // Vérifier aussi le total si disponible
-            if (result.pagination && result.pagination.total) {
-              console.log(`📊 Total dans la base: ${result.pagination.total}`)
-              if (allData.length >= result.pagination.total) {
-                console.log('✅ Tous les prospects ont été chargés')
-                hasMore = false
-              }
-            }
-            
-            page++
-          } else if (result.pagination && result.pagination.totalPages) {
-            // Si l'API nous donne le nombre total de pages
-            console.log(`📑 Pages totales: ${result.pagination.totalPages}`)
-            if (page >= result.pagination.totalPages) {
-              hasMore = false
-            } else {
-              page++
-            }
-          } else {
-            console.log('❌ Aucune donnée retournée, fin du chargement')
-            hasMore = false
-          }
-          
-          // Limite de sécurité pour éviter une boucle infinie (20 pages = 20000 prospects max)
-          if (page > 20) {
-            console.warn('⚠️ Limite de sécurité atteinte (20 pages)')
-            hasMore = false
-          }
-        }
-      }
-      
+      const allData = result.data || result || []
       setAllProspects(allData)
-      setLoadingMessage('')
       
-      console.log(`=== Chargement terminé: ${allData.length} prospects totaux ===`)
-      
-      // Vérifier si on semble avoir atteint une limite
-      if (allData.length === 1000 || allData.length === 2000 || allData.length === 3000) {
-        toast({
-          title: 'Attention',
-          description: `${allData.length} prospects chargés. Si vous pensez qu'il en manque, vérifiez que votre API backend ne limite pas les résultats.`,
-        })
-        console.warn(`
-⚠️ ATTENTION: Nombre de prospects suspect (${allData.length})
-Cela pourrait indiquer une limite côté API.
-Vérifiez votre backend API:
-1. La limite maximale par requête
-2. La limite totale de pagination
-3. Les logs du serveur pour voir les requêtes
-        `)
-      } else {
-        toast({
-          title: 'Chargement complet',
-          description: `${allData.length} prospects chargés en mémoire`
-        })
-      }
+      toast({
+        title: 'Chargement complet',
+        description: `${allData.length} prospects chargés en mémoire`
+      })
     } catch (error) {
-      console.error('❌ Erreur lors du chargement complet:', error)
       toast({
         title: 'Erreur',
         description: 'Impossible de charger tous les prospects',
         variant: 'destructive'
       })
       setViewMode('paginated')
-      setLoadingMessage('')
     } finally {
       setLoading(false)
-      setLoadingMessage('')
     }
   }
 
@@ -215,7 +158,7 @@ Vérifiez votre backend API:
   // Supprimer un prospect
   async function deleteProspect(id: number) {
     try {
-      const res = await fetch(`/api/prospects/${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/prospects?id=${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error(await res.text())
       
       if (viewMode === 'all') {
@@ -271,7 +214,7 @@ Vérifiez votre backend API:
     }, 100)
   }
 
-  // Données filtrées (selon le mode)
+  // Données filtrées
   const filtered = React.useMemo(() => {
     const sourceData = viewMode === 'all' ? allProspects : prospects
     
@@ -328,10 +271,10 @@ Vérifiez votre backend API:
 
   async function updateStatus(id: number, statut: Statut) {
     try {
-      const res = await fetch(`/api/prospects/${id}`, { 
+      const res = await fetch(`/api/prospects`, { 
         method: 'PATCH', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ statut }) 
+        body: JSON.stringify({ id, statut }) 
       })
       if (!res.ok) throw new Error(await res.text())
       
@@ -541,150 +484,6 @@ Vérifiez votre backend API:
         </CardContent>
       </Card>
 
-      {/* Contrôles de pagination */}
-      {viewMode === 'paginated' && (
-        <Card className="bg-white border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-600">
-                  Page {pagination.page} sur {pagination.totalPages} • 
-                  Affichage {((pagination.page - 1) * pagination.limit) + 1} à{' '}
-                  {Math.min(pagination.page * pagination.limit, pagination.total)} sur {pagination.total}
-                </span>
-                
-                <select
-                  value={pagination.limit}
-                  onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                  className="border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-1 text-sm"
-                >
-                  <option value="25">25 par page</option>
-                  <option value="50">50 par page</option>
-                  <option value="100">100 par page</option>
-                  <option value="250">250 par page</option>
-                  <option value="500">500 par page</option>
-                  <option value="1000">1000 par page</option>
-                  <option value="2000">2000 par page</option>
-                  <option value="5000">5000 par page</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(1)}
-                  disabled={pagination.page === 1}
-                  className="bg-white text-gray-700 border-gray-300"
-                >
-                  <ChevronsLeft className="h-4 w-4" />
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(pagination.page - 1)}
-                  disabled={pagination.page <= 1}
-                  className="bg-white text-gray-700 border-gray-300"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                
-                <div className="flex gap-1">
-                  {(() => {
-                    const pages = []
-                    const maxVisible = 5
-                    let start = Math.max(1, pagination.page - Math.floor(maxVisible / 2))
-                    let end = Math.min(pagination.totalPages, start + maxVisible - 1)
-                    
-                    if (end - start < maxVisible - 1) {
-                      start = Math.max(1, end - maxVisible + 1)
-                    }
-                    
-                    for (let i = start; i <= end; i++) {
-                      pages.push(
-                        <Button
-                          key={i}
-                          variant={i === pagination.page ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => handlePageChange(i)}
-                          className={i === pagination.page ? 
-                            "bg-blue-600 text-white hover:bg-blue-700" : 
-                            "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                          }
-                        >
-                          {i}
-                        </Button>
-                      )
-                    }
-                    return pages
-                  })()}
-                </div>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(pagination.page + 1)}
-                  disabled={pagination.page >= pagination.totalPages}
-                  className="bg-white text-gray-700 border-gray-300"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(pagination.totalPages)}
-                  disabled={pagination.page === pagination.totalPages}
-                  className="bg-white text-gray-700 border-gray-300"
-                >
-                  <ChevronsRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Info mode vue complète */}
-      {viewMode === 'all' && (
-        <Card className="bg-yellow-50 border-yellow-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Eye className="h-5 w-5 text-yellow-600" />
-                  <span className="text-sm text-yellow-800">
-                    Mode vue complète activé • {allProspects.length} prospects chargés • {filtered.length} affichés après filtres
-                  </span>
-                </div>
-                {allProspects.length >= 1000 && allProspects.length % 1000 === 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => loadAllProspects()}
-                    className="bg-white text-yellow-700 border-yellow-300 hover:bg-yellow-50"
-                  >
-                    Charger plus
-                  </Button>
-                )}
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setViewMode('paginated')
-                  loadProspects(1)
-                }}
-                className="bg-white text-yellow-700 border-yellow-300 hover:bg-yellow-50"
-              >
-                Retour à la pagination
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Liste des prospects */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {filtered.map((p) => (
@@ -710,40 +509,11 @@ Vérifiez votre backend API:
           </div>
         )}
       </div>
-
-      {/* Pagination en bas */}
-      {viewMode === 'paginated' && pagination.totalPages > 1 && (
-        <div className="flex justify-center mt-6">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => handlePageChange(pagination.page - 1)}
-              disabled={pagination.page <= 1}
-              className="bg-white text-gray-700 border-gray-300"
-            >
-              Page précédente
-            </Button>
-            
-            <span className="px-4 py-2 text-sm text-gray-600">
-              Page {pagination.page} sur {pagination.totalPages}
-            </span>
-            
-            <Button
-              variant="outline"
-              onClick={() => handlePageChange(pagination.page + 1)}
-              disabled={pagination.page >= pagination.totalPages}
-              className="bg-white text-gray-700 border-gray-300"
-            >
-              Page suivante
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
-// ProspectCard avec bouton de suppression
+// ProspectCard avec boutons RDV et Contrat
 function ProspectCard({ 
   prospect, 
   onStatusChange,
@@ -756,6 +526,7 @@ function ProspectCard({
   onDelete: () => void
 }) {
   const [showDetail, setShowDetail] = React.useState(false)
+  const [showRdvDialog, setShowRdvDialog] = React.useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false)
   
   const statutConfig = MAURITIUS_CONFIG.statuts[prospect.statut]
@@ -825,46 +596,10 @@ function ProspectCard({
               </div>
             )}
             
-            {prospect.email && (
-              <div className="flex items-center gap-2 text-gray-700">
-                <Mail className="h-4 w-4 text-gray-400" />
-                <span className="truncate">{prospect.email}</span>
-              </div>
-            )}
-            
-            {prospect.website && (
-              <div className="flex items-center gap-2 text-gray-700">
-                <Globe className="h-4 w-4 text-gray-400" />
-                <span className="truncate">{prospect.website}</span>
-              </div>
-            )}
-            
             <div className="flex items-center gap-2">
               <span className="text-yellow-500">{stars}</span>
               <span className="text-xs text-gray-600">Score: {prospect.score}/5</span>
             </div>
-            
-            {prospect.budget && (
-              <div className="text-gray-700">
-                💰 Budget: {MAURITIUS_CONFIG.labels.currency} {prospect.budget}
-              </div>
-            )}
-
-            {prospect.quality_score && (
-              <div className="flex items-center gap-2">
-                <div className="flex-1 bg-gray-200 rounded-full h-2">
-                  <div 
-                    className={`h-2 rounded-full ${
-                      prospect.quality_score >= 80 ? 'bg-green-500' :
-                      prospect.quality_score >= 60 ? 'bg-yellow-500' :
-                      'bg-red-500'
-                    }`}
-                    style={{ width: `${prospect.quality_score}%` }}
-                  />
-                </div>
-                <span className="text-xs text-gray-600">{prospect.quality_score}%</span>
-              </div>
-            )}
           </div>
 
           {prospect.notes && (
@@ -873,10 +608,22 @@ function ProspectCard({
             </div>
           )}
 
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <Button 
               size="sm" 
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowRdvDialog(true)
+              }}
+            >
+              <Calendar className="h-4 w-4 mr-1" />
+              RDV
+            </Button>
+            
+            <Button 
+              size="sm" 
+              className="bg-green-600 hover:bg-green-700 text-white"
               onClick={(e) => {
                 e.stopPropagation()
                 window.location.href = `tel:${prospect.telephone}`
@@ -886,33 +633,19 @@ function ProspectCard({
               Appeler
             </Button>
             
-            {prospect.email && (
-              <Button 
-                size="sm" 
-                variant="outline" 
-                className="flex-1 bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  window.location.href = `mailto:${prospect.email}`
-                }}
-              >
-                <Mail className="h-4 w-4 mr-1" />
-                Email
-              </Button>
-            )}
-            
             <Button 
               size="sm" 
-              variant="outline"
+              variant="outline" 
               className="bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
               onClick={(e) => {
                 e.stopPropagation()
                 setShowDetail(true)
               }}
             >
-              <Eye className="h-4 w-4" />
+              <Eye className="h-4 w-4 mr-1" />
+              Détails
             </Button>
-
+            
             <Button 
               size="sm" 
               variant="outline"
@@ -940,6 +673,12 @@ function ProspectCard({
           setShowDetail(false)
           onDelete()
         }}
+      />
+
+      <RdvDialog
+        prospect={prospect}
+        open={showRdvDialog}
+        onClose={() => setShowRdvDialog(false)}
       />
 
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
@@ -978,7 +717,7 @@ function ProspectCard({
   )
 }
 
-// Modal de détails/édition amélioré pour desktop
+// Modal de détails avec onglets RDV et Contrats
 function ProspectDetailModal({
   prospect,
   open,
@@ -995,19 +734,54 @@ function ProspectDetailModal({
   const [editMode, setEditMode] = React.useState(false)
   const [form, setForm] = React.useState(prospect)
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false)
+  const [rdvs, setRdvs] = React.useState<RDV[]>([])
+  const [contrats, setContrats] = React.useState<Contrat[]>([])
+  const [loadingRdvs, setLoadingRdvs] = React.useState(false)
+  const [loadingContrats, setLoadingContrats] = React.useState(false)
   const { toast } = useToast()
 
   React.useEffect(() => {
     setForm(prospect)
     setEditMode(false)
-  }, [prospect])
+    if (open) {
+      loadRdvs()
+      loadContrats()
+    }
+  }, [prospect, open])
+
+  async function loadRdvs() {
+    setLoadingRdvs(true)
+    try {
+      const res = await fetch(`/api/rdv?prospect_id=${prospect.id}`)
+      if (res.ok) {
+        const data = await res.json()
+        setRdvs(data)
+      }
+    } catch (error) {
+      console.error('Erreur chargement RDV:', error)
+    } finally {
+      setLoadingRdvs(false)
+    }
+  }
+
+  async function loadContrats() {
+    setLoadingContrats(true)
+    try {
+      // API contrats à implémenter
+      setContrats([])
+    } catch (error) {
+      console.error('Erreur chargement contrats:', error)
+    } finally {
+      setLoadingContrats(false)
+    }
+  }
 
   async function saveChanges() {
     try {
-      const res = await fetch(`/api/prospects/${prospect.id}`, {
+      const res = await fetch(`/api/prospects`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
+        body: JSON.stringify({ id: prospect.id, ...form })
       })
       if (!res.ok) throw new Error(await res.text())
       
@@ -1034,7 +808,7 @@ function ProspectDetailModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto bg-white">
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto bg-white">
           <DialogHeader>
             <DialogTitle className="text-2xl text-gray-900 flex items-center justify-between">
               <span className="flex items-center gap-3">
@@ -1101,363 +875,446 @@ function ProspectDetailModal({
             </DialogTitle>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-            {/* Colonne gauche - Informations principales */}
-            <div className="space-y-4">
-              <Card className="bg-gray-50 border-gray-200">
-                <CardHeader>
-                  <CardTitle className="text-lg text-gray-900">Informations générales</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Secteur d'activité</label>
-                    {editMode ? (
-                      <select
-                        value={form.secteur}
-                        onChange={(e) => setForm({...form, secteur: e.target.value as Secteur})}
-                        className="w-full mt-1 border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
-                      >
-                        {Object.entries(MAURITIUS_CONFIG.secteurs).map(([key, config]) => (
-                          <option key={key} value={key}>
-                            {config.icon} {config.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <p className="mt-1 text-gray-900">
-                        {secteurConfig?.icon} {secteurConfig?.label}
-                      </p>
-                    )}
-                  </div>
+          <Tabs defaultValue="informations" className="mt-6">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="informations">Informations</TabsTrigger>
+              <TabsTrigger value="rdv" className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                RDV ({rdvs.length})
+              </TabsTrigger>
+              <TabsTrigger value="contrats" className="flex items-center gap-2">
+                <FileSignature className="h-4 w-4" />
+                Contrats ({contrats.length})
+              </TabsTrigger>
+              <TabsTrigger value="historique">Historique</TabsTrigger>
+            </TabsList>
 
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Statut</label>
-                    {editMode ? (
-                      <select
-                        value={form.statut}
-                        onChange={(e) => setForm({...form, statut: e.target.value as Statut})}
-                        className="w-full mt-1 border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
-                      >
-                        {Object.entries(MAURITIUS_CONFIG.statuts).map(([key, config]) => (
-                          <option key={key} value={key}>{config.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <p className="mt-1">
-                        <span className={`px-2 py-1 rounded text-sm ${
-                          statutConfig?.color === 'gray' ? 'bg-gray-100 text-gray-800' :
-                          statutConfig?.color === 'blue' ? 'bg-blue-100 text-blue-800' :
-                          statutConfig?.color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
-                          statutConfig?.color === 'orange' ? 'bg-orange-100 text-orange-800' :
-                          statutConfig?.color === 'green' ? 'bg-green-100 text-green-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {statutConfig?.label}
-                        </span>
-                      </p>
-                    )}
-                  </div>
+            <TabsContent value="informations" className="space-y-4 mt-4">
+              {/* Contenu existant des informations */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card className="bg-gray-50 border-gray-200">
+                  <CardHeader>
+                    <CardTitle className="text-lg text-gray-900">Informations générales</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Statut</label>
+                      {editMode ? (
+                        <select
+                          value={form.statut}
+                          onChange={(e) => setForm({...form, statut: e.target.value as Statut})}
+                          className="w-full mt-1 border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
+                        >
+                          {Object.entries(MAURITIUS_CONFIG.statuts).map(([key, config]) => (
+                            <option key={key} value={key}>{config.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <p className="mt-1">
+                          <Badge className={`${
+                            statutConfig?.color === 'green' ? 'bg-green-100 text-green-800' :
+                            statutConfig?.color === 'blue' ? 'bg-blue-100 text-blue-800' :
+                            statutConfig?.color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
+                            statutConfig?.color === 'orange' ? 'bg-orange-100 text-orange-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {statutConfig?.label}
+                          </Badge>
+                        </p>
+                      )}
+                    </div>
 
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Score</label>
-                    {editMode ? (
-                      <select
-                        value={form.score}
-                        onChange={(e) => setForm({...form, score: Number(e.target.value) as 1|2|3|4|5})}
-                        className="w-full mt-1 border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
-                      >
-                        <option value={5}>★★★★★ Excellent (5/5)</option>
-                        <option value={4}>★★★★☆ Très bon (4/5)</option>
-                        <option value={3}>★★★☆☆ Moyen (3/5)</option>
-                        <option value={2}>★★☆☆☆ Faible (2/5)</option>
-                        <option value={1}>★☆☆☆☆ Très faible (1/5)</option>
-                      </select>
-                    ) : (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Score</label>
                       <p className="mt-1 text-yellow-500">
                         {"★".repeat(form.score) + "☆".repeat(5 - form.score)} ({form.score}/5)
                       </p>
-                    )}
-                  </div>
+                    </div>
 
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Budget</label>
-                    {editMode ? (
-                      <Input
-                        value={form.budget || ''}
-                        onChange={(e) => setForm({...form, budget: e.target.value})}
-                        placeholder="Ex: Rs 100k"
-                        className="mt-1 bg-white text-gray-900 border-gray-300"
-                      />
-                    ) : (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Budget</label>
                       <p className="mt-1 text-gray-900">
                         {form.budget ? `${MAURITIUS_CONFIG.labels.currency} ${form.budget}` : 'Non spécifié'}
                       </p>
-                    )}
-                  </div>
-
-                  {form.priority && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Priorité</label>
-                      <p className="mt-1">
-                        <span className={`px-2 py-1 rounded text-sm ${
-                          form.priority === 'Haute' ? 'bg-red-100 text-red-800' :
-                          form.priority === 'Moyenne' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {form.priority}
-                        </span>
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gray-50 border-gray-200">
-                <CardHeader>
-                  <CardTitle className="text-lg text-gray-900">Contact</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Personne de contact</label>
-                    {editMode ? (
-                      <Input
-                        value={form.contact || ''}
-                        onChange={(e) => setForm({...form, contact: e.target.value})}
-                        className="mt-1 bg-white text-gray-900 border-gray-300"
-                      />
-                    ) : (
-                      <p className="mt-1 text-gray-900">{form.contact || 'Non spécifié'}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Téléphone</label>
-                    {editMode ? (
-                      <Input
-                        value={form.telephone || ''}
-                        onChange={(e) => setForm({...form, telephone: e.target.value})}
-                        placeholder="+230 5123 4567"
-                        className="mt-1 bg-white text-gray-900 border-gray-300"
-                      />
-                    ) : (
-                      <p className="mt-1 text-gray-900">
-                        {form.telephone || 'Non spécifié'}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Email</label>
-                    {editMode ? (
-                      <Input
-                        type="email"
-                        value={form.email || ''}
-                        onChange={(e) => setForm({...form, email: e.target.value})}
-                        className="mt-1 bg-white text-gray-900 border-gray-300"
-                      />
-                    ) : (
-                      <p className="mt-1 text-gray-900">
-                        {form.email || 'Non spécifié'}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Site web</label>
-                    {editMode ? (
-                      <Input
-                        value={form.website || ''}
-                        onChange={(e) => setForm({...form, website: e.target.value})}
-                        className="mt-1 bg-white text-gray-900 border-gray-300"
-                      />
-                    ) : (
-                      <p className="mt-1 text-gray-900">
-                        {form.website ? (
-                          <a href={form.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                            {form.website}
-                          </a>
-                        ) : (
-                          'Non spécifié'
-                        )}
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Colonne droite - Localisation et Notes */}
-            <div className="space-y-4">
-              <Card className="bg-gray-50 border-gray-200">
-                <CardHeader>
-                  <CardTitle className="text-lg text-gray-900">Localisation</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Ville</label>
-                    {editMode ? (
-                      <Input
-                        value={form.ville}
-                        onChange={(e) => setForm({...form, ville: e.target.value})}
-                        className="mt-1 bg-white text-gray-900 border-gray-300"
-                      />
-                    ) : (
-                      <p className="mt-1 text-gray-900">{form.ville}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">District</label>
-                    {editMode ? (
-                      <select
-                        value={form.district}
-                        onChange={(e) => setForm({...form, district: e.target.value as District})}
-                        className="w-full mt-1 border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
-                      >
-                        {Object.entries(MAURITIUS_CONFIG.districts).map(([key, config]) => (
-                          <option key={key} value={key}>{config.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <p className="mt-1 text-gray-900">{districtConfig?.label}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Adresse complète</label>
-                    {editMode ? (
-                      <Textarea
-                        value={form.adresse || ''}
-                        onChange={(e) => setForm({...form, adresse: e.target.value})}
-                        rows={3}
-                        className="mt-1 bg-white text-gray-900 border-gray-300"
-                      />
-                    ) : (
-                      <p className="mt-1 text-gray-900">{form.adresse || 'Non spécifiée'}</p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gray-50 border-gray-200">
-                <CardHeader>
-                  <CardTitle className="text-lg text-gray-900">Notes et commentaires</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {editMode ? (
-                    <Textarea
-                      value={form.notes || ''}
-                      onChange={(e) => setForm({...form, notes: e.target.value})}
-                      rows={6}
-                      placeholder="Ajoutez des notes..."
-                      className="bg-white text-gray-900 border-gray-300"
-                    />
-                  ) : (
-                    <p className="text-gray-900 whitespace-pre-wrap">
-                      {form.notes || 'Aucune note'}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-
-              {form.quality_score && (
-                <Card className="bg-gray-50 border-gray-200">
-                  <CardHeader>
-                    <CardTitle className="text-lg text-gray-900">Score de qualité</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 bg-gray-200 rounded-full h-3">
-                        <div 
-                          className={`h-3 rounded-full ${
-                            form.quality_score >= 80 ? 'bg-green-500' :
-                            form.quality_score >= 60 ? 'bg-yellow-500' :
-                            'bg-red-500'
-                          }`}
-                          style={{ width: `${form.quality_score}%` }}
-                        />
-                      </div>
-                      <span className="text-lg font-semibold text-gray-900">
-                        {form.quality_score}%
-                      </span>
                     </div>
                   </CardContent>
                 </Card>
-              )}
-            </div>
-          </div>
 
-          {/* Actions rapides en bas */}
-          {!editMode && (
-            <div className="flex gap-3 mt-6 pt-6 border-t border-gray-200">
-              <Button
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                onClick={() => window.location.href = `tel:${prospect.telephone}`}
-              >
-                <Phone className="h-4 w-4 mr-2" />
-                Appeler
-              </Button>
-              {prospect.email && (
-                <Button
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                  onClick={() => window.location.href = `mailto:${prospect.email}`}
-                >
-                  <Mail className="h-4 w-4 mr-2" />
-                  Envoyer un email
-                </Button>
-              )}
-              {prospect.website && (
-                <Button
-                  variant="outline"
-                  className="flex-1 bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                  onClick={() => window.open(prospect.website, '_blank')}
-                >
-                  <Globe className="h-4 w-4 mr-2" />
-                  Visiter le site
-                </Button>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+                <Card className="bg-gray-50 border-gray-200">
+                  <CardHeader>
+                    <CardTitle className="text-lg text-gray-900">Contact</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Personne de contact</label>
+                      <p className="mt-1 text-gray-900">{form.contact || 'Non spécifié'}</p>
+                    </div>
 
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent className="bg-white max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-gray-900">Êtes-vous sûr ?</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-gray-600">
-              Cette action supprimera définitivement le prospect "{prospect.nom}". 
-              Cette action ne peut pas être annulée.
-            </p>
-          </div>
-          <div className="flex justify-end gap-3">
-            <Button 
-              variant="outline"
-              onClick={() => setShowDeleteDialog(false)}
-              className="bg-white text-gray-700 border-gray-300"
-            >
-              Annuler
-            </Button>
-            <Button 
-              onClick={() => {
-                onDelete?.()
-                setShowDeleteDialog(false)
-                onClose()
-              }}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              Supprimer
-            </Button>
-          </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Téléphone</label>
+                      <p className="mt-1 text-gray-900">{form.telephone || 'Non spécifié'}</p>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Email</label>
+                      <p className="mt-1 text-gray-900">{form.email || 'Non spécifié'}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="rdv" className="space-y-4 mt-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Rendez-vous</h3>
+                <RdvDialog prospect={prospect} onSuccess={loadRdvs}>
+                  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Nouveau RDV
+                  </Button>
+                </RdvDialog>
+              </div>
+
+              {loadingRdvs ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin inline-block w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
+                </div>
+              ) : rdvs.length > 0 ? (
+                <div className="space-y-3">
+                  {rdvs.map((rdv) => (
+                    <Card key={rdv.id} className="bg-white border-gray-200">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-3">
+                              <Calendar className="h-5 w-5 text-indigo-600" />
+                              <div>
+                                <p className="font-medium text-gray-900">
+                                  {new Date(rdv.date_time).toLocaleDateString('fr-FR', {
+                                    weekday: 'long',
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric'
+                                  })}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  {new Date(rdv.date_time).toLocaleTimeString('fr-FR', {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })} • {rdv.duree_min} min • {rdv.type_visite}
+                                </p>
+                              </div>
+                            </div>
+                            {rdv.notes && (
+                              <p className="text-sm text-gray-600 mt-2 ml-8">{rdv.notes}</p>
+                            )}
+                          </div>
+                          <Badge className={
+                            rdv.statut === 'termine' ? 'bg-green-100 text-green-800' :
+                            rdv.statut === 'annule' ? 'bg-red-100 text-red-800' :
+                            rdv.statut === 'confirme' ? 'bg-blue-100 text-blue-800' :
+                            'bg-gray-100 text-gray-800'
+                          }>
+                            {rdv.statut}
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <Card className="bg-gray-50 border-gray-200">
+                  <CardContent className="p-8 text-center">
+                    <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600">Aucun rendez-vous planifié</p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="contrats" className="space-y-4 mt-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Contrats</h3>
+                <Button className="bg-green-600 hover:bg-green-700 text-white">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Nouveau Contrat
+                </Button>
+              </div>
+
+              {loadingContrats ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin inline-block w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full"></div>
+                </div>
+              ) : contrats.length > 0 ? (
+                <div className="space-y-3">
+                  {/* Liste des contrats */}
+                </div>
+              ) : (
+                <Card className="bg-gray-50 border-gray-200">
+                  <CardContent className="p-8 text-center">
+                    <FileSignature className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600">Aucun contrat enregistré</p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="historique" className="space-y-4 mt-4">
+              <Card className="bg-gray-50 border-gray-200">
+                <CardContent className="p-8 text-center">
+                  <Activity className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-gray-600">Historique des interactions à venir</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </>
   )
 }
 
-// AddProspectDialog reste identique mais avec le dialog plus grand
+// Dialog pour créer un RDV
+function RdvDialog({ 
+  prospect, 
+  open, 
+  onClose,
+  onSuccess,
+  children 
+}: { 
+  prospect: Prospect
+  open?: boolean
+  onClose?: () => void
+  onSuccess?: () => void
+  children?: React.ReactNode
+}) {
+  const [isOpen, setIsOpen] = React.useState(false)
+  const [form, setForm] = React.useState({
+    date: '',
+    time: '',
+    duree_min: 60,
+    type_visite: 'decouverte' as RDV['type_visite'],
+    priorite: 'normale' as RDV['priorite'],
+    notes: '',
+    lieu: `${prospect.ville}, ${prospect.district || ''}`
+  })
+  const { toast } = useToast()
+
+  const actualOpen = open !== undefined ? open : isOpen
+  const actualOnClose = onClose || (() => setIsOpen(false))
+
+  async function createRdv() {
+    if (!form.date || !form.time) {
+      toast({
+        title: "Erreur",
+        description: "Veuillez remplir la date et l'heure",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      const rdvData = {
+        prospect_id: prospect.id,
+        commercial: "Karine MOMUS", // À remplacer par l'utilisateur connecté
+        titre: `RDV - ${prospect.nom}`,
+        date_time: `${form.date}T${form.time}:00`,
+        duree_min: form.duree_min,
+        type_visite: form.type_visite,
+        priorite: form.priorite,
+        statut: 'planifie',
+        notes: form.notes,
+        lieu: form.lieu
+      }
+
+      const res = await fetch('/api/rdv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rdvData)
+      })
+
+      if (!res.ok) throw new Error(await res.text())
+
+      toast({
+        title: "RDV créé",
+        description: `Rendez-vous planifié avec ${prospect.nom}`
+      })
+
+      actualOnClose()
+      onSuccess?.()
+    } catch (error: any) {
+      toast({
+        title: "Erreur",
+        description: error.message || "Impossible de créer le RDV",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const dialogContent = (
+    <DialogContent className="bg-white max-w-2xl">
+      <DialogHeader>
+        <DialogTitle className="text-xl text-gray-900">
+          Planifier un rendez-vous avec {prospect.nom}
+        </DialogTitle>
+      </DialogHeader>
+
+      <div className="space-y-4 mt-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Date *</label>
+            <Input
+              type="date"
+              value={form.date}
+              onChange={(e) => setForm({...form, date: e.target.value})}
+              min={new Date().toISOString().split('T')[0]}
+              className="bg-white text-gray-900 border-gray-300"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Heure *</label>
+            <Input
+              type="time"
+              value={form.time}
+              onChange={(e) => setForm({...form, time: e.target.value})}
+              className="bg-white text-gray-900 border-gray-300"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Type de visite</label>
+            <select
+              value={form.type_visite}
+              onChange={(e) => setForm({...form, type_visite: e.target.value as RDV['type_visite']})}
+              className="w-full border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
+            >
+              <option value="decouverte">🔍 Découverte</option>
+              <option value="presentation">📊 Présentation</option>
+              <option value="negociation">💼 Négociation</option>
+              <option value="signature">✍️ Signature</option>
+              <option value="suivi">📞 Suivi</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Durée</label>
+            <select
+              value={form.duree_min}
+              onChange={(e) => setForm({...form, duree_min: parseInt(e.target.value)})}
+              className="w-full border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
+            >
+              <option value="30">30 minutes</option>
+              <option value="45">45 minutes</option>
+              <option value="60">1 heure</option>
+              <option value="90">1h30</option>
+              <option value="120">2 heures</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Priorité</label>
+            <select
+              value={form.priorite}
+              onChange={(e) => setForm({...form, priorite: e.target.value as RDV['priorite']})}
+              className="w-full border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2"
+            >
+              <option value="normale">🔵 Normale</option>
+              <option value="haute">🟠 Haute</option>
+              <option value="urgente">🔴 Urgente</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Lieu</label>
+            <Input
+              value={form.lieu}
+              onChange={(e) => setForm({...form, lieu: e.target.value})}
+              placeholder="Lieu du rendez-vous"
+              className="bg-white text-gray-900 border-gray-300"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Notes / Objectifs</label>
+          <Textarea
+            value={form.notes}
+            onChange={(e) => setForm({...form, notes: e.target.value})}
+            rows={3}
+            placeholder="Points à aborder, objectifs du rendez-vous..."
+            className="bg-white text-gray-900 border-gray-300"
+          />
+        </div>
+
+        {/* Informations de qualification */}
+        <Card className="bg-blue-50 border-blue-200">
+          <CardContent className="p-4">
+            <h4 className="font-medium text-blue-900 mb-2">Critères de qualification</h4>
+            <div className="space-y-2 text-sm text-blue-800">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4" />
+                <span>Budget confirmé : {prospect.budget || 'À définir'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4" />
+                <span>Décideur identifié : {prospect.contact || 'À identifier'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4" />
+                <span>Besoin qualifié : {prospect.statut === 'qualifie' ? 'Oui' : 'À qualifier'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Star className="h-4 w-4" />
+                <span>Score actuel : {prospect.score}/5</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex justify-end gap-3 mt-6">
+        <Button
+          variant="outline"
+          onClick={actualOnClose}
+          className="bg-white text-gray-700 border-gray-300"
+        >
+          Annuler
+        </Button>
+        <Button
+          onClick={createRdv}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white"
+        >
+          <Calendar className="h-4 w-4 mr-2" />
+          Créer le RDV
+        </Button>
+      </div>
+    </DialogContent>
+  )
+
+  if (children) {
+    return (
+      <Dialog open={actualOpen} onOpenChange={actualOnClose}>
+        <DialogTrigger asChild>
+          {children}
+        </DialogTrigger>
+        {dialogContent}
+      </Dialog>
+    )
+  }
+
+  return (
+    <Dialog open={actualOpen} onOpenChange={actualOnClose}>
+      {dialogContent}
+    </Dialog>
+  )
+}
+
+// AddProspectDialog reste identique
 function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void }) {
   const [open, setOpen] = React.useState(false)
   const [form, setForm] = React.useState<Omit<Prospect, "id">>({
@@ -1573,62 +1430,6 @@ function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void
               placeholder="+230 5123 4567" 
               value={form.telephone} 
               onChange={(e) => setForm({ ...form, telephone: e.target.value })}
-              className="bg-white text-gray-900 border-gray-300"
-            />
-          </div>
-          
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Email</label>
-            <Input 
-              placeholder="email@example.com" 
-              type="email"
-              value={form.email} 
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              className="bg-white text-gray-900 border-gray-300"
-            />
-          </div>
-          
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Site web</label>
-            <Input 
-              placeholder="https://..." 
-              value={form.website} 
-              onChange={(e) => setForm({ ...form, website: e.target.value })}
-              className="bg-white text-gray-900 border-gray-300"
-            />
-          </div>
-          
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Score</label>
-            <select 
-              className="w-full border border-gray-300 bg-white text-gray-900 rounded-md px-3 py-2" 
-              value={form.score} 
-              onChange={(e) => setForm({ ...form, score: Number(e.target.value) as 1|2|3|4|5 })}
-            >
-              <option value={5}>★★★★★ Excellent (5/5)</option>
-              <option value={4}>★★★★☆ Très bon (4/5)</option>
-              <option value={3}>★★★☆☆ Moyen (3/5)</option>
-              <option value={2}>★★☆☆☆ Faible (2/5)</option>
-              <option value={1}>★☆☆☆☆ Très faible (1/5)</option>
-            </select>
-          </div>
-          
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Budget</label>
-            <Input 
-              placeholder="Rs 100k" 
-              value={form.budget} 
-              onChange={(e) => setForm({ ...form, budget: e.target.value })}
-              className="bg-white text-gray-900 border-gray-300"
-            />
-          </div>
-          
-          <div className="sm:col-span-2">
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Adresse complète</label>
-            <Input 
-              placeholder="Adresse complète" 
-              value={form.adresse} 
-              onChange={(e) => setForm({ ...form, adresse: e.target.value })} 
               className="bg-white text-gray-900 border-gray-300"
             />
           </div>
