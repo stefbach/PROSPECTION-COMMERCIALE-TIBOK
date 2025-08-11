@@ -4,17 +4,40 @@ import * as React from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { MAURITIUS_CONFIG, type Prospect, type District } from "@/lib/mauritius-config"
-import { 
-  Calendar, MapPin, Phone, Clock, AlertTriangle, TrendingUp, 
-  Navigation, DollarSign, Users, ChevronRight, Plus, Edit2,
-  Route, Target, Activity, Car
-} from 'lucide-react'
-import { useToast } from "@/hooks/use-toast"
 import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useToast } from "@/hooks/use-toast"
 
-// Matrice des distances approximatives entre districts (en km)
+// Types simplifiés (compatibles avec mauritius-config)
+type District = 'port-louis' | 'pamplemousses' | 'riviere-du-rempart' | 'flacq' | 'grand-port' | 'savanne' | 'plaines-wilhems' | 'moka' | 'riviere-noire'
+type Secteur = 'hotel' | 'restaurant' | 'clinique' | 'pharmacie' | 'supermarche' | 'entreprise' | 'ecole' | 'autre'
+type Statut = 'nouveau' | 'contacte' | 'qualifie' | 'proposition' | 'negociation' | 'signe' | 'perdu'
+
+// Configuration simplifiée
+const DISTRICTS_CONFIG = {
+  'port-louis': { label: 'Port Louis' },
+  'pamplemousses': { label: 'Pamplemousses' },
+  'riviere-du-rempart': { label: 'Rivière du Rempart' },
+  'flacq': { label: 'Flacq' },
+  'grand-port': { label: 'Grand Port' },
+  'savanne': { label: 'Savanne' },
+  'plaines-wilhems': { label: 'Plaines Wilhems' },
+  'moka': { label: 'Moka' },
+  'riviere-noire': { label: 'Rivière Noire' }
+}
+
+const SECTEURS_CONFIG = {
+  'hotel': { label: 'Hôtel', icon: '🏨' },
+  'restaurant': { label: 'Restaurant', icon: '🍽️' },
+  'clinique': { label: 'Clinique', icon: '🏥' },
+  'pharmacie': { label: 'Pharmacie', icon: '💊' },
+  'supermarche': { label: 'Supermarché', icon: '🛒' },
+  'entreprise': { label: 'Entreprise', icon: '🏢' },
+  'ecole': { label: 'École', icon: '🎓' },
+  'autre': { label: 'Autre', icon: '📍' }
+}
+
+// Matrice des distances entre districts (en km)
 const DISTANCE_MATRIX: Record<District, Record<District, number>> = {
   'port-louis': {
     'port-louis': 0,
@@ -117,7 +140,24 @@ const DISTANCE_MATRIX: Record<District, Record<District, number>> = {
   }
 }
 
-// Types pour les RDV
+// Types
+interface Prospect {
+  id: number
+  nom: string
+  secteur: Secteur
+  ville: string
+  district: District
+  statut: Statut
+  contact?: string
+  telephone?: string
+  email?: string
+  score: 1 | 2 | 3 | 4 | 5
+  budget?: string
+  notes?: string
+  website?: string
+  adresse?: string
+}
+
 interface RendezVous {
   id: string
   prospectId: number
@@ -125,7 +165,7 @@ interface RendezVous {
   commercial: string
   date: string
   heure: string
-  duree: number // en minutes
+  duree: number
   type: 'decouverte' | 'demo' | 'negociation' | 'signature' | 'suivi'
   statut: 'planifie' | 'confirme' | 'reporte' | 'annule' | 'termine'
   notes?: string
@@ -137,36 +177,32 @@ interface Tournee {
   date: string
   rdvs: RendezVous[]
   distanceTotale: number
-  tempsDeplacement: number // en minutes
-  tempsTotal: number // en minutes
+  tempsDeplacement: number
+  tempsTotal: number
   suggestions?: string[]
 }
 
-// Calcul de distance entre deux districts
+// Fonctions utilitaires
 function calculateDistance(from: District, to: District): number {
   return DISTANCE_MATRIX[from]?.[to] || 0
 }
 
-// Estimation du temps de trajet (moyenne 40 km/h à Maurice)
 function estimateTravelTime(distance: number): number {
-  return Math.round((distance / 40) * 60) // en minutes
+  return Math.round((distance / 40) * 60)
 }
 
-// Calcul du coût essence (Rs 65/L, consommation 8L/100km)
 function calculateFuelCost(distance: number): number {
-  const fuelPrice = 65 // Rs par litre
-  const consumption = 8 // litres pour 100 km
+  const fuelPrice = 65
+  const consumption = 8
   return Math.round((distance * consumption * fuelPrice) / 100)
 }
 
-// Optimisation de tournée par plus proche voisin
 function optimizeTour(rdvs: RendezVous[], startDistrict?: District): RendezVous[] {
   if (rdvs.length <= 2) return rdvs
 
   const optimized: RendezVous[] = []
   const remaining = [...rdvs]
   
-  // Commencer par le premier RDV ou celui du district de départ
   let current = startDistrict 
     ? remaining.find(r => r.prospect.district === startDistrict) || remaining[0]
     : remaining[0]
@@ -174,7 +210,6 @@ function optimizeTour(rdvs: RendezVous[], startDistrict?: District): RendezVous[
   optimized.push(current)
   remaining.splice(remaining.indexOf(current), 1)
   
-  // Algorithme du plus proche voisin
   while (remaining.length > 0) {
     let nearest = remaining[0]
     let minDistance = calculateDistance(current.prospect.district, nearest.prospect.district)
@@ -195,7 +230,6 @@ function optimizeTour(rdvs: RendezVous[], startDistrict?: District): RendezVous[
   return optimized
 }
 
-// Analyse de cohérence géographique
 function analyzeGeographicCoherence(rdvs: RendezVous[]): {
   isCoherent: boolean
   issues: string[]
@@ -207,19 +241,17 @@ function analyzeGeographicCoherence(rdvs: RendezVous[]): {
   
   if (rdvs.length < 2) return { isCoherent: true, issues: [], suggestions: [] }
   
-  // Vérifier les allers-retours
   for (let i = 0; i < rdvs.length - 2; i++) {
     const d1 = rdvs[i].prospect.district
     const d2 = rdvs[i + 1].prospect.district
     const d3 = rdvs[i + 2].prospect.district
     
     if (d1 === d3 && d1 !== d2) {
-      issues.push(`Aller-retour détecté: ${MAURITIUS_CONFIG.districts[d1].label} → ${MAURITIUS_CONFIG.districts[d2].label} → ${MAURITIUS_CONFIG.districts[d1].label}`)
+      issues.push(`Aller-retour détecté: ${DISTRICTS_CONFIG[d1].label} → ${DISTRICTS_CONFIG[d2].label} → ${DISTRICTS_CONFIG[d1].label}`)
       isCoherent = false
     }
   }
   
-  // Calculer la distance totale actuelle vs optimisée
   let currentDistance = 0
   for (let i = 0; i < rdvs.length - 1; i++) {
     currentDistance += calculateDistance(rdvs[i].prospect.district, rdvs[i + 1].prospect.district)
@@ -237,7 +269,6 @@ function analyzeGeographicCoherence(rdvs: RendezVous[]): {
     isCoherent = false
   }
   
-  // Regrouper par zones
   const districtCounts = rdvs.reduce((acc, rdv) => {
     acc[rdv.prospect.district] = (acc[rdv.prospect.district] || 0) + 1
     return acc
@@ -249,7 +280,6 @@ function analyzeGeographicCoherence(rdvs: RendezVous[]): {
     isCoherent = false
   }
   
-  // Vérifier les heures de pointe
   const rushHours = rdvs.filter(r => {
     const hour = parseInt(r.heure.split(':')[0])
     return (hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 18)
@@ -269,10 +299,8 @@ export default function PlanningSection() {
   const [selectedDate, setSelectedDate] = React.useState(new Date().toISOString().split('T')[0])
   const [selectedCommercial, setSelectedCommercial] = React.useState<string>('all')
   const [showAddRdv, setShowAddRdv] = React.useState(false)
-  const [showOptimization, setShowOptimization] = React.useState(false)
   const { toast } = useToast()
 
-  // Charger les prospects
   React.useEffect(() => {
     loadProspects()
   }, [])
@@ -283,9 +311,7 @@ export default function PlanningSection() {
       const result = await res.json()
       const data = result.data || result
       setProspects(Array.isArray(data) ? data : [])
-      
-      // Générer des RDV de démonstration basés sur les vrais prospects
-      generateSampleRdvs(data)
+      generateSampleRdvs(Array.isArray(data) ? data : [])
     } catch (error) {
       toast({
         title: "Erreur",
@@ -297,8 +323,9 @@ export default function PlanningSection() {
     }
   }
 
-  // Générer des RDV de démonstration
-  function generateSampleRdvs(prospects: Prospect[]) {
+  function generateSampleRdvs(prospectsData: Prospect[]) {
+    if (!prospectsData || prospectsData.length === 0) return
+
     const commerciaux = ['Jean Dupont', 'Marie Martin', 'Paul Bernard']
     const types: RendezVous['type'][] = ['decouverte', 'demo', 'negociation', 'signature', 'suivi']
     const statuts: RendezVous['statut'][] = ['planifie', 'confirme']
@@ -306,16 +333,14 @@ export default function PlanningSection() {
     const rdvs: RendezVous[] = []
     const today = new Date()
     
-    // Générer des RDV pour les 7 prochains jours
     for (let day = 0; day < 7; day++) {
       const date = new Date(today)
       date.setDate(date.getDate() + day)
       const dateStr = date.toISOString().split('T')[0]
       
-      // 3-5 RDV par jour par commercial
       commerciaux.forEach(commercial => {
-        const rdvCount = Math.floor(Math.random() * 3) + 3
-        const dayProspects = [...prospects].sort(() => Math.random() - 0.5).slice(0, rdvCount)
+        const rdvCount = Math.min(Math.floor(Math.random() * 3) + 3, prospectsData.length)
+        const dayProspects = [...prospectsData].sort(() => Math.random() - 0.5).slice(0, rdvCount)
         
         dayProspects.forEach((prospect, index) => {
           const hour = 9 + index * 2
@@ -339,7 +364,6 @@ export default function PlanningSection() {
     setRendezVous(rdvs)
   }
 
-  // Filtrer les RDV
   const filteredRdvs = React.useMemo(() => {
     return rendezVous.filter(rdv => {
       const dateMatch = rdv.date === selectedDate
@@ -348,7 +372,6 @@ export default function PlanningSection() {
     })
   }, [rendezVous, selectedDate, selectedCommercial])
 
-  // Grouper les RDV par commercial
   const tournees = React.useMemo((): Tournee[] => {
     const grouped = filteredRdvs.reduce((acc, rdv) => {
       if (!acc[rdv.commercial]) {
@@ -359,10 +382,8 @@ export default function PlanningSection() {
     }, {} as Record<string, RendezVous[]>)
 
     return Object.entries(grouped).map(([commercial, rdvs]) => {
-      // Trier par heure
       rdvs.sort((a, b) => a.heure.localeCompare(b.heure))
       
-      // Calculer les distances et temps
       let distanceTotale = 0
       let tempsDeplacement = 0
       
@@ -373,8 +394,6 @@ export default function PlanningSection() {
       }
       
       const tempsTotal = tempsDeplacement + rdvs.reduce((sum, rdv) => sum + rdv.duree, 0)
-      
-      // Analyser la cohérence
       const analysis = analyzeGeographicCoherence(rdvs)
       
       return {
@@ -389,14 +408,12 @@ export default function PlanningSection() {
     })
   }, [filteredRdvs, selectedDate])
 
-  // Stats globales
   const stats = React.useMemo(() => {
     const totalRdvs = filteredRdvs.length
     const totalDistance = tournees.reduce((sum, t) => sum + t.distanceTotale, 0)
     const totalFuel = calculateFuelCost(totalDistance)
     const avgDistance = totalRdvs > 0 ? Math.round(totalDistance / totalRdvs) : 0
     
-    // Analyser l'optimisation possible
     let optimizedDistance = 0
     tournees.forEach(tournee => {
       const optimized = optimizeTour(tournee.rdvs)
@@ -417,19 +434,16 @@ export default function PlanningSection() {
     }
   }, [filteredRdvs, tournees])
 
-  // Optimiser une tournée
   function optimizeTournee(commercial: string) {
     const tournee = tournees.find(t => t.commercial === commercial)
     if (!tournee) return
     
     const optimized = optimizeTour(tournee.rdvs)
     
-    // Mettre à jour les RDV avec l'ordre optimisé
     const updatedRdvs = rendezVous.map(rdv => {
       if (rdv.commercial === commercial && rdv.date === selectedDate) {
         const index = optimized.findIndex(o => o.id === rdv.id)
         if (index !== -1) {
-          // Recalculer l'heure en fonction de la nouvelle position
           const baseHour = 9
           const newHour = baseHour + index * 2
           return { ...rdv, heure: `${newHour}:00` }
@@ -446,7 +460,6 @@ export default function PlanningSection() {
     })
   }
 
-  // Commerciaux uniques
   const commerciaux = React.useMemo(() => {
     return Array.from(new Set(rendezVous.map(rdv => rdv.commercial)))
   }, [rendezVous])
@@ -461,7 +474,6 @@ export default function PlanningSection() {
 
   return (
     <div className="space-y-6">
-      {/* Header avec titre */}
       <div>
         <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">
           Planning & Optimisation des Tournées
@@ -471,7 +483,6 @@ export default function PlanningSection() {
         </p>
       </div>
 
-      {/* Statistiques */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card className="bg-white">
           <CardContent className="p-6">
@@ -480,7 +491,7 @@ export default function PlanningSection() {
                 <p className="text-sm text-gray-600">RDV du jour</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.totalRdvs}</p>
               </div>
-              <Calendar className="h-8 w-8 text-blue-500" />
+              <span className="text-2xl">📅</span>
             </div>
           </CardContent>
         </Card>
@@ -492,7 +503,7 @@ export default function PlanningSection() {
                 <p className="text-sm text-gray-600">Distance totale</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.totalDistance} km</p>
               </div>
-              <Route className="h-8 w-8 text-green-500" />
+              <span className="text-2xl">🗺️</span>
             </div>
           </CardContent>
         </Card>
@@ -504,7 +515,7 @@ export default function PlanningSection() {
                 <p className="text-sm text-gray-600">Coût essence</p>
                 <p className="text-2xl font-bold text-gray-900">Rs {stats.totalFuel}</p>
               </div>
-              <DollarSign className="h-8 w-8 text-orange-500" />
+              <span className="text-2xl">⛽</span>
             </div>
           </CardContent>
         </Card>
@@ -516,7 +527,7 @@ export default function PlanningSection() {
                 <p className="text-sm text-gray-600">Moy. par RDV</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.avgDistance} km</p>
               </div>
-              <Activity className="h-8 w-8 text-purple-500" />
+              <span className="text-2xl">📊</span>
             </div>
           </CardContent>
         </Card>
@@ -528,13 +539,12 @@ export default function PlanningSection() {
                 <p className="text-sm text-gray-600">Économies possibles</p>
                 <p className="text-2xl font-bold text-green-600">Rs {stats.potentialFuelSavings}</p>
               </div>
-              <TrendingUp className="h-8 w-8 text-green-500" />
+              <span className="text-2xl">💰</span>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filtres */}
       <Card>
         <CardHeader>
           <CardTitle>Filtres & Actions</CardTitle>
@@ -567,28 +577,27 @@ export default function PlanningSection() {
 
             <div className="flex items-end gap-2">
               <Button onClick={() => setShowAddRdv(true)}>
-                <Plus className="h-4 w-4 mr-1" />
-                Nouveau RDV
+                ➕ Nouveau RDV
               </Button>
               
               <Button 
                 variant="outline"
-                onClick={() => setShowOptimization(true)}
                 className="bg-green-50 text-green-700 border-green-300"
+                onClick={() => {
+                  tournees.forEach(t => optimizeTournee(t.commercial))
+                }}
               >
-                <Route className="h-4 w-4 mr-1" />
-                Optimiser Toutes les Tournées
+                🗺️ Optimiser Toutes les Tournées
               </Button>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Alerte d'optimisation */}
       {stats.potentialSavings > 20 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+            <span className="text-xl">⚠️</span>
             <div>
               <h3 className="font-semibold text-amber-900">Optimisation recommandée</h3>
               <p className="text-sm text-amber-700 mt-1">
@@ -600,7 +609,6 @@ export default function PlanningSection() {
         </div>
       )}
 
-      {/* Tournées par commercial */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {tournees.map(tournee => (
           <TourneeCard
@@ -611,7 +619,6 @@ export default function PlanningSection() {
         ))}
       </div>
 
-      {/* Zone de suggestions globales */}
       <Card className="bg-gradient-to-r from-blue-50 to-indigo-50">
         <CardHeader>
           <CardTitle className="text-blue-800">
@@ -663,7 +670,6 @@ export default function PlanningSection() {
         </CardContent>
       </Card>
 
-      {/* Dialog d'ajout de RDV */}
       <AddRdvDialog
         open={showAddRdv}
         onClose={() => setShowAddRdv(false)}
@@ -681,7 +687,6 @@ export default function PlanningSection() {
   )
 }
 
-// Composant pour afficher une tournée
 function TourneeCard({ 
   tournee, 
   onOptimize 
@@ -698,7 +703,7 @@ function TourneeCard({
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">
             <div className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
+              <span>👥</span>
               {tournee.commercial}
             </div>
           </CardTitle>
@@ -709,20 +714,17 @@ function TourneeCard({
               </span>
             )}
             <Button size="sm" variant="outline" onClick={onOptimize}>
-              <Route className="h-4 w-4 mr-1" />
-              Optimiser
+              🗺️ Optimiser
             </Button>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        {/* RDV de la journée */}
         <div className="space-y-3 mb-4">
           {tournee.rdvs.map((rdv, index) => {
-            const districtConfig = MAURITIUS_CONFIG.districts[rdv.prospect.district]
-            const secteurConfig = MAURITIUS_CONFIG.secteurs[rdv.prospect.secteur]
+            const districtConfig = DISTRICTS_CONFIG[rdv.prospect.district]
+            const secteurConfig = SECTEURS_CONFIG[rdv.prospect.secteur]
             
-            // Calculer la distance depuis le RDV précédent
             let travelInfo = null
             if (index > 0) {
               const prevRdv = tournee.rdvs[index - 1]
@@ -741,7 +743,7 @@ function TourneeCard({
               <div key={rdv.id}>
                 {travelInfo && (
                   <div className="flex items-center gap-2 text-xs text-gray-500 mb-1 ml-4">
-                    <Car className="h-3 w-3" />
+                    <span>🚗</span>
                     <span>{travelInfo.distance} km • {travelInfo.travelTime} min</span>
                   </div>
                 )}
@@ -750,7 +752,7 @@ function TourneeCard({
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-gray-400" />
+                        <span>🕐</span>
                         <span className="font-medium">{rdv.heure}</span>
                         <span className="text-sm text-gray-600">({rdv.duree} min)</span>
                       </div>
@@ -761,7 +763,7 @@ function TourneeCard({
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                        <MapPin className="h-3 w-3" />
+                        <span>📍</span>
                         <span>{rdv.prospect.ville}, {districtConfig?.label}</span>
                       </div>
                     </div>
@@ -782,7 +784,6 @@ function TourneeCard({
           })}
         </div>
 
-        {/* Résumé de la tournée */}
         <div className="bg-gray-50 rounded-lg p-4">
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
@@ -800,7 +801,6 @@ function TourneeCard({
           </div>
         </div>
 
-        {/* Suggestions d'amélioration */}
         {hasIssues && (
           <div className="mt-4 p-3 bg-amber-50 rounded-lg">
             <h4 className="text-sm font-semibold text-amber-900 mb-2">
@@ -821,7 +821,6 @@ function TourneeCard({
   )
 }
 
-// Dialog d'ajout de RDV
 function AddRdvDialog({
   open,
   onClose,
@@ -885,7 +884,7 @@ function AddRdvDialog({
               <option value="">Sélectionner un prospect</option>
               {prospects.map(p => (
                 <option key={p.id} value={p.id}>
-                  {p.nom} - {p.ville} ({MAURITIUS_CONFIG.districts[p.district].label})
+                  {p.nom} - {p.ville} ({DISTRICTS_CONFIG[p.district].label})
                 </option>
               ))}
             </select>
