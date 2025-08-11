@@ -17,7 +17,7 @@ import {
 import { Building2, CalendarPlus, ClipboardCheck, LayoutDashboard, Route, Brain } from 'lucide-react'
 
 type Props = {
-  onNavigate?: (key: "dashboard" | "prospects" | "rdv" | "qualification" | "planning" | "ai") => void
+  onNavigate?: (key: "dashboard" | "prospects" | "rdv" | "planning" | "ai") => void
   current?: "dashboard" | "prospects" | "rdv" | "qualification" | "planning" | "ai"
 }
 
@@ -26,7 +26,6 @@ export function AppSidebar({ onNavigate = () => {}, current = "dashboard" }: Pro
     { key: "dashboard", title: "Tableau de Bord", icon: LayoutDashboard },
     { key: "prospects", title: "Base Prospects", icon: Building2 },
     { key: "rdv", title: "Prise de RDV", icon: CalendarPlus },
-    { key: "qualification", title: "Qualification", icon: ClipboardCheck },
     { key: "planning", title: "Planning", icon: Route },
     { key: "ai", title: "Intelligence IA", icon: Brain, badge: "NEW" },
   ] as const
