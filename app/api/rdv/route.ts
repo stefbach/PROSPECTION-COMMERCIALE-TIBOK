@@ -1,238 +1,13 @@
 // app/api/rdv/route.ts
-// API pour la gestion des RDV - VERSION CORRIGÉE AVEC CONNEXION AUX PROSPECTS
+// API RDV UTILISANT LA BASE DE DONNÉES PARTAGÉE
 
 import { NextRequest, NextResponse } from 'next/server'
-
-// Types pour les RDV
-export interface RDV {
-  id: number
-  prospect_id: number
-  prospect_nom?: string
-  prospect_contact?: string
-  prospect_telephone?: string
-  prospect_ville?: string
-  prospect_district?: string
-  prospect_secteur?: string
-  commercial: string
-  titre: string
-  date_time: string
-  duree_min: number
-  type_visite: 'decouverte' | 'presentation' | 'negociation' | 'signature' | 'suivi'
-  priorite: 'normale' | 'haute' | 'urgente'
-  statut: 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
-  notes?: string
-  rappel?: boolean
-  rappel_minutes?: number
-  lieu?: string
-  created_at: string
-  updated_at: string
-  resultat?: {
-    decision: 'positif' | 'negatif' | 'a-revoir' | 'en-attente'
-    prochaine_action?: string
-    date_suivi?: string
-    montant_potentiel?: number
-    probabilite?: number
-  }
-}
-
-// Stockage global des RDV
-declare global {
-  var mauritiusRdvs: RDV[] | undefined
-  var lastRdvId: number | undefined
-}
-
-// ===========================
-// CONNEXION À L'API PROSPECTS
-// ===========================
-
-// Fonction pour obtenir les prospects depuis l'API prospects
-async function getProspectsFromAPI(): Promise<any[]> {
-  try {
-    // Construction de l'URL absolue pour l'API prospects
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
-    const url = `${baseUrl}/api/prospects`
-    
-    console.log('📡 Récupération des prospects depuis:', url)
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      cache: 'no-store' // Éviter le cache pour avoir les données à jour
-    })
-    
-    if (!response.ok) {
-      console.error('❌ Erreur API prospects:', response.status)
-      return []
-    }
-    
-    const prospects = await response.json()
-    console.log(`✅ ${prospects.length} prospects récupérés de l'API`)
-    return prospects
-  } catch (error) {
-    console.error('❌ Erreur lors de la récupération des prospects:', error)
-    // Retourner des données de démonstration en cas d'erreur
-    return getDemoProspects()
-  }
-}
-
-// Fonction pour obtenir un prospect par ID
-async function getProspectById(id: number): Promise<any> {
-  const prospects = await getProspectsFromAPI()
-  return prospects.find((p: any) => p.id === id)
-}
-
-// Données de démonstration en cas d'échec de connexion
-function getDemoProspects(): any[] {
-  return [
-    {
-      id: 1,
-      nom: "Hotel Le Meridien",
-      contact: "Jean-Marc Duval",
-      telephone: "+230 5234 5678",
-      email: "jm.duval@meridien.mu",
-      ville: "Port Louis",
-      district: "Port Louis",
-      secteur: "hotel",
-      statut: "qualifie",
-      adresse: "Caudan Waterfront"
-    },
-    {
-      id: 2,
-      nom: "Restaurant Le Capitaine",
-      contact: "Sophie Martin",
-      telephone: "+230 5345 6789",
-      email: "sophie@lecapitaine.mu",
-      ville: "Curepipe",
-      district: "Plaines Wilhems",
-      secteur: "restaurant",
-      statut: "en-negociation",
-      adresse: "Royal Road"
-    },
-    {
-      id: 3,
-      nom: "Winners Supermarket",
-      contact: "Ahmed Hassan",
-      telephone: "+230 5456 7890",
-      email: "ahmed@winners.mu",
-      ville: "Phoenix",
-      district: "Plaines Wilhems",
-      secteur: "retail",
-      statut: "nouveau",
-      adresse: "Phoenix Mall"
-    }
-  ]
-}
-
-// Initialiser les RDV avec des données de démonstration
-async function initializeRdvs(): Promise<RDV[]> {
-  const rdvs: RDV[] = []
-  const commerciaux = ['Karine MOMUS', 'Jean Dupont', 'Sophie Martin', 'Ahmed Hassan']
-  
-  // Récupérer les prospects depuis l'API
-  const prospects = await getProspectsFromAPI()
-  console.log(`🔄 Initialisation des RDV avec ${prospects.length} prospects`)
-  
-  if (prospects.length === 0) {
-    console.warn('⚠️ Aucun prospect disponible pour créer des RDV de démonstration')
-    return []
-  }
-  
-  const today = new Date()
-  let rdvId = 1
-  
-  // Créer des RDV pour les 30 prochains jours
-  for (let dayOffset = -5; dayOffset < 25; dayOffset++) {
-    const date = new Date(today)
-    date.setDate(date.getDate() + dayOffset)
-    
-    // Pas de RDV le dimanche
-    if (date.getDay() === 0) continue
-    
-    // Nombre aléatoire de RDV par jour (1-4)
-    const rdvCount = Math.floor(Math.random() * 4) + 1
-    
-    for (let i = 0; i < rdvCount; i++) {
-      const prospect = prospects[Math.floor(Math.random() * Math.min(prospects.length, 20))]
-      if (!prospect) continue
-      
-      const hour = Math.floor(Math.random() * 9) + 8 // Entre 8h et 17h
-      const minute = Math.random() > 0.5 ? 30 : 0
-      
-      const typeVisites: RDV['type_visite'][] = ['decouverte', 'presentation', 'negociation', 'signature', 'suivi']
-      const priorites: RDV['priorite'][] = ['normale', 'haute', 'urgente']
-      
-      // Statuts selon la date
-      let statut: RDV['statut'] = 'planifie'
-      if (dayOffset < -1) {
-        statut = Math.random() > 0.3 ? 'termine' : 'annule'
-      } else if (dayOffset === 0) {
-        const hour_now = new Date().getHours()
-        if (hour < hour_now) {
-          statut = 'termine'
-        } else if (hour === hour_now) {
-          statut = 'en-cours'
-        } else {
-          statut = Math.random() > 0.5 ? 'confirme' : 'planifie'
-        }
-      } else {
-        statut = Math.random() > 0.6 ? 'confirme' : 'planifie'
-      }
-      
-      rdvs.push({
-        id: rdvId++,
-        prospect_id: prospect.id,
-        prospect_nom: prospect.nom,
-        prospect_contact: prospect.contact || '',
-        prospect_telephone: prospect.telephone || '',
-        prospect_ville: prospect.ville || '',
-        prospect_district: prospect.district || '',
-        prospect_secteur: prospect.secteur || '',
-        commercial: commerciaux[Math.floor(Math.random() * commerciaux.length)],
-        titre: `RDV - ${prospect.nom}`,
-        date_time: `${date.toISOString().split('T')[0]}T${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00`,
-        duree_min: [30, 45, 60, 90, 120][Math.floor(Math.random() * 5)],
-        type_visite: typeVisites[Math.floor(Math.random() * typeVisites.length)],
-        priorite: priorites[Math.floor(Math.random() * priorites.length)],
-        statut: statut,
-        notes: Math.random() > 0.5 ? `Discussion sur ${prospect.secteur || 'le projet'}. ${
-          prospect.statut === 'qualifie' ? 'Client très intéressé.' : 
-          prospect.statut === 'en-negociation' ? 'Négociation en cours.' : 
-          'Premier contact à établir.'
-        }` : undefined,
-        rappel: Math.random() > 0.3,
-        rappel_minutes: Math.random() > 0.5 ? 15 : 30,
-        lieu: prospect.adresse || `${prospect.ville || 'Maurice'}, ${prospect.district || ''}`,
-        created_at: new Date(Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000)).toISOString(),
-        updated_at: new Date().toISOString()
-      })
-    }
-  }
-  
-  console.log(`✅ ${rdvs.length} RDV de démonstration créés`)
-  return rdvs
-}
-
-// Fonction pour obtenir les RDV
-async function getRdvs(): Promise<RDV[]> {
-  if (!global.mauritiusRdvs) {
-    console.log('🚀 Initialisation des RDV...')
-    global.mauritiusRdvs = await initializeRdvs()
-    global.lastRdvId = global.mauritiusRdvs.length
-    console.log(`✅ ${global.mauritiusRdvs.length} RDV initialisés`)
-  }
-  return global.mauritiusRdvs
-}
-
-// ===========================
-// ENDPOINTS API
-// ===========================
+import { db } from '@/lib/database'
 
 // GET - Récupérer les RDV avec filtres
 export async function GET(request: NextRequest) {
   try {
-    const rdvs = await getRdvs()
+    const rdvs = db.getRdvs()
     const { searchParams } = new URL(request.url)
     
     const commercial = searchParams.get('commercial')
@@ -285,28 +60,13 @@ export async function GET(request: NextRequest) {
       filtered = filtered.filter(r => r.prospect_district === district)
     }
     
-    // Enrichir les RDV avec les données prospects actualisées
-    const prospects = await getProspectsFromAPI()
-    const enrichedRdvs = filtered.map(rdv => {
-      const prospect = prospects.find((p: any) => p.id === rdv.prospect_id)
-      if (prospect) {
-        return {
-          ...rdv,
-          prospect_nom: prospect.nom,
-          prospect_contact: prospect.contact || rdv.prospect_contact,
-          prospect_telephone: prospect.telephone || rdv.prospect_telephone,
-          prospect_ville: prospect.ville || rdv.prospect_ville,
-          prospect_district: prospect.district || rdv.prospect_district,
-          prospect_secteur: prospect.secteur || rdv.prospect_secteur
-        }
-      }
-      return rdv
-    })
+    // Enrichir les RDV avec les données prospects actuelles
+    const enrichedRdvs = db.enrichRdvs(filtered)
     
     // Trier par date
     enrichedRdvs.sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
     
-    console.log(`📊 Résultat: ${enrichedRdvs.length} RDV retournés`)
+    console.log(`✅ Résultat: ${enrichedRdvs.length} RDV retournés`)
     
     return NextResponse.json(enrichedRdvs)
     
@@ -322,7 +82,6 @@ export async function GET(request: NextRequest) {
 // POST - Créer un nouveau RDV
 export async function POST(request: NextRequest) {
   try {
-    const rdvs = await getRdvs()
     const body = await request.json()
     
     console.log('📝 POST /rdv - Nouveau RDV')
@@ -342,7 +101,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Vérifier que le prospect existe
-    const prospect = await getProspectById(body.prospect_id)
+    const prospect = db.getProspectById(body.prospect_id)
     if (!prospect) {
       console.error(`❌ Prospect ${body.prospect_id} non trouvé`)
       return NextResponse.json(
@@ -354,6 +113,7 @@ export async function POST(request: NextRequest) {
     console.log('✅ Prospect trouvé:', prospect.nom)
     
     // Vérifier les conflits d'horaire
+    const rdvs = db.getRdvs()
     const newDateTime = new Date(body.date_time)
     const newEndTime = new Date(newDateTime.getTime() + (body.duree_min || 60) * 60000)
     
@@ -370,26 +130,23 @@ export async function POST(request: NextRequest) {
     })
     
     if (conflict) {
-      console.error('❌ Conflit horaire détecté')
+      console.error('❌ Conflit horaire détecté avec RDV:', conflict.id)
       return NextResponse.json(
-        { error: `Conflit d'horaire avec un autre RDV à ${conflict.date_time}` },
+        { 
+          error: `Conflit d'horaire avec un autre RDV`,
+          conflict: {
+            id: conflict.id,
+            titre: conflict.titre,
+            date_time: conflict.date_time
+          }
+        },
         { status: 409 }
       )
     }
     
     // Créer le nouveau RDV
-    const newId = (global.lastRdvId || 0) + 1
-    global.lastRdvId = newId
-    
-    const newRdv: RDV = {
-      id: newId,
+    const newRdv = db.createRdv({
       prospect_id: body.prospect_id,
-      prospect_nom: prospect.nom,
-      prospect_contact: prospect.contact || '',
-      prospect_telephone: prospect.telephone || '',
-      prospect_ville: prospect.ville || '',
-      prospect_district: prospect.district || '',
-      prospect_secteur: prospect.secteur || '',
       commercial: body.commercial,
       titre: body.titre || `RDV - ${prospect.nom}`,
       date_time: body.date_time,
@@ -401,11 +158,13 @@ export async function POST(request: NextRequest) {
       rappel: body.rappel !== undefined ? body.rappel : true,
       rappel_minutes: body.rappel_minutes || 15,
       lieu: body.lieu || `${prospect.ville || 'Maurice'}, ${prospect.district || ''}`,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }
-    
-    rdvs.push(newRdv)
+      prospect_nom: prospect.nom,
+      prospect_contact: prospect.contact,
+      prospect_telephone: prospect.telephone,
+      prospect_ville: prospect.ville,
+      prospect_district: prospect.district,
+      prospect_secteur: prospect.secteur
+    })
     
     console.log(`✅ RDV créé avec succès:`)
     console.log(`  ID: ${newRdv.id}`)
@@ -427,7 +186,6 @@ export async function POST(request: NextRequest) {
 // PATCH - Mettre à jour un RDV
 export async function PATCH(request: NextRequest) {
   try {
-    const rdvs = await getRdvs()
     const body = await request.json()
     const { id, ...updateData } = body
     
@@ -441,8 +199,22 @@ export async function PATCH(request: NextRequest) {
       )
     }
     
-    const index = rdvs.findIndex(r => r.id === id)
-    if (index === -1) {
+    // Si on met à jour le prospect_id, récupérer les infos du nouveau prospect
+    if (updateData.prospect_id) {
+      const prospect = db.getProspectById(updateData.prospect_id)
+      if (prospect) {
+        updateData.prospect_nom = prospect.nom
+        updateData.prospect_contact = prospect.contact
+        updateData.prospect_telephone = prospect.telephone
+        updateData.prospect_ville = prospect.ville
+        updateData.prospect_district = prospect.district
+        updateData.prospect_secteur = prospect.secteur
+      }
+    }
+    
+    const updatedRdv = db.updateRdv(id, updateData)
+    
+    if (!updatedRdv) {
       console.error(`❌ RDV ${id} non trouvé`)
       return NextResponse.json(
         { error: `RDV ${id} non trouvé` },
@@ -450,30 +222,9 @@ export async function PATCH(request: NextRequest) {
       )
     }
     
-    // Si on met à jour le prospect_id, récupérer les infos du nouveau prospect
-    if (updateData.prospect_id && updateData.prospect_id !== rdvs[index].prospect_id) {
-      const prospect = await getProspectById(updateData.prospect_id)
-      if (prospect) {
-        updateData.prospect_nom = prospect.nom
-        updateData.prospect_contact = prospect.contact || ''
-        updateData.prospect_telephone = prospect.telephone || ''
-        updateData.prospect_ville = prospect.ville || ''
-        updateData.prospect_district = prospect.district || ''
-        updateData.prospect_secteur = prospect.secteur || ''
-      }
-    }
-    
-    rdvs[index] = {
-      ...rdvs[index],
-      ...updateData,
-      id: rdvs[index].id,
-      created_at: rdvs[index].created_at,
-      updated_at: new Date().toISOString()
-    }
-    
     console.log(`✅ RDV ${id} mis à jour avec succès`)
     
-    return NextResponse.json(rdvs[index])
+    return NextResponse.json(updatedRdv)
     
   } catch (error) {
     console.error('❌ Erreur PATCH /api/rdv:', error)
@@ -487,7 +238,6 @@ export async function PATCH(request: NextRequest) {
 // DELETE - Supprimer un RDV
 export async function DELETE(request: NextRequest) {
   try {
-    const rdvs = await getRdvs()
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     
@@ -500,8 +250,8 @@ export async function DELETE(request: NextRequest) {
       )
     }
     
-    const index = rdvs.findIndex(r => r.id === parseInt(id))
-    if (index === -1) {
+    const rdv = db.getRdvById(parseInt(id))
+    if (!rdv) {
       console.error(`❌ RDV ${id} non trouvé`)
       return NextResponse.json(
         { error: `RDV ${id} non trouvé` },
@@ -509,11 +259,11 @@ export async function DELETE(request: NextRequest) {
       )
     }
     
-    const deleted = rdvs.splice(index, 1)[0]
+    const deleted = db.deleteRdv(parseInt(id))
     
     console.log(`✅ RDV ${id} supprimé avec succès`)
-    console.log(`  Titre: ${deleted.titre}`)
-    console.log(`  Date: ${deleted.date_time}`)
+    console.log(`  Titre: ${rdv.titre}`)
+    console.log(`  Date: ${rdv.date_time}`)
     
     return NextResponse.json({ 
       success: true, 
