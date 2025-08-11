@@ -1,213 +1,183 @@
 "use client"
 
 import * as React from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
-import { 
-  Calendar,
-  Clock,
-  MapPin,
-  Phone,
-  Mail,
-  Search,
-  Plus,
-  Eye,
-  Trash2,
-  Users,
-  Target,
-  AlertCircle,
-  CheckCircle,
-  Building,
-  User,
-  Timer,
-  Car,
-  DollarSign,
-  Activity,
-  RefreshCw,
-  BellRing,
-  Star,
-  Edit,
-  XCircle,
-  ChevronRight,
-  TrendingUp,
-  FileText
-} from 'lucide-react'
+import GoogleMapsService from '@/lib/google-maps-service'
 
-// ===========================
-// TYPES ET INTERFACES
-// ===========================
+// Configuration - À importer depuis votre fichier config
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
 
+// Types
+type District = 'port-louis' | 'pamplemousses' | 'riviere-du-rempart' | 'flacq' | 'grand-port' | 'savanne' | 'plaines-wilhems' | 'moka' | 'riviere-noire'
+type Secteur = 'hotel' | 'restaurant' | 'clinique' | 'pharmacie' | 'supermarche' | 'entreprise' | 'ecole' | 'autre'
+type Statut = 'nouveau' | 'contacte' | 'qualifie' | 'proposition' | 'negociation' | 'signe' | 'perdu'
+
+// Configuration des districts et secteurs
+const DISTRICTS_CONFIG = {
+  'port-louis': { label: 'Port Louis' },
+  'pamplemousses': { label: 'Pamplemousses' },
+  'riviere-du-rempart': { label: 'Rivière du Rempart' },
+  'flacq': { label: 'Flacq' },
+  'grand-port': { label: 'Grand Port' },
+  'savanne': { label: 'Savanne' },
+  'plaines-wilhems': { label: 'Plaines Wilhems' },
+  'moka': { label: 'Moka' },
+  'riviere-noire': { label: 'Rivière Noire' }
+}
+
+const SECTEURS_CONFIG = {
+  'hotel': { label: 'Hôtel', icon: '🏨' },
+  'restaurant': { label: 'Restaurant', icon: '🍽️' },
+  'clinique': { label: 'Clinique', icon: '🏥' },
+  'pharmacie': { label: 'Pharmacie', icon: '💊' },
+  'supermarche': { label: 'Supermarché', icon: '🛒' },
+  'entreprise': { label: 'Entreprise', icon: '🏢' },
+  'ecole': { label: 'École', icon: '🎓' },
+  'autre': { label: 'Autre', icon: '📍' }
+}
+
+// Interfaces
 interface Prospect {
   id: number
   nom: string
-  email: string
-  telephone: string
-  adresse: string
+  secteur: Secteur
   ville: string
-  code_postal?: string
-  pays?: string
-  secteur: string
-  statut: 'nouveau' | 'contacte' | 'qualifie' | 'en-negociation' | 'signe' | 'perdu'
-  notes?: string
-  created_at?: string
-  updated_at?: string
+  district: District
+  statut: Statut
   contact?: string
+  telephone?: string
+  email?: string
+  score: 1 | 2 | 3 | 4 | 5
   budget?: string
-  score?: number
-  district?: string
-}
-
-interface RDV {
-  id: number
-  prospect_id: number
-  prospect_nom?: string
-  prospect_contact?: string
-  prospect_telephone?: string
-  prospect_ville?: string
-  prospect_district?: string
-  prospect_secteur?: string
-  commercial: string
-  titre: string
-  date_time: string
-  duree_min: number
-  type_visite: 'decouverte' | 'presentation' | 'negociation' | 'signature' | 'suivi'
-  priorite: 'normale' | 'haute' | 'urgente'
-  statut: 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
   notes?: string
-  rappel?: boolean
-  rappel_minutes?: number
-  lieu?: string
-  created_at: string
-  updated_at: string
-  resultat?: {
-    decision: 'positif' | 'negatif' | 'a-revoir' | 'en-attente'
-    prochaine_action?: string
-    date_suivi?: string
-    montant_potentiel?: number
-    probabilite?: number
-  }
+  website?: string
+  adresse?: string
 }
 
-// ===========================
-// CONFIGURATION MAURICE
-// ===========================
-
-const DISTRICTS_MAURICE = {
-  'port-louis': 'Port Louis',
-  'pamplemousses': 'Pamplemousses',
-  'riviere-du-rempart': 'Rivière du Rempart',
-  'flacq': 'Flacq',
-  'grand-port': 'Grand Port',
-  'savanne': 'Savanne',
-  'plaines-wilhems': 'Plaines Wilhems',
-  'moka': 'Moka',
-  'riviere-noire': 'Rivière Noire'
+interface RendezVous {
+  id: string
+  prospectId: number
+  prospect: Prospect
+  date: string
+  heure: string
+  duree: number
+  type: 'decouverte' | 'demo' | 'negociation' | 'signature' | 'suivi'
+  statut: 'planifie' | 'confirme' | 'reporte' | 'annule' | 'termine'
+  notes?: string
+  priorite?: 'haute' | 'moyenne' | 'basse'
 }
 
-const SECTEURS = {
-  'hotel': { label: 'Hôtel', icon: '🏨', color: 'bg-blue-100 text-blue-700' },
-  'restaurant': { label: 'Restaurant', icon: '🍽️', color: 'bg-orange-100 text-orange-700' },
-  'retail': { label: 'Retail', icon: '🏪', color: 'bg-purple-100 text-purple-700' },
-  'clinique': { label: 'Clinique', icon: '🏥', color: 'bg-red-100 text-red-700' },
-  'pharmacie': { label: 'Pharmacie', icon: '💊', color: 'bg-green-100 text-green-700' },
-  'wellness': { label: 'Wellness', icon: '🌿', color: 'bg-emerald-100 text-emerald-700' },
-  'spa': { label: 'Spa', icon: '💆', color: 'bg-pink-100 text-pink-700' },
-  'tourisme': { label: 'Tourisme', icon: '🏖️', color: 'bg-cyan-100 text-cyan-700' },
-  'autre': { label: 'Autre', icon: '🏢', color: 'bg-gray-100 text-gray-700' }
+interface RouteInfo {
+  distance: number
+  duration: number
+  distanceText: string
+  durationText: string
+  cost: number
 }
 
-const STATUTS = {
-  'nouveau': { label: 'Nouveau', color: 'bg-blue-100 text-blue-700' },
-  'contacte': { label: 'Contacté', color: 'bg-yellow-100 text-yellow-700' },
-  'qualifie': { label: 'Qualifié', color: 'bg-green-100 text-green-700' },
-  'en-negociation': { label: 'En négociation', color: 'bg-purple-100 text-purple-700' },
-  'signe': { label: 'Signé', color: 'bg-emerald-100 text-emerald-700' },
-  'perdu': { label: 'Perdu', color: 'bg-red-100 text-red-700' }
+interface CostSettings {
+  fuelPrice: number
+  consumption: number
+  indemnityPerKm: number
+  averageSpeed: number
+  useIndemnity: boolean
+  useGoogleMaps: boolean
 }
 
-const STATUTS_RDV = {
-  'planifie': { label: 'Planifié', color: 'bg-blue-100 text-blue-700' },
-  'confirme': { label: 'Confirmé', color: 'bg-green-100 text-green-700' },
-  'en-cours': { label: 'En cours', color: 'bg-yellow-100 text-yellow-700' },
-  'termine': { label: 'Terminé', color: 'bg-gray-100 text-gray-700' },
-  'annule': { label: 'Annulé', color: 'bg-red-100 text-red-700' },
-  'reporte': { label: 'Reporté', color: 'bg-orange-100 text-orange-700' }
+const DEFAULT_SETTINGS: CostSettings = {
+  fuelPrice: 65,
+  consumption: 8,
+  indemnityPerKm: 15,
+  averageSpeed: 40,
+  useIndemnity: false,
+  useGoogleMaps: true
 }
 
-// ===========================
-// COMPOSANT PRINCIPAL
-// ===========================
+const SETTINGS_KEY = 'planning_cost_settings'
 
-export default function RdvKarineSection() {
-  // États pour les données
+export default function PlanningGoogleMapsSection() {
+  const [loading, setLoading] = React.useState(true)
+  const [calculating, setCalculating] = React.useState(false)
   const [prospects, setProspects] = React.useState<Prospect[]>([])
-  const [rdvs, setRdvs] = React.useState<RDV[]>([])
-  const [loading, setLoading] = React.useState(false)
-  const [activeView, setActiveView] = React.useState<'dashboard' | 'prospects' | 'rdv' | 'nouveau-rdv'>('dashboard')
-  
-  // État pour le commercial actuel (Karine MOMUS par défaut)
-  const [currentCommercial] = React.useState("Karine MOMUS")
-  
-  // États pour le formulaire RDV
-  const [selectedProspect, setSelectedProspect] = React.useState<Prospect | null>(null)
-  const [selectedDate, setSelectedDate] = React.useState("")
-  const [selectedTime, setSelectedTime] = React.useState("")
-  const [typeVisite, setTypeVisite] = React.useState<RDV['type_visite']>("decouverte")
-  const [priorite, setPriorite] = React.useState<RDV['priorite']>("normale")
-  const [duree, setDuree] = React.useState("60")
-  const [notes, setNotes] = React.useState("")
-  const [lieu, setLieu] = React.useState("")
-  const [rappel, setRappel] = React.useState(true)
-  const [rappelMinutes, setRappelMinutes] = React.useState("15")
-  
-  // États pour les filtres
-  const [searchTerm, setSearchTerm] = React.useState("")
-  const [filterSecteur, setFilterSecteur] = React.useState("all")
-  const [filterStatut, setFilterStatut] = React.useState("all")
-  const [filterDateRange, setFilterDateRange] = React.useState("all")
-  const [showNewProspectForm, setShowNewProspectForm] = React.useState(false)
-  const [editingRdv, setEditingRdv] = React.useState<RDV | null>(null)
-  
-  // État pour le nouveau prospect
-  const [newProspect, setNewProspect] = React.useState<Partial<Prospect>>({
-    nom: '',
-    email: '',
-    telephone: '',
-    adresse: '',
-    ville: '',
-    secteur: 'hotel',
-    statut: 'nouveau',
-    notes: '',
-    contact: ''
-  })
-  
+  const [rendezVous, setRendezVous] = React.useState<RendezVous[]>([])
+  const [routes, setRoutes] = React.useState<Map<string, RouteInfo>>(new Map())
+  const [selectedDate, setSelectedDate] = React.useState(new Date().toISOString().split('T')[0])
+  const [showAddRdv, setShowAddRdv] = React.useState(false)
+  const [showSettings, setShowSettings] = React.useState(false)
+  const [editingRdv, setEditingRdv] = React.useState<RendezVous | null>(null)
+  const [settings, setSettings] = React.useState<CostSettings>(DEFAULT_SETTINGS)
+  const [apiKeyValid, setApiKeyValid] = React.useState(false)
   const { toast } = useToast()
-  const today = new Date().toISOString().split("T")[0]
 
-  // ===========================
-  // CHARGEMENT DES DONNÉES
-  // ===========================
+  // Instance du service Google Maps
+  const googleMapsRef = React.useRef<GoogleMapsService | null>(null)
+
+  // Initialiser le service Google Maps
+  React.useEffect(() => {
+    if (GOOGLE_MAPS_API_KEY) {
+      try {
+        googleMapsRef.current = new GoogleMapsService(GOOGLE_MAPS_API_KEY)
+        setApiKeyValid(true)
+        console.log('✅ Service Google Maps initialisé')
+      } catch (error) {
+        console.error('❌ Erreur initialisation Google Maps:', error)
+        setApiKeyValid(false)
+        toast({
+          title: "Configuration Google Maps",
+          description: "Clé API manquante. Les distances seront estimées.",
+          variant: "destructive"
+        })
+      }
+    } else {
+      setApiKeyValid(false)
+      console.warn('⚠️ Clé API Google Maps non configurée')
+    }
+  }, [])
+
+  // Charger les paramètres
+  React.useEffect(() => {
+    const savedSettings = localStorage.getItem(SETTINGS_KEY)
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings)
+        setSettings({ ...DEFAULT_SETTINGS, ...parsed })
+      } catch (e) {
+        console.error('Erreur chargement paramètres:', e)
+      }
+    }
+  }, [])
+
+  // Sauvegarder les paramètres
+  function saveSettings(newSettings: CostSettings) {
+    setSettings(newSettings)
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings))
+    toast({
+      title: "Paramètres sauvegardés",
+      description: newSettings.useGoogleMaps && apiKeyValid ? 
+        "Calcul via Google Maps activé" : 
+        "Calcul par estimation activé"
+    })
+  }
+
+  React.useEffect(() => {
+    loadProspects()
+    loadRdvs()
+  }, [])
 
   async function loadProspects() {
     try {
-      setLoading(true)
-      const response = await fetch('/api/prospects')
-      if (response.ok) {
-        const data = await response.json()
-        setProspects(Array.isArray(data) ? data : [])
-        console.log(`✅ ${data.length} prospects chargés`)
-      } else {
-        throw new Error('Erreur API prospects')
-      }
+      const res = await fetch('/api/prospects?limit=1000')
+      const result = await res.json()
+      const data = result.data || result
+      setProspects(Array.isArray(data) ? data : [])
     } catch (error) {
-      console.error('❌ Erreur chargement prospects:', error)
-      toast({ 
-        title: "Erreur", 
+      toast({
+        title: "Erreur",
         description: "Impossible de charger les prospects",
         variant: "destructive"
       })
@@ -216,304 +186,270 @@ export default function RdvKarineSection() {
     }
   }
 
-  async function loadRdvs() {
-    try {
-      const response = await fetch(`/api/rdv?commercial=${encodeURIComponent(currentCommercial)}`)
-      if (response.ok) {
-        const data = await response.json()
-        setRdvs(Array.isArray(data) ? data : [])
-        console.log(`✅ ${data.length} RDV chargés pour ${currentCommercial}`)
-      } else {
-        throw new Error('Erreur API RDV')
+  function loadRdvs() {
+    const savedRdvs = localStorage.getItem('planning_rdvs')
+    if (savedRdvs) {
+      try {
+        const parsed = JSON.parse(savedRdvs)
+        setRendezVous(parsed)
+      } catch (e) {
+        console.error('Erreur chargement RDV:', e)
       }
-    } catch (error) {
-      console.error('❌ Erreur chargement RDV:', error)
-      toast({ 
-        title: "Erreur", 
-        description: "Impossible de charger les rendez-vous",
-        variant: "destructive"
-      })
     }
   }
 
-  // Chargement initial
-  React.useEffect(() => {
-    loadProspects()
-    loadRdvs()
-  }, [])
+  function saveRdvs(rdvs: RendezVous[]) {
+    localStorage.setItem('planning_rdvs', JSON.stringify(rdvs))
+  }
 
-  // ===========================
-  // FONCTIONS CRUD
-  // ===========================
+  // Calculer la distance avec Google Maps ou fallback
+  async function calculateDistance(
+    origin: Prospect,
+    destination: Prospect
+  ): Promise<RouteInfo> {
+    // Si Google Maps est activé et disponible
+    if (settings.useGoogleMaps && googleMapsRef.current && apiKeyValid) {
+      try {
+        const originAddress = origin.adresse || 
+          `${origin.ville}, ${DISTRICTS_CONFIG[origin.district].label}, Mauritius`
+        const destAddress = destination.adresse || 
+          `${destination.ville}, ${DISTRICTS_CONFIG[destination.district].label}, Mauritius`
 
-  async function createRdv(e: React.FormEvent) {
-    e.preventDefault()
-    
-    if (!selectedProspect || !selectedDate || !selectedTime) {
-      toast({ 
-        title: "Erreur", 
-        description: "Veuillez remplir tous les champs obligatoires",
+        const result = await googleMapsRef.current.calculateDistance(
+          originAddress,
+          destAddress,
+          { useTraffic: true }
+        )
+
+        const cost = settings.useIndemnity ?
+          Math.round(result.distance * settings.indemnityPerKm) :
+          Math.round((result.distance * settings.consumption * settings.fuelPrice) / 100)
+
+        return {
+          distance: result.distance,
+          duration: result.duration,
+          distanceText: result.distanceText,
+          durationText: result.durationText,
+          cost
+        }
+      } catch (error) {
+        console.error('Erreur calcul Google Maps:', error)
+      }
+    }
+
+    // Fallback : estimation basique
+    const estimatedDistance = 25 // km moyens à Maurice
+    const estimatedDuration = Math.round(estimatedDistance / settings.averageSpeed * 60)
+    const cost = settings.useIndemnity ?
+      Math.round(estimatedDistance * settings.indemnityPerKm) :
+      Math.round((estimatedDistance * settings.consumption * settings.fuelPrice) / 100)
+
+    return {
+      distance: estimatedDistance,
+      duration: estimatedDuration,
+      distanceText: `~${estimatedDistance} km`,
+      durationText: `~${estimatedDuration} min`,
+      cost
+    }
+  }
+
+  // Calculer toutes les distances pour une journée
+  async function calculateDayDistances(rdvs: RendezVous[]) {
+    if (rdvs.length < 2) return
+
+    setCalculating(true)
+    const newRoutes = new Map<string, RouteInfo>()
+
+    try {
+      for (let i = 0; i < rdvs.length - 1; i++) {
+        const key = `${rdvs[i].id}-${rdvs[i + 1].id}`
+        const route = await calculateDistance(
+          rdvs[i].prospect,
+          rdvs[i + 1].prospect
+        )
+        newRoutes.set(key, route)
+      }
+
+      setRoutes(newRoutes)
+      
+      // Calculer le total
+      let totalDistance = 0
+      let totalDuration = 0
+      let totalCost = 0
+      
+      newRoutes.forEach(route => {
+        totalDistance += route.distance
+        totalDuration += route.duration
+        totalCost += route.cost
+      })
+
+      toast({
+        title: "Distances calculées",
+        description: `${Math.round(totalDistance)} km - ${Math.round(totalDuration)} min - Rs ${totalCost}`
+      })
+    } catch (error) {
+      console.error('Erreur calcul distances:', error)
+      toast({
+        title: "Erreur",
+        description: "Impossible de calculer les distances",
+        variant: "destructive"
+      })
+    } finally {
+      setCalculating(false)
+    }
+  }
+
+  // Optimiser la tournée avec Google Maps
+  async function optimizeTournee() {
+    if (!googleMapsRef.current || !apiKeyValid) {
+      toast({
+        title: "Google Maps non disponible",
+        description: "Configuration de l'API requise pour l'optimisation",
         variant: "destructive"
       })
       return
     }
 
-    try {
-      const rdvData = {
-        prospect_id: selectedProspect.id,
-        commercial: currentCommercial, // IMPORTANT: Ajout du commercial requis par l'API
-        titre: `RDV - ${selectedProspect.nom}`,
-        date_time: `${selectedDate}T${selectedTime}:00`,
-        type_visite: typeVisite,
-        priorite: priorite,
-        duree_min: parseInt(duree),
-        notes: notes || '',
-        lieu: lieu || `${selectedProspect.ville}, ${selectedProspect.district || ''}`,
-        statut: 'planifie',
-        rappel: rappel,
-        rappel_minutes: parseInt(rappelMinutes)
-      }
-
-      console.log('📤 Création RDV:', rdvData)
-
-      const response = await fetch('/api/rdv', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rdvData)
-      })
-
-      const responseData = await response.json()
-
-      if (response.ok) {
-        await loadRdvs()
-        toast({ 
-          title: "✅ RDV planifié", 
-          description: `RDV avec ${selectedProspect.nom} le ${new Date(selectedDate).toLocaleDateString('fr-FR')} à ${selectedTime}`
-        })
-        resetRdvForm()
-        setActiveView('rdv')
-      } else {
-        throw new Error(responseData.error || 'Erreur création RDV')
-      }
-    } catch (error: any) {
-      console.error('❌ Erreur création RDV:', error)
-      toast({ 
-        title: "Erreur", 
-        description: error.message || "Impossible de créer le RDV",
-        variant: "destructive"
-      })
-    }
-  }
-
-  async function updateRdvStatut(rdv: RDV, newStatut: RDV['statut']) {
-    try {
-      const response = await fetch('/api/rdv', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: rdv.id,
-          statut: newStatut
-        })
-      })
-
-      if (response.ok) {
-        await loadRdvs()
-        toast({ 
-          title: "✅ Statut mis à jour", 
-          description: `RDV marqué comme ${STATUTS_RDV[newStatut].label}`
-        })
-      } else {
-        throw new Error('Erreur mise à jour')
-      }
-    } catch (error) {
-      toast({ 
-        title: "Erreur", 
-        description: "Impossible de mettre à jour le statut",
-        variant: "destructive"
-      })
-    }
-  }
-
-  async function createProspect(e: React.FormEvent) {
-    e.preventDefault()
+    setCalculating(true)
     
-    if (!newProspect.nom || !newProspect.email || !newProspect.telephone) {
-      toast({ 
-        title: "Erreur", 
-        description: "Veuillez remplir tous les champs obligatoires",
-        variant: "destructive"
-      })
-      return
-    }
-
     try {
-      const response = await fetch('/api/prospects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProspect)
-      })
+      const addresses = filteredRdvs.map(rdv => 
+        rdv.prospect.adresse || 
+        `${rdv.prospect.ville}, ${DISTRICTS_CONFIG[rdv.prospect.district].label}, Mauritius`
+      )
 
-      if (response.ok) {
-        await loadProspects()
-        toast({ 
-          title: "✅ Prospect créé", 
-          description: `${newProspect.nom} ajouté à la base`
-        })
-        setShowNewProspectForm(false)
-        setNewProspect({
-          nom: '',
-          email: '',
-          telephone: '',
-          adresse: '',
-          ville: '',
-          secteur: 'hotel',
-          statut: 'nouveau',
-          notes: '',
-          contact: ''
-        })
-      }
-    } catch (error) {
-      toast({ 
-        title: "Erreur", 
-        description: "Impossible de créer le prospect",
-        variant: "destructive"
-      })
-    }
-  }
-
-  async function deleteRdv(id: number) {
-    if (!confirm("Êtes-vous sûr de vouloir supprimer ce RDV ?")) return
-
-    try {
-      const response = await fetch(`/api/rdv?id=${id}`, {
-        method: 'DELETE'
+      const result = await googleMapsRef.current.optimizeRoute(addresses)
+      
+      // Réorganiser les RDV selon l'ordre optimisé
+      const optimizedRdvs = result.optimizedOrder.map(index => filteredRdvs[index])
+      
+      // Recalculer les heures
+      let currentTime = optimizedRdvs[0]?.heure || '09:00'
+      const updatedRdvs = rendezVous.map(rdv => {
+        if (rdv.date === selectedDate) {
+          const index = optimizedRdvs.findIndex(o => o.id === rdv.id)
+          if (index !== -1) {
+            if (index === 0) {
+              return rdv
+            } else {
+              const prevRdv = optimizedRdvs[index - 1]
+              const routeKey = `${prevRdv.id}-${rdv.id}`
+              const route = routes.get(routeKey)
+              const travelTime = route?.duration || 30
+              
+              const [prevHour, prevMin] = prevRdv.heure.split(':').map(Number)
+              const totalMinutes = prevHour * 60 + prevMin + prevRdv.duree + travelTime
+              const newHour = Math.floor(totalMinutes / 60)
+              const newMin = totalMinutes % 60
+              
+              return {
+                ...rdv,
+                heure: `${String(newHour).padStart(2, '0')}:${String(newMin).padStart(2, '0')}`
+              }
+            }
+          }
+        }
+        return rdv
       })
       
-      if (response.ok) {
-        await loadRdvs()
-        toast({ 
-          title: "✅ RDV supprimé", 
-          description: "Le rendez-vous a été supprimé"
-        })
-      }
+      setRendezVous(updatedRdvs)
+      saveRdvs(updatedRdvs)
+      
+      toast({
+        title: "Tournée optimisée",
+        description: `Économie de ${result.savings} km grâce à Google Maps`
+      })
+      
+      // Recalculer les distances avec le nouvel ordre
+      await calculateDayDistances(optimizedRdvs)
     } catch (error) {
-      toast({ 
-        title: "Erreur", 
-        description: "Impossible de supprimer le RDV",
+      console.error('Erreur optimisation:', error)
+      toast({
+        title: "Erreur",
+        description: "Impossible d'optimiser la tournée",
         variant: "destructive"
       })
+    } finally {
+      setCalculating(false)
     }
   }
 
-  function resetRdvForm() {
-    setSelectedProspect(null)
-    setSelectedDate("")
-    setSelectedTime("")
-    setTypeVisite("decouverte")
-    setPriorite("normale")
-    setDuree("60")
-    setNotes("")
-    setLieu("")
-    setRappel(true)
-    setRappelMinutes("15")
-  }
-
-  // ===========================
-  // FILTRAGE ET STATS
-  // ===========================
-
-  const filteredProspects = React.useMemo(() => {
-    let filtered = [...prospects]
-    
-    if (searchTerm) {
-      filtered = filtered.filter(p =>
-        p.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.ville?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.email?.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    }
-    
-    if (filterSecteur !== 'all') {
-      filtered = filtered.filter(p => p.secteur === filterSecteur)
-    }
-    
-    if (filterStatut !== 'all') {
-      filtered = filtered.filter(p => p.statut === filterStatut)
-    }
-    
-    return filtered
-  }, [prospects, searchTerm, filterSecteur, filterStatut])
-
+  // Filtrer les RDV par date
   const filteredRdvs = React.useMemo(() => {
-    let filtered = [...rdvs]
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    const weekEnd = new Date(today)
-    weekEnd.setDate(weekEnd.getDate() + 7)
-    const monthEnd = new Date(today)
-    monthEnd.setDate(monthEnd.getDate() + 30)
+    return rendezVous.filter(rdv => rdv.date === selectedDate)
+      .sort((a, b) => a.heure.localeCompare(b.heure))
+  }, [rendezVous, selectedDate])
 
-    switch(filterDateRange) {
-      case 'today':
-        filtered = filtered.filter(r => {
-          const rdvDate = new Date(r.date_time)
-          return rdvDate >= today && rdvDate < tomorrow
-        })
-        break
-      case 'week':
-        filtered = filtered.filter(r => {
-          const rdvDate = new Date(r.date_time)
-          return rdvDate >= today && rdvDate < weekEnd
-        })
-        break
-      case 'month':
-        filtered = filtered.filter(r => {
-          const rdvDate = new Date(r.date_time)
-          return rdvDate >= today && rdvDate < monthEnd
-        })
-        break
-      case 'past':
-        filtered = filtered.filter(r => new Date(r.date_time) < today)
-        break
+  // Calculer automatiquement les distances quand les RDV changent
+  React.useEffect(() => {
+    if (filteredRdvs.length >= 2 && settings.useGoogleMaps && apiKeyValid) {
+      calculateDayDistances(filteredRdvs)
     }
+  }, [filteredRdvs, settings.useGoogleMaps])
 
-    return filtered.sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
-  }, [rdvs, filterDateRange])
-
+  // Calculer les statistiques
   const stats = React.useMemo(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    let distanceTotale = 0
+    let tempsDeplacement = 0
+    let coutTotal = 0
+    
+    routes.forEach(route => {
+      distanceTotale += route.distance
+      tempsDeplacement += route.duration
+      coutTotal += route.cost
+    })
+    
+    const tempsTotal = tempsDeplacement + filteredRdvs.reduce((sum, rdv) => sum + rdv.duree, 0)
     
     return {
-      totalProspects: prospects.length,
-      nouveaux: prospects.filter(p => p.statut === 'nouveau').length,
-      qualifies: prospects.filter(p => p.statut === 'qualifie').length,
-      signes: prospects.filter(p => p.statut === 'signe').length,
-      rdvTotal: rdvs.length,
-      rdvPlanifies: rdvs.filter(r => r.statut === 'planifie' || r.statut === 'confirme').length,
-      rdvTermines: rdvs.filter(r => r.statut === 'termine').length,
-      rdvAujourdhui: rdvs.filter(r => {
-        const rdvDate = new Date(r.date_time)
-        rdvDate.setHours(0, 0, 0, 0)
-        return rdvDate.getTime() === today.getTime()
-      }).length,
-      rdvSemaine: rdvs.filter(r => {
-        const rdvDate = new Date(r.date_time)
-        const weekFromNow = new Date(today)
-        weekFromNow.setDate(weekFromNow.getDate() + 7)
-        return rdvDate >= today && rdvDate <= weekFromNow
-      }).length,
-      tauxConversion: prospects.length > 0 
-        ? Math.round((prospects.filter(p => p.statut === 'signe').length / prospects.length) * 100)
-        : 0
+      totalRdvs: filteredRdvs.length,
+      distanceTotale: Math.round(distanceTotale * 10) / 10,
+      tempsDeplacement: Math.round(tempsDeplacement),
+      tempsTotal: Math.round(tempsTotal),
+      coutTotal: Math.round(coutTotal)
     }
-  }, [prospects, rdvs])
+  }, [filteredRdvs, routes])
 
-  // ===========================
-  // RENDU
-  // ===========================
+  // Fonctions CRUD
+  function addRdv(rdv: RendezVous) {
+    const newRdvs = [...rendezVous, rdv]
+    setRendezVous(newRdvs)
+    saveRdvs(newRdvs)
+    toast({
+      title: "RDV ajouté",
+      description: `RDV avec ${rdv.prospect.nom} planifié`
+    })
+  }
+
+  function updateRdv(updatedRdv: RendezVous) {
+    const newRdvs = rendezVous.map(rdv => 
+      rdv.id === updatedRdv.id ? updatedRdv : rdv
+    )
+    setRendezVous(newRdvs)
+    saveRdvs(newRdvs)
+    toast({
+      title: "RDV modifié",
+      description: "Les modifications ont été enregistrées"
+    })
+  }
+
+  function deleteRdv(rdvId: string) {
+    const newRdvs = rendezVous.filter(rdv => rdv.id !== rdvId)
+    setRendezVous(newRdvs)
+    saveRdvs(newRdvs)
+    toast({
+      title: "RDV supprimé",
+      description: "Le rendez-vous a été supprimé"
+    })
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -521,986 +457,632 @@ export default function RdvKarineSection() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">
-            Gestion des Rendez-Vous
+            Planning avec Google Maps {apiKeyValid ? '✅' : '⚠️'}
           </h2>
           <p className="text-gray-600">
-            Commercial: <strong>{currentCommercial}</strong> • Île Maurice
+            {apiKeyValid ? 
+              'Calcul précis des distances avec Google Maps' : 
+              'Mode estimation - Configurez Google Maps pour plus de précision'
+            }
           </p>
         </div>
+        
         <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              loadProspects()
-              loadRdvs()
-            }}
-            disabled={loading}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Actualiser
-          </Button>
-          <Button onClick={() => setActiveView('nouveau-rdv')}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nouveau RDV
-          </Button>
-        </div>
-      </div>
-
-      {/* KPIs améliorés */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveView('prospects')}>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Prospects</p>
-                <p className="text-2xl font-bold">{stats.totalProspects}</p>
-                <p className="text-xs text-green-600">+12% ce mois</p>
-              </div>
-              <Users className="h-6 w-6 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Qualifiés</p>
-                <p className="text-2xl font-bold">{stats.qualifies}</p>
-                <p className="text-xs text-orange-600">{stats.nouveaux} nouveaux</p>
-              </div>
-              <Target className="h-6 w-6 text-orange-500" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Signés</p>
-                <p className="text-2xl font-bold">{stats.signes}</p>
-                <p className="text-xs text-emerald-600">{stats.tauxConversion}% conv.</p>
-              </div>
-              <CheckCircle className="h-6 w-6 text-emerald-500" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveView('rdv')}>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">RDV Total</p>
-                <p className="text-2xl font-bold">{stats.rdvTotal}</p>
-                <p className="text-xs text-blue-600">{stats.rdvPlanifies} planifiés</p>
-              </div>
-              <Calendar className="h-6 w-6 text-indigo-500" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Aujourd'hui</p>
-                <p className="text-2xl font-bold">{stats.rdvAujourdhui}</p>
-                <p className="text-xs text-purple-600">RDV du jour</p>
-              </div>
-              <Clock className="h-6 w-6 text-purple-500" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Cette semaine</p>
-                <p className="text-2xl font-bold">{stats.rdvSemaine}</p>
-                <p className="text-xs text-red-600">{stats.rdvTermines} terminés</p>
-              </div>
-              <Activity className="h-6 w-6 text-red-500" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Navigation améliorée */}
-      <div className="flex gap-2 border-b">
-        <Button 
-          variant={activeView === 'dashboard' ? 'default' : 'ghost'}
-          onClick={() => setActiveView('dashboard')}
-          className="rounded-b-none"
-        >
-          Dashboard
-        </Button>
-        <Button 
-          variant={activeView === 'prospects' ? 'default' : 'ghost'}
-          onClick={() => setActiveView('prospects')}
-          className="rounded-b-none"
-        >
-          Prospects ({stats.totalProspects})
-        </Button>
-        <Button 
-          variant={activeView === 'rdv' ? 'default' : 'ghost'}
-          onClick={() => setActiveView('rdv')}
-          className="rounded-b-none"
-        >
-          RDV ({stats.rdvTotal})
-        </Button>
-        <Button 
-          variant={activeView === 'nouveau-rdv' ? 'default' : 'ghost'}
-          onClick={() => setActiveView('nouveau-rdv')}
-          className="rounded-b-none"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Nouveau RDV
-        </Button>
-      </div>
-
-      {/* Vue Dashboard améliorée */}
-      {activeView === 'dashboard' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Planning du jour */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Planning du jour</span>
-                <Badge variant="outline">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {rdvs
-                  .filter(r => {
-                    const rdvDate = new Date(r.date_time)
-                    const today = new Date()
-                    return rdvDate.toDateString() === today.toDateString()
-                  })
-                  .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
-                  .map(rdv => {
-                    const now = new Date()
-                    const rdvTime = new Date(rdv.date_time)
-                    const isNow = rdvTime <= now && new Date(rdvTime.getTime() + rdv.duree_min * 60000) > now
-                    const isPast = new Date(rdvTime.getTime() + rdv.duree_min * 60000) < now
-                    
-                    return (
-                      <div key={rdv.id} className={`
-                        flex items-center justify-between p-3 border rounded-lg
-                        ${isNow ? 'bg-yellow-50 border-yellow-300' : isPast ? 'bg-gray-50' : 'hover:bg-gray-50'}
-                      `}>
-                        <div className="flex items-center gap-3">
-                          <div className="text-center min-w-[50px]">
-                            <p className="text-lg font-bold">
-                              {new Date(rdv.date_time).toLocaleTimeString('fr-FR', {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </p>
-                            {isNow && <Badge variant="default" className="text-xs">En cours</Badge>}
-                          </div>
-                          <div>
-                            <p className="font-medium">{rdv.prospect_nom || rdv.titre}</p>
-                            <p className="text-sm text-gray-500">
-                              {rdv.type_visite} • {rdv.duree_min} min • {rdv.prospect_ville}
-                            </p>
-                            {rdv.notes && (
-                              <p className="text-xs text-gray-400 mt-1">{rdv.notes}</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={
-                            rdv.priorite === 'urgente' ? 'destructive' : 
-                            rdv.priorite === 'haute' ? 'default' : 
-                            'secondary'
-                          }>
-                            {rdv.priorite}
-                          </Badge>
-                          {!isPast && rdv.statut !== 'termine' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => updateRdvStatut(rdv, 'termine')}
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                
-                {stats.rdvAujourdhui === 0 && (
-                  <div className="text-center py-8">
-                    <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500">Aucun rendez-vous aujourd'hui</p>
-                    <Button 
-                      size="sm" 
-                      className="mt-3"
-                      onClick={() => setActiveView('nouveau-rdv')}
-                    >
-                      Planifier un RDV
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Actions rapides et prospects prioritaires */}
-          <div className="space-y-6">
-            {/* Actions rapides */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Actions rapides</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-3">
-                  <Button 
-                    variant="outline" 
-                    className="justify-start"
-                    onClick={() => setShowNewProspectForm(true)}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Nouveau prospect
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="justify-start"
-                    onClick={() => setActiveView('nouveau-rdv')}
-                  >
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Planifier RDV
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="justify-start"
-                    onClick={() => {
-                      setFilterDateRange('today')
-                      setActiveView('rdv')
-                    }}
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    RDV du jour
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="justify-start"
-                    onClick={() => {
-                      setFilterStatut('nouveau')
-                      setActiveView('prospects')
-                    }}
-                  >
-                    <Users className="h-4 w-4 mr-2" />
-                    Nouveaux prospects
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Prospects à recontacter */}
-            <Card>
-              <CardHeader>
-                <CardTitle>À contacter en priorité</CardTitle>
-                <CardDescription>Prospects qualifiés sans RDV planifié</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {prospects
-                    .filter(p => {
-                      const hasRdv = rdvs.some(r => 
-                        r.prospect_id === p.id && 
-                        (r.statut === 'planifie' || r.statut === 'confirme')
-                      )
-                      return (p.statut === 'qualifie' || p.statut === 'en-negociation') && !hasRdv
-                    })
-                    .slice(0, 5)
-                    .map(prospect => (
-                      <div key={prospect.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                        <div>
-                          <p className="font-medium">{prospect.nom}</p>
-                          <p className="text-sm text-gray-500">
-                            {prospect.ville} • {SECTEURS[prospect.secteur as keyof typeof SECTEURS]?.label}
-                          </p>
-                        </div>
-                        <Button 
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setSelectedProspect(prospect)
-                            setActiveView('nouveau-rdv')
-                          }}
-                        >
-                          <Phone className="h-4 w-4 mr-2" />
-                          Contacter
-                        </Button>
-                      </div>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )}
-
-      {/* Vue Prospects améliorée */}
-      {activeView === 'prospects' && (
-        <div className="space-y-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Rechercher un prospect..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                
-                <div className="flex gap-2">
-                  <select
-                    className="border rounded-md px-3 py-2 text-sm"
-                    value={filterSecteur}
-                    onChange={(e) => setFilterSecteur(e.target.value)}
-                  >
-                    <option value="all">Tous les secteurs</option>
-                    {Object.entries(SECTEURS).map(([key, secteur]) => (
-                      <option key={key} value={key}>
-                        {secteur.icon} {secteur.label}
-                      </option>
-                    ))}
-                  </select>
-                  
-                  <select
-                    className="border rounded-md px-3 py-2 text-sm"
-                    value={filterStatut}
-                    onChange={(e) => setFilterStatut(e.target.value)}
-                  >
-                    <option value="all">Tous les statuts</option>
-                    {Object.entries(STATUTS).map(([key, statut]) => (
-                      <option key={key} value={key}>{statut.label}</option>
-                    ))}
-                  </select>
-                  
-                  <Button onClick={() => setShowNewProspectForm(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Nouveau
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredProspects.map(prospect => {
-              const lastRdv = rdvs
-                .filter(r => r.prospect_id === prospect.id)
-                .sort((a, b) => new Date(b.date_time).getTime() - new Date(a.date_time).getTime())[0]
-              
-              return (
-                <Card key={prospect.id} className="hover:shadow-lg transition-shadow">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <h4 className="font-semibold">{prospect.nom}</h4>
-                        <p className="text-sm text-muted-foreground">
-                          {SECTEURS[prospect.secteur as keyof typeof SECTEURS]?.icon} {SECTEURS[prospect.secteur as keyof typeof SECTEURS]?.label}
-                        </p>
-                      </div>
-                      <Badge className={STATUTS[prospect.statut as keyof typeof STATUTS]?.color}>
-                        {STATUTS[prospect.statut as keyof typeof STATUTS]?.label}
-                      </Badge>
-                    </div>
-                    
-                    <div className="space-y-2 text-sm">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-muted-foreground" />
-                        <span>{prospect.ville}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-4 w-4 text-muted-foreground" />
-                        <span>{prospect.telephone}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4 text-muted-foreground" />
-                        <span className="truncate">{prospect.email}</span>
-                      </div>
-                      {prospect.contact && (
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          <span>{prospect.contact}</span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {lastRdv && (
-                      <div className="mt-3 p-2 bg-blue-50 rounded text-xs">
-                        <p className="font-medium text-blue-700">Dernier RDV:</p>
-                        <p className="text-blue-600">
-                          {new Date(lastRdv.date_time).toLocaleDateString('fr-FR')} - {lastRdv.type_visite}
-                        </p>
-                      </div>
-                    )}
-                    
-                    {prospect.notes && (
-                      <div className="mt-3 p-2 bg-gray-50 rounded text-xs text-gray-600 line-clamp-2">
-                        {prospect.notes}
-                      </div>
-                    )}
-                    
-                    <Button 
-                      size="sm" 
-                      className="w-full mt-3"
-                      onClick={() => {
-                        setSelectedProspect(prospect)
-                        setActiveView('nouveau-rdv')
-                      }}
-                    >
-                      <Calendar className="h-4 w-4 mr-2" />
-                      Planifier RDV
-                    </Button>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-
-          {filteredProspects.length === 0 && (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">Aucun prospect trouvé</p>
-                <Button 
-                  size="sm" 
-                  className="mt-4"
-                  onClick={() => setShowNewProspectForm(true)}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Créer un prospect
-                </Button>
-              </CardContent>
-            </Card>
+          {!apiKeyValid && (
+            <Button
+              onClick={() => window.open('/api-setup', '_blank')}
+              variant="outline"
+              className="bg-yellow-50 text-yellow-700 border-yellow-300"
+            >
+              📚 Guide Config API
+            </Button>
           )}
+          
+          <Button
+            onClick={() => setShowSettings(true)}
+            variant="outline"
+            className="bg-gray-50"
+          >
+            ⚙️ Paramètres
+          </Button>
         </div>
-      )}
+      </div>
 
-      {/* Vue RDV améliorée avec filtres */}
-      {activeView === 'rdv' && (
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Liste des rendez-vous</CardTitle>
-                <div className="flex gap-2">
-                  <select
-                    className="border rounded-md px-3 py-2 text-sm"
-                    value={filterDateRange}
-                    onChange={(e) => setFilterDateRange(e.target.value)}
-                  >
-                    <option value="all">Tous les RDV</option>
-                    <option value="today">Aujourd'hui</option>
-                    <option value="week">Cette semaine</option>
-                    <option value="month">Ce mois</option>
-                    <option value="past">Passés</option>
-                  </select>
+      {/* Alerte si pas d'API */}
+      {!apiKeyValid && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <span className="text-xl">⚠️</span>
+              <div>
+                <h3 className="font-semibold text-amber-900">Configuration Google Maps requise</h3>
+                <p className="text-sm text-amber-700 mt-1">
+                  Pour des calculs précis de distance et d'optimisation, configurez votre clé API Google Maps.
+                </p>
+                <div className="mt-2 text-sm">
+                  <code className="bg-white px-2 py-1 rounded">
+                    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=votre_cle_ici
+                  </code>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {filteredRdvs.map(rdv => {
-                  const isPast = new Date(rdv.date_time) < new Date()
-                  const isToday = new Date(rdv.date_time).toDateString() === new Date().toDateString()
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Statistiques */}
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">📅</div>
+              <p className="text-xs text-gray-600">RDV</p>
+              <p className="text-xl font-bold">{stats.totalRdvs}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">🗺️</div>
+              <p className="text-xs text-gray-600">Distance</p>
+              <p className="text-xl font-bold">{stats.distanceTotale} km</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">⏱️</div>
+              <p className="text-xs text-gray-600">Route</p>
+              <p className="text-xl font-bold">
+                {Math.floor(stats.tempsDeplacement / 60)}h{stats.tempsDeplacement % 60}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">⏰</div>
+              <p className="text-xs text-gray-600">Total</p>
+              <p className="text-xl font-bold">
+                {Math.floor(stats.tempsTotal / 60)}h{stats.tempsTotal % 60}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">💰</div>
+              <p className="text-xs text-gray-600">Coût</p>
+              <p className="text-xl font-bold">Rs {stats.coutTotal}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">
+                {apiKeyValid ? '🌍' : '📍'}
+              </div>
+              <p className="text-xs text-gray-600">Mode</p>
+              <p className="text-sm font-bold">
+                {apiKeyValid ? 'Google' : 'Estimation'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Contrôles */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Date</label>
+              <Input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-48"
+              />
+            </div>
+
+            <div className="flex items-end gap-2 flex-1">
+              <Button onClick={() => setShowAddRdv(true)}>
+                ➕ Nouveau RDV
+              </Button>
+              
+              {filteredRdvs.length > 1 && (
+                <>
+                  <Button 
+                    variant="outline"
+                    onClick={() => calculateDayDistances(filteredRdvs)}
+                    disabled={calculating}
+                  >
+                    {calculating ? '⏳' : '📏'} Calculer distances
+                  </Button>
                   
-                  return (
-                    <div key={rdv.id} className={`
-                      flex items-center justify-between p-4 border rounded-lg
-                      ${isPast && rdv.statut !== 'termine' ? 'bg-red-50' : ''}
-                      ${rdv.statut === 'termine' ? 'bg-gray-50' : ''}
-                      ${rdv.statut === 'annule' ? 'bg-gray-100 opacity-60' : ''}
-                      ${isToday && rdv.statut === 'planifie' ? 'bg-blue-50 border-blue-300' : ''}
-                      hover:shadow-md transition-shadow
-                    `}>
-                      <div className="flex items-center gap-4">
-                        <div className="text-center min-w-[60px]">
-                          <p className="text-xs font-bold uppercase text-gray-500">
-                            {new Date(rdv.date_time).toLocaleDateString('fr-FR', {
-                              month: 'short'
-                            })}
-                          </p>
-                          <p className="text-2xl font-bold">
-                            {new Date(rdv.date_time).getDate()}
-                          </p>
-                          <p className="text-sm">
-                            {new Date(rdv.date_time).toLocaleTimeString('fr-FR', {
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </p>
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium">{rdv.prospect_nom || rdv.titre}</p>
-                          <div className="flex flex-wrap gap-2 mt-1">
-                            <Badge variant="outline" className="text-xs">
-                              {rdv.type_visite}
-                            </Badge>
-                            <Badge variant="outline" className="text-xs">
-                              {rdv.duree_min} min
-                            </Badge>
-                            {rdv.prospect_ville && (
-                              <Badge variant="outline" className="text-xs">
-                                <MapPin className="h-3 w-3 mr-1" />
-                                {rdv.prospect_ville}
-                              </Badge>
-                            )}
-                            {rdv.prospect_secteur && (
-                              <Badge 
-                                variant="outline" 
-                                className={`text-xs ${SECTEURS[rdv.prospect_secteur as keyof typeof SECTEURS]?.color}`}
-                              >
-                                {SECTEURS[rdv.prospect_secteur as keyof typeof SECTEURS]?.icon} 
-                                {SECTEURS[rdv.prospect_secteur as keyof typeof SECTEURS]?.label}
-                              </Badge>
-                            )}
-                          </div>
-                          {rdv.notes && (
-                            <p className="text-xs text-gray-500 mt-2 italic">{rdv.notes}</p>
-                          )}
-                        </div>
+                  {apiKeyValid && (
+                    <Button 
+                      variant="outline"
+                      className="bg-green-50 text-green-700 border-green-300"
+                      onClick={optimizeTournee}
+                      disabled={calculating}
+                    >
+                      {calculating ? '⏳' : '🗺️'} Optimiser (Google)
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Planning de la journée */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            Planning du {new Date(selectedDate).toLocaleDateString('fr-FR', { 
+              weekday: 'long', 
+              day: 'numeric', 
+              month: 'long', 
+              year: 'numeric' 
+            })}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {filteredRdvs.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <div className="text-4xl mb-2">📅</div>
+              <p>Aucun rendez-vous planifié</p>
+              <Button onClick={() => setShowAddRdv(true)} className="mt-4">
+                Planifier un RDV
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredRdvs.map((rdv, index) => {
+                const districtConfig = DISTRICTS_CONFIG[rdv.prospect.district]
+                const secteurConfig = SECTEURS_CONFIG[rdv.prospect.secteur]
+                
+                let routeInfo = null
+                if (index > 0) {
+                  const prevRdv = filteredRdvs[index - 1]
+                  const routeKey = `${prevRdv.id}-${rdv.id}`
+                  routeInfo = routes.get(routeKey)
+                }
+                
+                const priorityColors = {
+                  haute: "border-red-500 bg-red-50",
+                  moyenne: "border-yellow-500 bg-yellow-50",
+                  basse: "border-green-500 bg-green-50"
+                }
+                
+                return (
+                  <div key={rdv.id}>
+                    {routeInfo && (
+                      <div className="flex items-center gap-4 text-xs text-gray-600 mb-1 ml-4 bg-gray-50 rounded p-2">
+                        <span>🚗 Trajet:</span>
+                        <span className="font-medium">{routeInfo.distanceText}</span>
+                        <span>⏱️ {routeInfo.durationText}</span>
+                        <span>💰 Rs {routeInfo.cost}</span>
+                        {apiKeyValid && <span className="text-green-600">✓ Google Maps</span>}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={
-                          rdv.priorite === 'urgente' ? 'destructive' : 
-                          rdv.priorite === 'haute' ? 'default' : 
-                          'secondary'
-                        }>
-                          {rdv.priorite}
-                        </Badge>
-                        <Badge className={STATUTS_RDV[rdv.statut]?.color}>
-                          {STATUTS_RDV[rdv.statut]?.label}
-                        </Badge>
-                        <div className="flex gap-1">
-                          {rdv.statut === 'planifie' && !isPast && (
-                            <Button 
-                              size="sm" 
-                              variant="ghost"
-                              onClick={() => updateRdvStatut(rdv, 'confirme')}
-                              title="Confirmer"
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                            </Button>
+                    )}
+                    
+                    <div className={`border-l-4 p-4 rounded-r-lg ${priorityColors[rdv.priorite || 'basse']}`}>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-lg font-semibold">⏰ {rdv.heure}</span>
+                            <span className="text-sm text-gray-600">({rdv.duree} min)</span>
+                          </div>
+                          
+                          <div className="mb-2">
+                            <div className="font-medium text-lg">{rdv.prospect.nom}</div>
+                            <div className="text-sm text-gray-600">
+                              {secteurConfig?.icon} {secteurConfig?.label} • 
+                              Score: {"⭐".repeat(rdv.prospect.score)}
+                            </div>
+                          </div>
+                          
+                          <div className="text-sm text-gray-600">
+                            <div>📍 {rdv.prospect.adresse || `${rdv.prospect.ville}, ${districtConfig?.label}`}</div>
+                            {rdv.prospect.contact && <div>👤 {rdv.prospect.contact}</div>}
+                            {rdv.prospect.telephone && <div>📞 {rdv.prospect.telephone}</div>}
+                          </div>
+                          
+                          {rdv.notes && (
+                            <div className="mt-2 p-2 bg-white rounded text-sm">
+                              📝 {rdv.notes}
+                            </div>
                           )}
-                          {(rdv.statut === 'planifie' || rdv.statut === 'confirme') && !isPast && (
-                            <Button 
-                              size="sm" 
-                              variant="ghost"
-                              onClick={() => updateRdvStatut(rdv, 'reporte')}
-                              title="Reporter"
-                            >
-                              <Clock className="h-4 w-4" />
-                            </Button>
-                          )}
-                          {rdv.statut !== 'termine' && rdv.statut !== 'annule' && (
-                            <Button 
-                              size="sm" 
-                              variant="ghost"
-                              onClick={() => updateRdvStatut(rdv, 'termine')}
-                              title="Marquer comme terminé"
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                            </Button>
-                          )}
-                          <Button 
-                            size="sm" 
-                            variant="ghost"
-                            onClick={() => deleteRdv(rdv.id)}
-                            title="Supprimer"
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingRdv(rdv)}
                           >
-                            <Trash2 className="h-4 w-4 text-red-500" />
+                            ✏️
+                          </Button>
+                          
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 hover:bg-red-50"
+                            onClick={() => {
+                              if (confirm(`Supprimer le RDV avec ${rdv.prospect.nom} ?`)) {
+                                deleteRdv(rdv.id)
+                              }
+                            }}
+                          >
+                            🗑️
                           </Button>
                         </div>
                       </div>
                     </div>
-                  )
-                })}
-                
-                {filteredRdvs.length === 0 && (
-                  <div className="text-center py-12">
-                    <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500 mb-4">Aucun rendez-vous trouvé</p>
-                    <Button onClick={() => setActiveView('nouveau-rdv')}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Planifier un nouveau RDV
-                    </Button>
                   </div>
-                )}
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Stats Google Maps */}
+      {apiKeyValid && googleMapsRef.current && (
+        <Card className="bg-blue-50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🌍</span>
+                <div>
+                  <p className="font-semibold">Google Maps API Active</p>
+                  <p className="text-sm text-gray-600">
+                    Stats: {googleMapsRef.current.getStats().requestsToday} requêtes aujourd'hui • 
+                    Cache: {googleMapsRef.current.getStats().cacheSize} entrées
+                  </p>
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  googleMapsRef.current?.clearCache()
+                  toast({ title: "Cache vidé" })
+                }}
+              >
+                Vider cache
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Vue Nouveau RDV améliorée */}
-      {activeView === 'nouveau-rdv' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Sélectionner un prospect</CardTitle>
-              <CardDescription>
-                Choisissez un prospect pour planifier un rendez-vous
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="mb-4">
+      {/* Dialogs */}
+      <RdvDialog
+        open={showAddRdv || !!editingRdv}
+        onClose={() => {
+          setShowAddRdv(false)
+          setEditingRdv(null)
+        }}
+        prospects={prospects}
+        rdv={editingRdv}
+        onSave={(rdv) => {
+          if (editingRdv) {
+            updateRdv(rdv)
+          } else {
+            addRdv(rdv)
+          }
+          setShowAddRdv(false)
+          setEditingRdv(null)
+        }}
+      />
+
+      <SettingsDialog
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        settings={settings}
+        onSave={saveSettings}
+        apiKeyValid={apiKeyValid}
+      />
+    </div>
+  )
+}
+
+// Composants Dialog (identiques à la version précédente)
+function RdvDialog({
+  open,
+  onClose,
+  prospects,
+  rdv,
+  onSave
+}: {
+  open: boolean
+  onClose: () => void
+  prospects: Prospect[]
+  rdv: RendezVous | null
+  onSave: (rdv: RendezVous) => void
+}) {
+  const [form, setForm] = React.useState({
+    prospectId: rdv?.prospectId?.toString() || '',
+    date: rdv?.date || new Date().toISOString().split('T')[0],
+    heure: rdv?.heure || '10:00',
+    duree: rdv?.duree || 60,
+    type: rdv?.type || 'decouverte' as RendezVous['type'],
+    statut: rdv?.statut || 'planifie' as RendezVous['statut'],
+    notes: rdv?.notes || ''
+  })
+
+  React.useEffect(() => {
+    if (rdv) {
+      setForm({
+        prospectId: rdv.prospectId.toString(),
+        date: rdv.date,
+        heure: rdv.heure,
+        duree: rdv.duree,
+        type: rdv.type,
+        statut: rdv.statut,
+        notes: rdv.notes || ''
+      })
+    }
+  }, [rdv])
+
+  function handleSubmit() {
+    const prospect = prospects.find(p => p.id === parseInt(form.prospectId))
+    if (!prospect) return
+
+    const newRdv: RendezVous = {
+      id: rdv?.id || `rdv-${Date.now()}`,
+      prospectId: prospect.id,
+      prospect,
+      date: form.date,
+      heure: form.heure,
+      duree: form.duree,
+      type: form.type,
+      statut: form.statut,
+      notes: form.notes,
+      priorite: prospect.score >= 4 ? 'haute' : prospect.score >= 3 ? 'moyenne' : 'basse'
+    }
+
+    onSave(newRdv)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {rdv ? 'Modifier le rendez-vous' : 'Planifier un rendez-vous'}
+          </DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Prospect</label>
+            <select
+              value={form.prospectId}
+              onChange={(e) => setForm({...form, prospectId: e.target.value})}
+              className="w-full border rounded-md px-3 py-2"
+              disabled={!!rdv}
+            >
+              <option value="">Sélectionner un prospect</option>
+              {prospects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.nom} - {p.ville} ⭐{p.score}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Date</label>
+              <Input
+                type="date"
+                value={form.date}
+                onChange={(e) => setForm({...form, date: e.target.value})}
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">Heure</label>
+              <Input
+                type="time"
+                value={form.heure}
+                onChange={(e) => setForm({...form, heure: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Type</label>
+              <select
+                value={form.type}
+                onChange={(e) => setForm({...form, type: e.target.value as RendezVous['type']})}
+                className="w-full border rounded-md px-3 py-2"
+              >
+                <option value="decouverte">Découverte</option>
+                <option value="demo">Démonstration</option>
+                <option value="negociation">Négociation</option>
+                <option value="signature">Signature</option>
+                <option value="suivi">Suivi</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">Durée (min)</label>
+              <Input
+                type="number"
+                value={form.duree}
+                onChange={(e) => setForm({...form, duree: parseInt(e.target.value) || 60})}
+                min="15"
+                step="15"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Notes</label>
+            <Textarea
+              value={form.notes}
+              onChange={(e) => setForm({...form, notes: e.target.value})}
+              placeholder="Objectifs, préparation..."
+              rows={3}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button onClick={handleSubmit} disabled={!form.prospectId}>
+            {rdv ? 'Enregistrer' : 'Planifier'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function SettingsDialog({
+  open,
+  onClose,
+  settings,
+  onSave,
+  apiKeyValid
+}: {
+  open: boolean
+  onClose: () => void
+  settings: CostSettings
+  onSave: (settings: CostSettings) => void
+  apiKeyValid: boolean
+}) {
+  const [form, setForm] = React.useState(settings)
+
+  React.useEffect(() => {
+    setForm(settings)
+  }, [settings])
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>⚙️ Paramètres de calcul</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          {/* Option Google Maps */}
+          <div className="p-4 bg-blue-50 rounded-lg">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.useGoogleMaps}
+                onChange={(e) => setForm({...form, useGoogleMaps: e.target.checked})}
+                className="w-4 h-4"
+                disabled={!apiKeyValid}
+              />
+              <div>
+                <div className="font-medium">
+                  Utiliser Google Maps {apiKeyValid ? '✅' : '❌'}
+                </div>
+                <div className="text-sm text-gray-600">
+                  {apiKeyValid ? 
+                    'Calculs précis avec Google Maps API' : 
+                    'API non configurée - Mode estimation'
+                  }
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {/* Type de calcul de coût */}
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.useIndemnity}
+                onChange={(e) => setForm({...form, useIndemnity: e.target.checked})}
+                className="w-4 h-4"
+              />
+              <div>
+                <div className="font-medium">Indemnités kilométriques</div>
+                <div className="text-sm text-gray-600">
+                  Sinon, calcul basé sur la consommation
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {form.useIndemnity ? (
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Indemnité par km (Rs)
+              </label>
+              <Input
+                type="number"
+                value={form.indemnityPerKm}
+                onChange={(e) => setForm({...form, indemnityPerKm: parseFloat(e.target.value) || 0})}
+                min="0"
+                step="0.5"
+              />
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Prix essence (Rs/L)
+                </label>
                 <Input
-                  placeholder="Rechercher un prospect..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full"
+                  type="number"
+                  value={form.fuelPrice}
+                  onChange={(e) => setForm({...form, fuelPrice: parseFloat(e.target.value) || 0})}
+                  min="0"
+                  step="1"
                 />
               </div>
-              <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                {filteredProspects
-                  .filter(p => p.statut !== 'signe' && p.statut !== 'perdu')
-                  .map(prospect => (
-                    <div
-                      key={prospect.id}
-                      className={`p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors ${
-                        selectedProspect?.id === prospect.id ? 'bg-blue-50 border-blue-300' : ''
-                      }`}
-                      onClick={() => {
-                        setSelectedProspect(prospect)
-                        // Auto-remplir le lieu si on a une adresse
-                        if (prospect.adresse || prospect.ville) {
-                          setLieu(`${prospect.adresse || ''} ${prospect.ville || ''}`.trim())
-                        }
-                      }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">{prospect.nom}</p>
-                          <p className="text-sm text-gray-500">
-                            {prospect.ville} • {SECTEURS[prospect.secteur as keyof typeof SECTEURS]?.label}
-                          </p>
-                          {prospect.contact && (
-                            <p className="text-xs text-gray-400">{prospect.contact}</p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <Badge className={STATUTS[prospect.statut as keyof typeof STATUTS]?.color}>
-                            {STATUTS[prospect.statut as keyof typeof STATUTS]?.label}
-                          </Badge>
-                          {selectedProspect?.id === prospect.id && (
-                            <CheckCircle className="h-4 w-4 text-blue-500" />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Consommation (L/100km)
+                </label>
+                <Input
+                  type="number"
+                  value={form.consumption}
+                  onChange={(e) => setForm({...form, consumption: parseFloat(e.target.value) || 0})}
+                  min="0"
+                  step="0.5"
+                />
               </div>
-              
-              <div className="mt-4 pt-4 border-t">
-                <Button 
-                  variant="outline" 
-                  className="w-full"
-                  onClick={() => setShowNewProspectForm(true)}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Créer un nouveau prospect
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Détails du rendez-vous</CardTitle>
-              <CardDescription>
-                Configurez les détails du rendez-vous
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {selectedProspect ? (
-                <form onSubmit={createRdv} className="space-y-4">
-                  <div className="bg-gray-50 p-3 rounded-lg">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="font-medium">{selectedProspect.nom}</p>
-                        <p className="text-sm text-gray-500">
-                          {selectedProspect.ville} • {selectedProspect.telephone}
-                        </p>
-                        {selectedProspect.contact && (
-                          <p className="text-sm text-gray-500">Contact: {selectedProspect.contact}</p>
-                        )}
-                      </div>
-                      <Badge className={STATUTS[selectedProspect.statut as keyof typeof STATUTS]?.color}>
-                        {STATUTS[selectedProspect.statut as keyof typeof STATUTS]?.label}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Date *</label>
-                      <Input
-                        type="date"
-                        min={today}
-                        value={selectedDate}
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Heure *</label>
-                      <Input
-                        type="time"
-                        value={selectedTime}
-                        onChange={(e) => setSelectedTime(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Type de visite</label>
-                      <select
-                        className="w-full border rounded-md px-3 py-2"
-                        value={typeVisite}
-                        onChange={(e) => setTypeVisite(e.target.value as RDV['type_visite'])}
-                      >
-                        <option value="decouverte">🔍 Découverte</option>
-                        <option value="presentation">📊 Présentation</option>
-                        <option value="negociation">💼 Négociation</option>
-                        <option value="signature">✍️ Signature</option>
-                        <option value="suivi">📞 Suivi</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Priorité</label>
-                      <select
-                        className="w-full border rounded-md px-3 py-2"
-                        value={priorite}
-                        onChange={(e) => setPriorite(e.target.value as RDV['priorite'])}
-                      >
-                        <option value="normale">🔵 Normale</option>
-                        <option value="haute">🟠 Haute</option>
-                        <option value="urgente">🔴 Urgente</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Durée</label>
-                      <select
-                        className="w-full border rounded-md px-3 py-2"
-                        value={duree}
-                        onChange={(e) => setDuree(e.target.value)}
-                      >
-                        <option value="30">30 minutes</option>
-                        <option value="45">45 minutes</option>
-                        <option value="60">1 heure</option>
-                        <option value="90">1h30</option>
-                        <option value="120">2 heures</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Rappel</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="checkbox"
-                          checked={rappel}
-                          onChange={(e) => setRappel(e.target.checked)}
-                          className="mt-1"
-                        />
-                        {rappel && (
-                          <select
-                            className="flex-1 border rounded-md px-3 py-2"
-                            value={rappelMinutes}
-                            onChange={(e) => setRappelMinutes(e.target.value)}
-                          >
-                            <option value="15">15 min avant</option>
-                            <option value="30">30 min avant</option>
-                            <option value="60">1h avant</option>
-                            <option value="120">2h avant</option>
-                          </select>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Lieu</label>
-                    <Input
-                      value={lieu}
-                      onChange={(e) => setLieu(e.target.value)}
-                      placeholder="Adresse ou lieu du rendez-vous"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Notes</label>
-                    <Textarea
-                      rows={3}
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Objectifs du rendez-vous, points à aborder..."
-                    />
-                  </div>
-
-                  <div className="flex gap-3 pt-4">
-                    <Button type="submit" className="flex-1">
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Planifier le RDV
-                    </Button>
-                    <Button type="button" variant="outline" onClick={resetRdvForm}>
-                      Annuler
-                    </Button>
-                  </div>
-                </form>
-              ) : (
-                <div className="text-center py-12">
-                  <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-gray-500 mb-2">Sélectionnez un prospect pour planifier un rendez-vous</p>
-                  <p className="text-sm text-gray-400">Choisissez dans la liste à gauche ou créez un nouveau prospect</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            </>
+          )}
         </div>
-      )}
 
-      {/* Modal Nouveau Prospect */}
-      {showNewProspectForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <CardHeader>
-              <CardTitle>Créer un nouveau prospect</CardTitle>
-              <CardDescription>
-                Ajoutez un nouveau prospect à votre base de données
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={createProspect} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Nom de l'entreprise *</label>
-                    <Input
-                      value={newProspect.nom}
-                      onChange={(e) => setNewProspect({...newProspect, nom: e.target.value})}
-                      placeholder="Ex: Hotel Le Meridien"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Secteur d'activité</label>
-                    <select
-                      className="w-full border rounded-md px-3 py-2"
-                      value={newProspect.secteur}
-                      onChange={(e) => setNewProspect({...newProspect, secteur: e.target.value})}
-                    >
-                      {Object.entries(SECTEURS).map(([key, secteur]) => (
-                        <option key={key} value={key}>
-                          {secteur.icon} {secteur.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Nom du contact</label>
-                    <Input
-                      value={newProspect.contact}
-                      onChange={(e) => setNewProspect({...newProspect, contact: e.target.value})}
-                      placeholder="Ex: Jean Dupont"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Téléphone *</label>
-                    <Input
-                      value={newProspect.telephone}
-                      onChange={(e) => setNewProspect({...newProspect, telephone: e.target.value})}
-                      placeholder="+230 5XXX XXXX"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Email *</label>
-                  <Input
-                    type="email"
-                    value={newProspect.email}
-                    onChange={(e) => setNewProspect({...newProspect, email: e.target.value})}
-                    placeholder="contact@entreprise.mu"
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Ville</label>
-                    <Input
-                      value={newProspect.ville}
-                      onChange={(e) => setNewProspect({...newProspect, ville: e.target.value})}
-                      placeholder="Ex: Port Louis"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Statut initial</label>
-                    <select
-                      className="w-full border rounded-md px-3 py-2"
-                      value={newProspect.statut}
-                      onChange={(e) => setNewProspect({...newProspect, statut: e.target.value as Prospect['statut']})}
-                    >
-                      {Object.entries(STATUTS).map(([key, statut]) => (
-                        <option key={key} value={key}>{statut.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Adresse</label>
-                  <Input
-                    value={newProspect.adresse}
-                    onChange={(e) => setNewProspect({...newProspect, adresse: e.target.value})}
-                    placeholder="Adresse complète"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Notes</label>
-                  <Textarea
-                    rows={3}
-                    value={newProspect.notes}
-                    onChange={(e) => setNewProspect({...newProspect, notes: e.target.value})}
-                    placeholder="Informations complémentaires..."
-                  />
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4 border-t">
-                  <Button type="button" variant="outline" onClick={() => setShowNewProspectForm(false)}>
-                    Annuler
-                  </Button>
-                  <Button type="submit">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Créer le prospect
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button onClick={() => {
+            onSave(form)
+            onClose()
+          }}>
+            Enregistrer
+          </Button>
         </div>
-      )}
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
