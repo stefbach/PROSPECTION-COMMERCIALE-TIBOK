@@ -1,35 +1,40 @@
 // app/api/rdv/route.ts
+// VERSION SIMPLE - API pour les RDV
+
 import { NextRequest, NextResponse } from 'next/server'
 import { rdvDB } from '../../../lib/rdv-database'
 
+// GET - Récupérer les RDV
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const prospect_id = searchParams.get('prospect_id')
     
-    // Si un prospect_id est fourni, retourner uniquement les RDV de ce prospect
+    // Si on demande les RDV d'un prospect spécifique
     if (prospect_id) {
       const rdvs = await rdvDB.getRDVs(parseInt(prospect_id))
       return NextResponse.json(rdvs)
     }
     
-    // Sinon retourner tous les RDV
+    // Sinon tous les RDV
     const allRdvs = await rdvDB.getRDVs()
     return NextResponse.json(allRdvs)
+    
   } catch (error) {
-    console.error('Erreur GET /api/rdv:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    console.error('Erreur GET RDV:', error)
+    return NextResponse.json([], { status: 500 })
   }
 }
 
+// POST - Créer un RDV
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    // Validation des données requises
+    // Vérifier les champs requis
     if (!body.prospect_id || !body.date_time || !body.commercial) {
       return NextResponse.json(
-        { error: 'prospect_id, date_time et commercial sont requis' },
+        { error: 'Champs manquants' },
         { status: 400 }
       )
     }
@@ -48,26 +53,30 @@ export async function POST(request: NextRequest) {
       lieu: body.lieu || ''
     })
     
-    return NextResponse.json(newRDV, { status: 201 })
+    return NextResponse.json(newRDV)
+    
   } catch (error) {
-    console.error('Erreur POST /api/rdv:', error)
-    return NextResponse.json({ error: 'Erreur lors de la création' }, { status: 500 })
+    console.error('Erreur POST RDV:', error)
+    return NextResponse.json(
+      { error: 'Erreur création' },
+      { status: 500 }
+    )
   }
 }
 
+// PATCH - Mettre à jour un RDV
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     
     if (!body.id) {
       return NextResponse.json(
-        { error: 'ID du RDV requis' },
+        { error: 'ID requis' },
         { status: 400 }
       )
     }
     
-    const { id, ...updates } = body
-    const updated = await rdvDB.updateRDV(id, updates)
+    const updated = await rdvDB.updateRDV(body.id, body)
     
     if (!updated) {
       return NextResponse.json(
@@ -77,12 +86,17 @@ export async function PATCH(request: NextRequest) {
     }
     
     return NextResponse.json(updated)
+    
   } catch (error) {
-    console.error('Erreur PATCH /api/rdv:', error)
-    return NextResponse.json({ error: 'Erreur lors de la mise à jour' }, { status: 500 })
+    console.error('Erreur PATCH RDV:', error)
+    return NextResponse.json(
+      { error: 'Erreur mise à jour' },
+      { status: 500 }
+    )
   }
 }
 
+// DELETE - Supprimer un RDV
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -90,7 +104,7 @@ export async function DELETE(request: NextRequest) {
     
     if (!id) {
       return NextResponse.json(
-        { error: 'ID du RDV requis' },
+        { error: 'ID requis' },
         { status: 400 }
       )
     }
@@ -105,8 +119,12 @@ export async function DELETE(request: NextRequest) {
     }
     
     return NextResponse.json({ success: true })
+    
   } catch (error) {
-    console.error('Erreur DELETE /api/rdv:', error)
-    return NextResponse.json({ error: 'Erreur lors de la suppression' }, { status: 500 })
+    console.error('Erreur DELETE RDV:', error)
+    return NextResponse.json(
+      { error: 'Erreur suppression' },
+      { status: 500 }
+    )
   }
 }
