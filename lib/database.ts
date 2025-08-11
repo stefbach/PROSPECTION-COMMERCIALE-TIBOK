@@ -1,82 +1,92 @@
 // lib/database.ts
 import { Prospect } from './mauritius-config'
-
-// Stockage en mémoire pour l'environnement serveur
-let inMemoryStorage: { [key: string]: any } = {
-  prospects: []
-}
+import fs from 'fs'
+import path from 'path'
 
 // Détection de l'environnement
 const isServer = typeof window === 'undefined'
 
+// Structure de stockage partagée
+let dataStore: {
+  prospects: Prospect[]
+  lastUpdated: string
+} = {
+  prospects: [],
+  lastUpdated: new Date().toISOString()
+}
+
 class Database {
-  private storageKey = 'mauritius_prospects_db'
+  private initialized = false
   
   constructor() {
-    if (!isServer) {
-      // Côté client uniquement
-      this.loadFromLocalStorage()
+    this.initialize()
+  }
+  
+  private initialize() {
+    if (this.initialized) return
+    
+    if (isServer) {
+      // Côté serveur : charger depuis le fichier ou la base existante
+      this.loadServerData()
     } else {
-      // Côté serveur - initialiser avec des données par défaut si nécessaire
-      this.initializeServerData()
+      // Côté client : charger depuis localStorage si disponible
+      this.loadClientData()
     }
+    
+    this.initialized = true
   }
   
-  private initializeServerData() {
-    // Initialiser avec quelques données de démonstration si vide
-    if (!inMemoryStorage.prospects || inMemoryStorage.prospects.length === 0) {
-      inMemoryStorage.prospects = [
-        {
-          id: 1,
-          nom: "Clinique du Nord",
-          secteur: "sante",
-          ville: "Port Louis",
-          district: "port-louis",
-          statut: "nouveau",
-          contact: "Dr. Jean Martin",
-          telephone: "+230 5123 4567",
-          email: "contact@cliniquenord.mu",
-          score: 4,
-          budget: "Rs 500,000",
-          notes: "Intéressé par nos solutions de gestion",
-          website: "www.cliniquenord.mu",
-          adresse: "123 Royal Road",
-          priority: "Haute",
-          quality_score: 75,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          id: 2,
-          nom: "Hotel Paradise",
-          secteur: "tourisme",
-          ville: "Grand Baie",
-          district: "pamplemousses",
-          statut: "qualifie",
-          contact: "Marie Dupont",
-          telephone: "+230 5234 5678",
-          email: "marie@hotelparadise.mu",
-          score: 5,
-          budget: "Rs 1,000,000",
-          notes: "Besoin urgent de modernisation",
-          website: "www.hotelparadise.mu",
-          adresse: "456 Coastal Road",
-          priority: "Normale",
-          quality_score: 85,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
+  private loadServerData() {
+    try {
+      // D'abord, essayer de charger depuis le fichier data/prospects.json s'il existe
+      const dataPath = path.join(process.cwd(), 'data', 'prospects.json')
+      if (fs.existsSync(dataPath)) {
+        const fileContent = fs.readFileSync(dataPath, 'utf-8')
+        const data = JSON.parse(fileContent)
+        dataStore.prospects = data.prospects || data || []
+        console.log(`✅ Base de données existante chargée: ${dataStore.prospects.length} prospects`)
+        return
+      }
+    } catch (error) {
+      console.log('Pas de fichier data/prospects.json, recherche d'autres sources...')
+    }
+    
+    // Si pas de fichier, essayer de charger depuis un autre emplacement
+    // ou initialiser avec un tableau vide
+    try {
+      // Vérifier s'il y a un fichier de base de données dans un autre format
+      const altPaths = [
+        path.join(process.cwd(), 'database.json'),
+        path.join(process.cwd(), 'db.json'),
+        path.join(process.cwd(), '.data', 'prospects.json')
       ]
+      
+      for (const altPath of altPaths) {
+        if (fs.existsSync(altPath)) {
+          const fileContent = fs.readFileSync(altPath, 'utf-8')
+          const data = JSON.parse(fileContent)
+          dataStore.prospects = data.prospects || data || []
+          console.log(`✅ Base de données trouvée dans ${altPath}: ${dataStore.prospects.length} prospects`)
+          return
+        }
+      }
+    } catch (error) {
+      console.error('Erreur lors de la recherche de bases alternatives:', error)
     }
+    
+    // Si toujours rien, initialiser vide
+    dataStore.prospects = []
+    console.log('⚠️ Aucune base de données existante trouvée, démarrage avec une base vide')
   }
   
-  private loadFromLocalStorage() {
-    if (!isServer && typeof window !== 'undefined' && window.localStorage) {
+  private loadClientData() {
+    if (typeof window !== 'undefined' && window.localStorage) {
       try {
-        const stored = localStorage.getItem(this.storageKey)
+        const stored = localStorage.getItem('mauritius_prospects_db')
         if (stored) {
           const data = JSON.parse(stored)
-          inMemoryStorage = data
+          dataStore = data
+          console.log('Client: données chargées depuis localStorage')
         }
       } catch (error) {
         console.error('Erreur chargement localStorage:', error)
@@ -84,129 +94,138 @@ class Database {
     }
   }
   
-  private saveToLocalStorage() {
-    if (!isServer && typeof window !== 'undefined' && window.localStorage) {
+  private saveData() {
+    dataStore.lastUpdated = new Date().toISOString()
+    
+    if (isServer) {
+      // Côté serveur : sauvegarder dans le fichier
       try {
-        localStorage.setItem(this.storageKey, JSON.stringify(inMemoryStorage))
+        const dataDir = path.join(process.cwd(), 'data')
+        if (!fs.existsSync(dataDir)) {
+          fs.mkdirSync(dataDir, { recursive: true })
+        }
+        const dataPath = path.join(dataDir, 'prospects.json')
+        fs.writeFileSync(dataPath, JSON.stringify(dataStore, null, 2))
+      } catch (error) {
+        console.error('Erreur sauvegarde serveur:', error)
+      }
+    } else if (typeof window !== 'undefined' && window.localStorage) {
+      // Côté client : sauvegarder dans localStorage
+      try {
+        localStorage.setItem('mauritius_prospects_db', JSON.stringify(dataStore))
       } catch (error) {
         console.error('Erreur sauvegarde localStorage:', error)
       }
     }
   }
   
-  // Méthodes publiques
+  // Méthodes publiques - compatibles avec l'ancienne API
   getProspects(): Prospect[] {
-    return inMemoryStorage.prospects || []
+    this.initialize()
+    return [...dataStore.prospects]
   }
   
   getProspect(id: number): Prospect | undefined {
-    const prospects = this.getProspects()
-    return prospects.find(p => p.id === id)
+    this.initialize()
+    return dataStore.prospects.find(p => p.id === id)
   }
   
   createProspect(prospect: Omit<Prospect, 'id' | 'created_at' | 'updated_at'>): Prospect {
-    const prospects = this.getProspects()
+    this.initialize()
+    
     const newProspect: Prospect = {
       ...prospect,
-      id: Date.now(),
+      id: this.generateId(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
     
-    inMemoryStorage.prospects = [newProspect, ...prospects]
-    this.saveToLocalStorage()
+    dataStore.prospects = [newProspect, ...dataStore.prospects]
+    this.saveData()
     
     return newProspect
   }
   
   updateProspect(id: number, updates: Partial<Prospect>): Prospect | null {
-    const prospects = this.getProspects()
-    const index = prospects.findIndex(p => p.id === id)
+    this.initialize()
     
-    if (index === -1) {
-      return null
-    }
+    const index = dataStore.prospects.findIndex(p => p.id === id)
+    if (index === -1) return null
     
-    const updated = {
-      ...prospects[index],
+    const updated: Prospect = {
+      ...dataStore.prospects[index],
       ...updates,
-      id: prospects[index].id, // Garder l'ID original
-      created_at: prospects[index].created_at, // Garder la date de création
+      id: dataStore.prospects[index].id,
+      created_at: dataStore.prospects[index].created_at,
       updated_at: new Date().toISOString()
     }
     
-    prospects[index] = updated
-    inMemoryStorage.prospects = prospects
-    this.saveToLocalStorage()
+    dataStore.prospects[index] = updated
+    this.saveData()
     
     return updated
   }
   
   deleteProspect(id: number): boolean {
-    const prospects = this.getProspects()
-    const filtered = prospects.filter(p => p.id !== id)
+    this.initialize()
     
-    if (filtered.length === prospects.length) {
-      return false // Aucun prospect supprimé
+    const initialLength = dataStore.prospects.length
+    dataStore.prospects = dataStore.prospects.filter(p => p.id !== id)
+    
+    if (dataStore.prospects.length < initialLength) {
+      this.saveData()
+      return true
     }
     
-    inMemoryStorage.prospects = filtered
-    this.saveToLocalStorage()
-    
-    return true
+    return false
   }
   
-  // Méthode pour importer des prospects en masse
+  // Import en masse
   importProspects(newProspects: Omit<Prospect, 'id' | 'created_at' | 'updated_at'>[]): Prospect[] {
-    const prospects = this.getProspects()
+    this.initialize()
+    
     const imported = newProspects.map(p => ({
       ...p,
-      id: Date.now() + Math.random(),
+      id: this.generateId(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }))
     
-    inMemoryStorage.prospects = [...imported, ...prospects]
-    this.saveToLocalStorage()
+    dataStore.prospects = [...imported, ...dataStore.prospects]
+    this.saveData()
     
     return imported
   }
   
-  // Méthode pour réinitialiser la base de données
-  reset() {
-    inMemoryStorage.prospects = []
-    this.saveToLocalStorage()
+  // Générer un ID unique
+  private generateId(): number {
+    const maxId = dataStore.prospects.reduce((max, p) => Math.max(max, p.id || 0), 0)
+    return maxId + 1
   }
   
-  // Méthode pour obtenir des statistiques
+  // Réinitialiser (pour les tests)
+  reset() {
+    dataStore.prospects = []
+    this.saveData()
+  }
+  
+  // Statistiques
   getStats() {
-    const prospects = this.getProspects()
+    this.initialize()
     return {
-      total: prospects.length,
-      nouveau: prospects.filter(p => p.statut === 'nouveau').length,
-      qualifie: prospects.filter(p => p.statut === 'qualifie').length,
-      rdv_planifie: prospects.filter(p => p.statut === 'rdv-planifie').length,
-      en_negociation: prospects.filter(p => p.statut === 'en-negociation').length,
-      signe: prospects.filter(p => p.statut === 'signe').length,
-      perdu: prospects.filter(p => p.statut === 'perdu').length,
-      par_secteur: Object.entries(
-        prospects.reduce((acc, p) => {
-          acc[p.secteur] = (acc[p.secteur] || 0) + 1
-          return acc
-        }, {} as Record<string, number>)
-      ),
-      par_district: Object.entries(
-        prospects.reduce((acc, p) => {
-          acc[p.district] = (acc[p.district] || 0) + 1
-          return acc
-        }, {} as Record<string, number>)
-      )
+      total: dataStore.prospects.length,
+      nouveau: dataStore.prospects.filter(p => p.statut === 'nouveau').length,
+      qualifie: dataStore.prospects.filter(p => p.statut === 'qualifie').length,
+      'rdv-planifie': dataStore.prospects.filter(p => p.statut === 'rdv-planifie').length,
+      'en-negociation': dataStore.prospects.filter(p => p.statut === 'en-negociation').length,
+      signe: dataStore.prospects.filter(p => p.statut === 'signe').length,
+      perdu: dataStore.prospects.filter(p => p.statut === 'perdu').length
     }
   }
 }
 
-// Instance unique (singleton)
+// Export de l'instance unique
 export const db = new Database()
 
-// Export des types pour TypeScript
+// Export des types
 export type { Prospect }
