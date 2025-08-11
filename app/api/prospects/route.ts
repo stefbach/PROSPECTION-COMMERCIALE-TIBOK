@@ -1,128 +1,117 @@
 // app/api/prospects/route.ts
+// VERSION SIMPLE - API pour les prospects
+
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '../../../lib/database'
 
+// GET - Récupérer les prospects
 export async function GET(request: NextRequest) {
   try {
+    // Récupérer TOUS les prospects depuis Supabase
+    const prospects = await db.getAllProspects()
+    
+    // Extraire les paramètres de recherche
     const { searchParams } = new URL(request.url)
-    
-    // Récupérer tous les prospects de manière asynchrone
-    let prospects = await db.getProspects()
-    
-    // Filtres
     const search = searchParams.get('q')
     const secteur = searchParams.get('secteur')
     const district = searchParams.get('district')
     const statut = searchParams.get('statut')
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '50')
     
-    // Appliquer les filtres
+    // Filtrer si nécessaire
+    let filtered = prospects
+    
     if (search) {
-      prospects = prospects.filter(p => 
+      filtered = filtered.filter(p => 
         p.nom.toLowerCase().includes(search.toLowerCase()) ||
-        (p.ville && p.ville.toLowerCase().includes(search.toLowerCase())) ||
-        (p.contact && p.contact.toLowerCase().includes(search.toLowerCase()))
+        p.ville?.toLowerCase().includes(search.toLowerCase()) ||
+        p.contact?.toLowerCase().includes(search.toLowerCase())
       )
     }
     
     if (secteur) {
-      prospects = prospects.filter(p => p.secteur === secteur)
+      filtered = filtered.filter(p => p.secteur === secteur)
     }
     
     if (district) {
-      prospects = prospects.filter(p => p.district === district)
+      filtered = filtered.filter(p => p.district === district)
     }
     
     if (statut) {
-      prospects = prospects.filter(p => p.statut === statut)
+      filtered = filtered.filter(p => p.statut === statut)
     }
     
-    // Pagination
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '50')
-    
-    const startIndex = (page - 1) * limit
-    const endIndex = startIndex + limit
-    
-    const paginatedProspects = prospects.slice(startIndex, endIndex)
-    
-    // Si limit > 1000, on retourne tout (pour la vue complète)
+    // Si on demande TOUT (limit > 1000), retourner tout
     if (limit > 1000) {
       return NextResponse.json({
-        data: prospects,
-        total: prospects.length
+        data: filtered,
+        total: filtered.length
       })
     }
     
-    // Retourner avec pagination
+    // Sinon, paginer
+    const start = (page - 1) * limit
+    const end = start + limit
+    const paginated = filtered.slice(start, end)
+    
     return NextResponse.json({
-      data: paginatedProspects,
+      data: paginated,
       pagination: {
         page,
         limit,
-        total: prospects.length,
-        totalPages: Math.ceil(prospects.length / limit)
+        total: filtered.length,
+        totalPages: Math.ceil(filtered.length / limit)
       }
     })
+    
   } catch (error) {
-    console.error('Erreur GET /api/prospects:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    console.error('Erreur GET:', error)
+    return NextResponse.json({ 
+      error: 'Erreur serveur',
+      data: [],
+      pagination: { page: 1, limit: 50, total: 0, totalPages: 0 }
+    }, { status: 500 })
   }
 }
 
+// POST - Créer un prospect
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    // Validation des données requises
     if (!body.nom || !body.ville) {
       return NextResponse.json(
-        { error: 'Nom et ville sont requis' },
+        { error: 'Nom et ville requis' },
         { status: 400 }
       )
     }
     
-    // Mapper les champs pour compatibilité
-    const prospectData = {
-      nom: body.nom,
-      secteur: body.secteur || 'autre',
-      ville: body.ville,
-      district: body.district || 'Port Louis',
-      statut: body.statut || 'nouveau',
-      contact: body.contact || '',
-      telephone: body.telephone || '',
-      email: body.email || '',
-      score: body.score || 3,
-      budget: body.budget || '',
-      notes: body.notes || '',
-      website: body.website || '',
-      adresse: body.adresse || '',
-      priority: body.priority || '',
-      quality_score: body.quality_score || 50,
-      pays: 'Maurice'
-    }
+    const newProspect = await db.createProspect(body)
+    return NextResponse.json(newProspect)
     
-    const newProspect = await db.createProspect(prospectData)
-    
-    return NextResponse.json(newProspect, { status: 201 })
   } catch (error) {
-    console.error('Erreur POST /api/prospects:', error)
-    return NextResponse.json({ error: 'Erreur lors de la création' }, { status: 500 })
+    console.error('Erreur POST:', error)
+    return NextResponse.json(
+      { error: 'Erreur création' },
+      { status: 500 }
+    )
   }
 }
 
+// PATCH - Mettre à jour un prospect
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     
     if (!body.id) {
       return NextResponse.json(
-        { error: 'ID du prospect requis' },
+        { error: 'ID requis' },
         { status: 400 }
       )
     }
     
-    const { id, ...updates } = body
-    const updated = await db.updateProspect(id, updates)
+    const updated = await db.updateProspect(body.id, body)
     
     if (!updated) {
       return NextResponse.json(
@@ -132,12 +121,17 @@ export async function PATCH(request: NextRequest) {
     }
     
     return NextResponse.json(updated)
+    
   } catch (error) {
-    console.error('Erreur PATCH /api/prospects:', error)
-    return NextResponse.json({ error: 'Erreur lors de la mise à jour' }, { status: 500 })
+    console.error('Erreur PATCH:', error)
+    return NextResponse.json(
+      { error: 'Erreur mise à jour' },
+      { status: 500 }
+    )
   }
 }
 
+// DELETE - Supprimer un prospect
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -145,7 +139,7 @@ export async function DELETE(request: NextRequest) {
     
     if (!id) {
       return NextResponse.json(
-        { error: 'ID du prospect requis' },
+        { error: 'ID requis' },
         { status: 400 }
       )
     }
@@ -160,8 +154,12 @@ export async function DELETE(request: NextRequest) {
     }
     
     return NextResponse.json({ success: true })
+    
   } catch (error) {
-    console.error('Erreur DELETE /api/prospects:', error)
-    return NextResponse.json({ error: 'Erreur lors de la suppression' }, { status: 500 })
+    console.error('Erreur DELETE:', error)
+    return NextResponse.json(
+      { error: 'Erreur suppression' },
+      { status: 500 }
+    )
   }
 }
