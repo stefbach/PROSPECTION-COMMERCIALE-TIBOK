@@ -671,7 +671,7 @@ function ProspectCard({
             
             {prospect.contact && (
               <div className="flex items-center gap-2 text-gray-700">
-                <User className="h-4 w-4 text-gray-400" />
+                <span className="text-gray-400">👤</span>
                 <span>{prospect.contact}</span>
               </div>
             )}
@@ -822,6 +822,7 @@ function ProspectCard({
       </Dialog>
     </>
   )
+}
       
       <ProspectDetailModal
         prospect={prospect}
