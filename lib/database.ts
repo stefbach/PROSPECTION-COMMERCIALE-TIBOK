@@ -1,231 +1,356 @@
 // lib/database.ts
 import { Prospect } from './mauritius-config'
-import fs from 'fs'
-import path from 'path'
+import { createClient } from '@supabase/supabase-js'
 
-// Détection de l'environnement
-const isServer = typeof window === 'undefined'
+// Configuration Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-// Structure de stockage partagée
-let dataStore: {
-  prospects: Prospect[]
-  lastUpdated: string
-} = {
-  prospects: [],
-  lastUpdated: new Date().toISOString()
-}
+// Créer le client Supabase
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 class Database {
-  private initialized = false
+  // Récupérer tous les prospects
+  async getProspects(): Promise<Prospect[]> {
+    try {
+      const { data, error } = await supabase
+        .from('prospects')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur récupération prospects:', error)
+        return []
+      }
+      
+      console.log(`✅ ${data?.length || 0} prospects chargés depuis Supabase`)
+      return data || []
+    } catch (error) {
+      console.error('Erreur Supabase:', error)
+      return []
+    }
+  }
+  
+  // Récupérer un prospect par ID
+  async getProspect(id: number): Promise<Prospect | undefined> {
+    try {
+      const { data, error } = await supabase
+        .from('prospects')
+        .select('*')
+        .eq('id', id)
+        .single()
+      
+      if (error) {
+        console.error('Erreur récupération prospect:', error)
+        return undefined
+      }
+      
+      return data
+    } catch (error) {
+      console.error('Erreur Supabase:', error)
+      return undefined
+    }
+  }
+  
+  // Créer un nouveau prospect
+  async createProspect(prospect: Omit<Prospect, 'id' | 'created_at' | 'updated_at'>): Promise<Prospect> {
+    try {
+      const newProspect = {
+        ...prospect,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      
+      const { data, error } = await supabase
+        .from('prospects')
+        .insert([newProspect])
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Erreur création prospect:', error)
+        throw error
+      }
+      
+      console.log('✅ Prospect créé dans Supabase')
+      return data
+    } catch (error) {
+      console.error('Erreur création:', error)
+      throw error
+    }
+  }
+  
+  // Mettre à jour un prospect
+  async updateProspect(id: number, updates: Partial<Prospect>): Promise<Prospect | null> {
+    try {
+      const { data, error } = await supabase
+        .from('prospects')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Erreur mise à jour prospect:', error)
+        return null
+      }
+      
+      console.log('✅ Prospect mis à jour dans Supabase')
+      return data
+    } catch (error) {
+      console.error('Erreur mise à jour:', error)
+      return null
+    }
+  }
+  
+  // Supprimer un prospect
+  async deleteProspect(id: number): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('prospects')
+        .delete()
+        .eq('id', id)
+      
+      if (error) {
+        console.error('Erreur suppression prospect:', error)
+        return false
+      }
+      
+      console.log('✅ Prospect supprimé de Supabase')
+      return true
+    } catch (error) {
+      console.error('Erreur suppression:', error)
+      return false
+    }
+  }
+  
+  // Import en masse
+  async importProspects(newProspects: Omit<Prospect, 'id' | 'created_at' | 'updated_at'>[]): Promise<Prospect[]> {
+    try {
+      const toImport = newProspects.map(p => ({
+        ...p,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }))
+      
+      const { data, error } = await supabase
+        .from('prospects')
+        .insert(toImport)
+        .select()
+      
+      if (error) {
+        console.error('Erreur import prospects:', error)
+        throw error
+      }
+      
+      console.log(`✅ ${data?.length || 0} prospects importés dans Supabase`)
+      return data || []
+    } catch (error) {
+      console.error('Erreur import:', error)
+      throw error
+    }
+  }
+  
+  // Statistiques
+  async getStats() {
+    try {
+      const { data, error } = await supabase
+        .from('prospects')
+        .select('statut')
+      
+      if (error) {
+        console.error('Erreur stats:', error)
+        return {
+          total: 0,
+          nouveau: 0,
+          qualifie: 0,
+          'rdv-planifie': 0,
+          'en-negociation': 0,
+          signe: 0,
+          perdu: 0
+        }
+      }
+      
+      const stats = {
+        total: data?.length || 0,
+        nouveau: data?.filter(p => p.statut === 'nouveau').length || 0,
+        qualifie: data?.filter(p => p.statut === 'qualifie').length || 0,
+        'rdv-planifie': data?.filter(p => p.statut === 'rdv-planifie').length || 0,
+        'en-negociation': data?.filter(p => p.statut === 'en-negociation').length || 0,
+        signe: data?.filter(p => p.statut === 'signe').length || 0,
+        perdu: data?.filter(p => p.statut === 'perdu').length || 0
+      }
+      
+      return stats
+    } catch (error) {
+      console.error('Erreur stats:', error)
+      return {
+        total: 0,
+        nouveau: 0,
+        qualifie: 0,
+        'rdv-planifie': 0,
+        'en-negociation': 0,
+        signe: 0,
+        perdu: 0
+      }
+    }
+  }
+  
+  // Réinitialiser (attention danger!)
+  async reset() {
+    console.warn('⚠️ Reset non implémenté pour Supabase par sécurité')
+    // Si vraiment nécessaire, décommentez :
+    // const { error } = await supabase.from('prospects').delete().neq('id', 0)
+  }
+}
+
+// Version synchrone pour compatibilité (wrapper)
+class DatabaseSync {
+  private db: Database
+  private cache: Prospect[] = []
+  private cacheLoaded = false
   
   constructor() {
-    this.initialize()
+    this.db = new Database()
+    this.loadCache()
   }
   
-  private initialize() {
-    if (this.initialized) return
-    
-    if (isServer) {
-      // Côté serveur : charger depuis le fichier ou la base existante
-      this.loadServerData()
-    } else {
-      // Côté client : charger depuis localStorage si disponible
-      this.loadClientData()
-    }
-    
-    this.initialized = true
+  private async loadCache() {
+    this.cache = await this.db.getProspects()
+    this.cacheLoaded = true
+    console.log(`📦 Cache chargé: ${this.cache.length} prospects`)
   }
   
-  private loadServerData() {
-    try {
-      // D'abord, essayer de charger depuis le fichier data/prospects.json s'il existe
-      const dataPath = path.join(process.cwd(), 'data', 'prospects.json')
-      if (fs.existsSync(dataPath)) {
-        const fileContent = fs.readFileSync(dataPath, 'utf-8')
-        const data = JSON.parse(fileContent)
-        dataStore.prospects = data.prospects || data || []
-        console.log(`✅ Base de données existante chargée: ${dataStore.prospects.length} prospects`)
-        return
-      }
-    } catch (error) {
-      console.log("Pas de fichier data/prospects.json, recherche d'autres sources...")
-    }
-    
-    // Si pas de fichier, essayer de charger depuis un autre emplacement
-    // ou initialiser avec un tableau vide
-    try {
-      // Vérifier s'il y a un fichier de base de données dans un autre format
-      const altPaths = [
-        path.join(process.cwd(), 'database.json'),
-        path.join(process.cwd(), 'db.json'),
-        path.join(process.cwd(), '.data', 'prospects.json')
-      ]
-      
-      for (const altPath of altPaths) {
-        if (fs.existsSync(altPath)) {
-          const fileContent = fs.readFileSync(altPath, 'utf-8')
-          const data = JSON.parse(fileContent)
-          dataStore.prospects = data.prospects || data || []
-          console.log(`✅ Base de données trouvée dans ${altPath}: ${dataStore.prospects.length} prospects`)
-          return
-        }
-      }
-    } catch (error) {
-      console.error('Erreur lors de la recherche de bases alternatives:', error)
-    }
-    
-    // Si toujours rien, initialiser vide
-    dataStore.prospects = []
-    console.log('⚠️ Aucune base de données existante trouvée, démarrage avec une base vide')
-  }
-  
-  private loadClientData() {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      try {
-        const stored = localStorage.getItem('mauritius_prospects_db')
-        if (stored) {
-          const data = JSON.parse(stored)
-          dataStore = data
-          console.log('Client: données chargées depuis localStorage')
-        }
-      } catch (error) {
-        console.error('Erreur chargement localStorage:', error)
-      }
-    }
-  }
-  
-  private saveData() {
-    dataStore.lastUpdated = new Date().toISOString()
-    
-    if (isServer) {
-      // Côté serveur : sauvegarder dans le fichier
-      try {
-        const dataDir = path.join(process.cwd(), 'data')
-        if (!fs.existsSync(dataDir)) {
-          fs.mkdirSync(dataDir, { recursive: true })
-        }
-        const dataPath = path.join(dataDir, 'prospects.json')
-        fs.writeFileSync(dataPath, JSON.stringify(dataStore, null, 2))
-      } catch (error) {
-        console.error('Erreur sauvegarde serveur:', error)
-      }
-    } else if (typeof window !== 'undefined' && window.localStorage) {
-      // Côté client : sauvegarder dans localStorage
-      try {
-        localStorage.setItem('mauritius_prospects_db', JSON.stringify(dataStore))
-      } catch (error) {
-        console.error('Erreur sauvegarde localStorage:', error)
-      }
-    }
-  }
-  
-  // Méthodes publiques - compatibles avec l'ancienne API
+  // Méthodes synchrones qui utilisent le cache
   getProspects(): Prospect[] {
-    this.initialize()
-    return [...dataStore.prospects]
+    if (!this.cacheLoaded) {
+      console.warn('⚠️ Cache pas encore chargé, retour tableau vide')
+      // Recharger le cache en arrière-plan
+      this.loadCache()
+    }
+    return [...this.cache]
   }
   
   getProspect(id: number): Prospect | undefined {
-    this.initialize()
-    return dataStore.prospects.find(p => p.id === id)
+    return this.cache.find(p => p.id === id)
   }
   
   createProspect(prospect: Omit<Prospect, 'id' | 'created_at' | 'updated_at'>): Prospect {
-    this.initialize()
-    
-    const newProspect: Prospect = {
+    // Créer temporairement avec un ID local
+    const tempProspect: Prospect = {
       ...prospect,
-      id: this.generateId(),
+      id: Date.now(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
     
-    dataStore.prospects = [newProspect, ...dataStore.prospects]
-    this.saveData()
+    // Ajouter au cache immédiatement
+    this.cache.unshift(tempProspect)
     
-    return newProspect
+    // Sauvegarder dans Supabase en arrière-plan
+    this.db.createProspect(prospect).then(created => {
+      // Remplacer dans le cache avec le vrai ID
+      const index = this.cache.findIndex(p => p.id === tempProspect.id)
+      if (index !== -1) {
+        this.cache[index] = created
+      }
+    }).catch(error => {
+      // En cas d'erreur, retirer du cache
+      this.cache = this.cache.filter(p => p.id !== tempProspect.id)
+      console.error('Erreur création prospect:', error)
+    })
+    
+    return tempProspect
   }
   
   updateProspect(id: number, updates: Partial<Prospect>): Prospect | null {
-    this.initialize()
-    
-    const index = dataStore.prospects.findIndex(p => p.id === id)
+    const index = this.cache.findIndex(p => p.id === id)
     if (index === -1) return null
     
-    const updated: Prospect = {
-      ...dataStore.prospects[index],
+    // Mettre à jour le cache immédiatement
+    const updated = {
+      ...this.cache[index],
       ...updates,
-      id: dataStore.prospects[index].id,
-      created_at: dataStore.prospects[index].created_at,
       updated_at: new Date().toISOString()
     }
+    this.cache[index] = updated
     
-    dataStore.prospects[index] = updated
-    this.saveData()
+    // Sauvegarder dans Supabase en arrière-plan
+    this.db.updateProspect(id, updates).catch(error => {
+      console.error('Erreur mise à jour prospect:', error)
+      // Recharger le cache en cas d'erreur
+      this.loadCache()
+    })
     
     return updated
   }
   
   deleteProspect(id: number): boolean {
-    this.initialize()
+    const index = this.cache.findIndex(p => p.id === id)
+    if (index === -1) return false
     
-    const initialLength = dataStore.prospects.length
-    dataStore.prospects = dataStore.prospects.filter(p => p.id !== id)
+    // Supprimer du cache immédiatement
+    this.cache = this.cache.filter(p => p.id !== id)
     
-    if (dataStore.prospects.length < initialLength) {
-      this.saveData()
-      return true
-    }
+    // Supprimer de Supabase en arrière-plan
+    this.db.deleteProspect(id).catch(error => {
+      console.error('Erreur suppression prospect:', error)
+      // Recharger le cache en cas d'erreur
+      this.loadCache()
+    })
     
-    return false
+    return true
   }
   
-  // Import en masse
   importProspects(newProspects: Omit<Prospect, 'id' | 'created_at' | 'updated_at'>[]): Prospect[] {
-    this.initialize()
-    
-    const imported = newProspects.map(p => ({
+    // Créer temporairement avec des IDs locaux
+    const tempProspects = newProspects.map(p => ({
       ...p,
-      id: this.generateId(),
+      id: Date.now() + Math.random(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }))
     
-    dataStore.prospects = [...imported, ...dataStore.prospects]
-    this.saveData()
+    // Ajouter au cache
+    this.cache = [...tempProspects, ...this.cache]
     
-    return imported
+    // Importer dans Supabase en arrière-plan
+    this.db.importProspects(newProspects).then(imported => {
+      // Recharger le cache avec les vraies données
+      this.loadCache()
+    }).catch(error => {
+      console.error('Erreur import prospects:', error)
+      // Retirer du cache en cas d'erreur
+      const tempIds = tempProspects.map(p => p.id)
+      this.cache = this.cache.filter(p => !tempIds.includes(p.id))
+    })
+    
+    return tempProspects
   }
   
-  // Générer un ID unique
-  private generateId(): number {
-    const maxId = dataStore.prospects.reduce((max, p) => Math.max(max, p.id || 0), 0)
-    return maxId + 1
-  }
-  
-  // Réinitialiser (pour les tests)
-  reset() {
-    dataStore.prospects = []
-    this.saveData()
-  }
-  
-  // Statistiques
   getStats() {
-    this.initialize()
     return {
-      total: dataStore.prospects.length,
-      nouveau: dataStore.prospects.filter(p => p.statut === 'nouveau').length,
-      qualifie: dataStore.prospects.filter(p => p.statut === 'qualifie').length,
-      'rdv-planifie': dataStore.prospects.filter(p => p.statut === 'rdv-planifie').length,
-      'en-negociation': dataStore.prospects.filter(p => p.statut === 'en-negociation').length,
-      signe: dataStore.prospects.filter(p => p.statut === 'signe').length,
-      perdu: dataStore.prospects.filter(p => p.statut === 'perdu').length
+      total: this.cache.length,
+      nouveau: this.cache.filter(p => p.statut === 'nouveau').length,
+      qualifie: this.cache.filter(p => p.statut === 'qualifie').length,
+      'rdv-planifie': this.cache.filter(p => p.statut === 'rdv-planifie').length,
+      'en-negociation': this.cache.filter(p => p.statut === 'en-negociation').length,
+      signe: this.cache.filter(p => p.statut === 'signe').length,
+      perdu: this.cache.filter(p => p.statut === 'perdu').length
     }
+  }
+  
+  reset() {
+    this.cache = []
+    console.warn('Cache vidé (Supabase non affecté)')
   }
 }
 
-// Export de l'instance unique
-export const db = new Database()
+// Export de l'instance
+export const db = new DatabaseSync()
 
 // Export des types
 export type { Prospect }
