@@ -18,14 +18,13 @@ import { Building2, CalendarPlus, ClipboardCheck, LayoutDashboard, Route, Brain 
 
 type Props = {
   onNavigate?: (key: "dashboard" | "prospects" | "planning" | "ai") => void
-  current?: "dashboard" | "prospects" | "rdv" | "qualification" | "planning" | "ai"
+  current?: "dashboard" | "prospects" | "planning" | "ai"
 }
 
 export function AppSidebar({ onNavigate = () => {}, current = "dashboard" }: Props) {
   const items = [
     { key: "dashboard", title: "Tableau de Bord", icon: LayoutDashboard },
     { key: "prospects", title: "Base Prospects", icon: Building2 },
-    { key: "rdv", title: "Prise de RDV", icon: CalendarPlus },
     { key: "planning", title: "Planning", icon: Route },
     { key: "ai", title: "Intelligence IA", icon: Brain, badge: "NEW" },
   ] as const
