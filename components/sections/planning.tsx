@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
+import { Badge } from "@/components/ui/badge"
+import { Calendar, Clock, Phone, MapPin, User, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react'
 
 // Types
 type District = 'port-louis' | 'pamplemousses' | 'riviere-du-rempart' | 'flacq' | 'grand-port' | 'savanne' | 'plaines-wilhems' | 'moka' | 'riviere-noire'
@@ -48,7 +50,7 @@ interface Prospect {
   contact?: string
   telephone?: string
   email?: string
-  score: 1 | 2 | 3 | 4 | 5
+  score: number
   budget?: string
   notes?: string
   website?: string
@@ -58,16 +60,21 @@ interface Prospect {
 }
 
 interface RendezVous {
-  id: string
-  prospectId: number
-  prospect: Prospect
-  date: string
-  heure: string
-  duree: number
-  type: 'decouverte' | 'demo' | 'negociation' | 'signature' | 'suivi'
-  statut: 'planifie' | 'confirme' | 'reporte' | 'annule' | 'termine'
+  id: number
+  prospect_id: number
+  prospect_nom?: string
+  prospect?: Prospect
+  commercial: string
+  titre: string
+  date_time: string
+  duree_min: number
+  type_visite: 'decouverte' | 'presentation' | 'negociation' | 'signature' | 'suivi'
+  priorite: 'normale' | 'haute' | 'urgente'
+  statut: 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
   notes?: string
-  priorite?: 'haute' | 'moyenne' | 'basse'
+  lieu?: string
+  created_at?: string
+  updated_at?: string
 }
 
 interface CommercialInfo {
@@ -78,8 +85,8 @@ interface CommercialInfo {
   telephone?: string
   email?: string
   vehicule?: string
-  startHour?: string // Heure de début par défaut
-  endHour?: string // Heure de fin par défaut
+  startHour?: string
+  endHour?: string
 }
 
 interface CustomDistance {
@@ -89,14 +96,6 @@ interface CustomDistance {
   distance: number
   duration: number
   notes?: string
-}
-
-interface RouteInfo {
-  distance: number
-  duration: number
-  cost: number
-  method: 'custom' | 'matrix' | 'estimation'
-  fromHome?: boolean // Si le trajet part du domicile
 }
 
 interface CostSettings {
@@ -130,7 +129,7 @@ const DEFAULT_COMMERCIAL: CommercialInfo = {
   endHour: '18:00'
 }
 
-// Matrice de base pour les districts
+// Matrice de distance
 const BASE_DISTANCE_MATRIX: Record<District, Record<District, number>> = {
   'port-louis': {
     'port-louis': 0,
@@ -233,13 +232,9 @@ const BASE_DISTANCE_MATRIX: Record<District, Record<District, number>> = {
   }
 }
 
-// Clés de stockage
-const COMMERCIAL_KEY = 'planning_commercial_info'
-const CUSTOM_DISTANCES_KEY = 'planning_custom_distances'
-const SETTINGS_KEY = 'planning_cost_settings'
-
 export default function PlanningAdvancedSection() {
-  const [loading, setLoading] = React.useState(true)
+  const [loading, setLoading] = React.useState(false)
+  const [loadingRdvs, setLoadingRdvs] = React.useState(true)
   const [prospects, setProspects] = React.useState<Prospect[]>([])
   const [allProspects, setAllProspects] = React.useState<Prospect[]>([])
   const [rendezVous, setRendezVous] = React.useState<RendezVous[]>([])
@@ -261,7 +256,7 @@ export default function PlanningAdvancedSection() {
   // Charger les configurations sauvegardées
   React.useEffect(() => {
     // Commercial info
-    const savedCommercial = localStorage.getItem(COMMERCIAL_KEY)
+    const savedCommercial = localStorage.getItem('planning_commercial_info')
     if (savedCommercial) {
       try {
         setCommercialInfo(JSON.parse(savedCommercial))
@@ -271,7 +266,7 @@ export default function PlanningAdvancedSection() {
     }
 
     // Distances personnalisées
-    const savedDistances = localStorage.getItem(CUSTOM_DISTANCES_KEY)
+    const savedDistances = localStorage.getItem('planning_custom_distances')
     if (savedDistances) {
       try {
         setCustomDistances(JSON.parse(savedDistances))
@@ -281,7 +276,7 @@ export default function PlanningAdvancedSection() {
     }
 
     // Paramètres
-    const savedSettings = localStorage.getItem(SETTINGS_KEY)
+    const savedSettings = localStorage.getItem('planning_cost_settings')
     if (savedSettings) {
       try {
         setSettings(JSON.parse(savedSettings))
@@ -291,7 +286,7 @@ export default function PlanningAdvancedSection() {
     }
   }, [])
 
-  // Charger les prospects
+  // Charger les prospects et RDV depuis l'API
   React.useEffect(() => {
     loadProspects()
     loadRdvs()
@@ -309,12 +304,254 @@ export default function PlanningAdvancedSection() {
         description: "Impossible de charger les prospects",
         variant: "destructive"
       })
-    } finally {
-      setLoading(false)
     }
   }
 
-  // Charger TOUS les prospects pour la recherche
+  // Charger les RDV depuis l'API
+  async function loadRdvs() {
+    setLoadingRdvs(true)
+    try {
+      const res = await fetch('/api/rdv')
+      if (!res.ok) throw new Error('Erreur chargement RDV')
+      
+      const data = await res.json()
+      setRendezVous(data)
+    } catch (error) {
+      console.error('Erreur chargement RDV:', error)
+      toast({
+        title: "Erreur",
+        description: "Impossible de charger les rendez-vous",
+        variant: "destructive"
+      })
+    } finally {
+      setLoadingRdvs(false)
+    }
+  }
+
+  // Créer un RDV via l'API
+  async function addRdv(prospectId: number, prospect: Prospect, date: string, time: string, duree: number = 60, notes?: string, type_visite?: string, priorite?: string) {
+    try {
+      const rdvData = {
+        prospect_id: prospectId,
+        commercial: commercialInfo.nom || "Commercial",
+        titre: `RDV - ${prospect.nom}`,
+        date_time: `${date}T${time}:00`,
+        duree_min: duree,
+        type_visite: type_visite || 'decouverte',
+        priorite: priorite || (prospect.score >= 4 ? 'haute' : prospect.score >= 3 ? 'moyenne' : 'normale'),
+        statut: 'planifie',
+        notes: notes || '',
+        lieu: prospect.adresse || `${prospect.ville}, ${prospect.district}`
+      }
+
+      const res = await fetch('/api/rdv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rdvData)
+      })
+
+      if (!res.ok) throw new Error('Erreur création RDV')
+
+      await loadRdvs()
+      
+      toast({
+        title: "RDV ajouté",
+        description: `RDV avec ${prospect.nom} planifié`
+      })
+    } catch (error) {
+      console.error('Erreur création RDV:', error)
+      toast({
+        title: "Erreur",
+        description: "Impossible de créer le rendez-vous",
+        variant: "destructive"
+      })
+    }
+  }
+
+  // Mettre à jour un RDV via l'API
+  async function updateRdv(rdvId: number, updates: Partial<RendezVous>) {
+    try {
+      const res = await fetch('/api/rdv', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: rdvId, ...updates })
+      })
+
+      if (!res.ok) throw new Error('Erreur mise à jour RDV')
+
+      await loadRdvs()
+      
+      toast({ title: "RDV modifié" })
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de modifier le rendez-vous",
+        variant: "destructive"
+      })
+    }
+  }
+
+  // Supprimer un RDV via l'API
+  async function deleteRdv(rdvId: number) {
+    try {
+      const res = await fetch(`/api/rdv?id=${rdvId}`, {
+        method: 'DELETE'
+      })
+
+      if (!res.ok) throw new Error('Erreur suppression RDV')
+
+      await loadRdvs()
+      
+      toast({ title: "RDV supprimé" })
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de supprimer le rendez-vous",
+        variant: "destructive"
+      })
+    }
+  }
+
+  // Sauvegarder les infos du commercial
+  function saveCommercialInfo(info: CommercialInfo) {
+    setCommercialInfo(info)
+    localStorage.setItem('planning_commercial_info', JSON.stringify(info))
+    toast({
+      title: "Informations sauvegardées",
+      description: "L'adresse du commercial a été mise à jour"
+    })
+  }
+
+  // Sauvegarder les distances personnalisées
+  function saveCustomDistances(distances: CustomDistance[]) {
+    setCustomDistances(distances)
+    localStorage.setItem('planning_custom_distances', JSON.stringify(distances))
+  }
+
+  // Calculer la distance
+  function calculateDistance(
+    from: { adresse?: string; ville?: string; district: District },
+    to: { adresse?: string; ville?: string; district: District }
+  ): any {
+    const fromAddress = from.adresse || `${from.ville}, ${from.district}`
+    const toAddress = to.adresse || `${to.ville}, ${to.district}`
+    
+    const customDistance = customDistances.find(
+      d => (d.from === fromAddress && d.to === toAddress) ||
+           (d.from === toAddress && d.to === fromAddress)
+    )
+    
+    if (customDistance) {
+      const cost = settings.useIndemnity ?
+        Math.round(customDistance.distance * settings.indemnityPerKm) :
+        Math.round((customDistance.distance * settings.consumption * settings.fuelPrice) / 100)
+      
+      return {
+        distance: customDistance.distance,
+        duration: customDistance.duration,
+        cost,
+        method: 'custom'
+      }
+    }
+    
+    const distance = BASE_DISTANCE_MATRIX[from.district]?.[to.district] || 25
+    
+    const now = new Date()
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const isRushHour = currentTime >= settings.rushHourStart && currentTime <= settings.rushHourEnd
+    const speed = isRushHour ? settings.rushHourSpeed : settings.averageSpeed
+    
+    const duration = Math.round(distance / speed * 60)
+    const cost = settings.useIndemnity ?
+      Math.round(distance * settings.indemnityPerKm) :
+      Math.round((distance * settings.consumption * settings.fuelPrice) / 100)
+    
+    return {
+      distance,
+      duration,
+      cost,
+      method: 'matrix'
+    }
+  }
+
+  // Calculer la distance depuis le domicile
+  function calculateFromHome(to: Prospect): any {
+    const homeLocation = {
+      adresse: commercialInfo.adresse,
+      ville: commercialInfo.ville,
+      district: commercialInfo.district
+    }
+    
+    const route = calculateDistance(homeLocation, to)
+    return { ...route, fromHome: true }
+  }
+
+  // Filtrer les RDV de la journée
+  const filteredRdvs = React.useMemo(() => {
+    return rendezVous.filter(rdv => {
+      const rdvDate = new Date(rdv.date_time).toISOString().split('T')[0]
+      return rdvDate === selectedDate
+    }).sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
+  }, [rendezVous, selectedDate])
+
+  // Calculer les statistiques
+  const stats = React.useMemo(() => {
+    let distanceTotale = 0
+    let tempsDeplacement = 0
+    let coutTotal = 0
+    
+    // Distance depuis le domicile au premier RDV
+    if (filteredRdvs.length > 0 && commercialInfo.adresse && filteredRdvs[0].prospect) {
+      const fromHome = calculateFromHome(filteredRdvs[0].prospect)
+      distanceTotale += fromHome.distance
+      tempsDeplacement += fromHome.duration
+      coutTotal += fromHome.cost
+    }
+    
+    // Distances entre les RDV
+    for (let i = 0; i < filteredRdvs.length - 1; i++) {
+      if (filteredRdvs[i].prospect && filteredRdvs[i + 1].prospect) {
+        const route = calculateDistance(
+          filteredRdvs[i].prospect!,
+          filteredRdvs[i + 1].prospect!
+        )
+        distanceTotale += route.distance
+        tempsDeplacement += route.duration
+        coutTotal += route.cost
+      }
+    }
+    
+    // Retour au domicile depuis le dernier RDV
+    if (filteredRdvs.length > 0 && commercialInfo.adresse && filteredRdvs[filteredRdvs.length - 1].prospect) {
+      const toHome = calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect)
+      distanceTotale += toHome.distance
+      tempsDeplacement += toHome.duration
+      coutTotal += toHome.cost
+    }
+    
+    const tempsTotal = tempsDeplacement + filteredRdvs.reduce((sum, rdv) => sum + rdv.duree_min, 0)
+    
+    // Compter les RDV par statut
+    const rdvStats = {
+      total: filteredRdvs.length,
+      planifies: filteredRdvs.filter(r => r.statut === 'planifie').length,
+      confirmes: filteredRdvs.filter(r => r.statut === 'confirme').length,
+      termines: filteredRdvs.filter(r => r.statut === 'termine').length,
+      annules: filteredRdvs.filter(r => r.statut === 'annule').length
+    }
+    
+    return {
+      totalRdvs: filteredRdvs.length,
+      distanceTotale: Math.round(distanceTotale * 10) / 10,
+      tempsDeplacement: Math.round(tempsDeplacement),
+      tempsTotal: Math.round(tempsTotal),
+      coutTotal: Math.round(coutTotal),
+      customDistancesUsed: customDistances.length,
+      rdvStats
+    }
+  }, [filteredRdvs, commercialInfo, customDistances, settings])
+
+  // Charger tous les prospects pour la recherche
   async function loadAllProspects() {
     setLoading(true)
     try {
@@ -338,177 +575,7 @@ export default function PlanningAdvancedSection() {
     }
   }
 
-  function loadRdvs() {
-    const savedRdvs = localStorage.getItem('planning_rdvs')
-    if (savedRdvs) {
-      try {
-        setRendezVous(JSON.parse(savedRdvs))
-      } catch (e) {
-        console.error('Erreur chargement RDV:', e)
-      }
-    }
-  }
-
-  function saveRdvs(rdvs: RendezVous[]) {
-    localStorage.setItem('planning_rdvs', JSON.stringify(rdvs))
-  }
-
-  // Sauvegarder les infos du commercial
-  function saveCommercialInfo(info: CommercialInfo) {
-    setCommercialInfo(info)
-    localStorage.setItem(COMMERCIAL_KEY, JSON.stringify(info))
-    toast({
-      title: "Informations sauvegardées",
-      description: "L'adresse du commercial a été mise à jour"
-    })
-  }
-
-  // Sauvegarder les distances personnalisées
-  function saveCustomDistances(distances: CustomDistance[]) {
-    setCustomDistances(distances)
-    localStorage.setItem(CUSTOM_DISTANCES_KEY, JSON.stringify(distances))
-  }
-
-  // Calculer la distance (avec priorité aux distances personnalisées)
-  function calculateDistance(
-    from: { adresse?: string; ville?: string; district: District },
-    to: { adresse?: string; ville?: string; district: District }
-  ): RouteInfo {
-    // 1. Chercher dans les distances personnalisées
-    const fromAddress = from.adresse || `${from.ville}, ${from.district}`
-    const toAddress = to.adresse || `${to.ville}, ${to.district}`
-    
-    const customDistance = customDistances.find(
-      d => (d.from === fromAddress && d.to === toAddress) ||
-           (d.from === toAddress && d.to === fromAddress)
-    )
-    
-    if (customDistance) {
-      const cost = settings.useIndemnity ?
-        Math.round(customDistance.distance * settings.indemnityPerKm) :
-        Math.round((customDistance.distance * settings.consumption * settings.fuelPrice) / 100)
-      
-      return {
-        distance: customDistance.distance,
-        duration: customDistance.duration,
-        cost,
-        method: 'custom'
-      }
-    }
-    
-    // 2. Utiliser la matrice des districts
-    const distance = BASE_DISTANCE_MATRIX[from.district]?.[to.district] || 25
-    
-    // Vérifier si on est en heure de pointe
-    const now = new Date()
-    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-    const isRushHour = currentTime >= settings.rushHourStart && currentTime <= settings.rushHourEnd
-    const speed = isRushHour ? settings.rushHourSpeed : settings.averageSpeed
-    
-    const duration = Math.round(distance / speed * 60)
-    const cost = settings.useIndemnity ?
-      Math.round(distance * settings.indemnityPerKm) :
-      Math.round((distance * settings.consumption * settings.fuelPrice) / 100)
-    
-    return {
-      distance,
-      duration,
-      cost,
-      method: 'matrix'
-    }
-  }
-
-  // Calculer la distance depuis le domicile
-  function calculateFromHome(to: Prospect): RouteInfo {
-    const homeLocation = {
-      adresse: commercialInfo.adresse,
-      ville: commercialInfo.ville,
-      district: commercialInfo.district
-    }
-    
-    const route = calculateDistance(homeLocation, to)
-    return { ...route, fromHome: true }
-  }
-
-  // Filtrer les RDV de la journée
-  const filteredRdvs = React.useMemo(() => {
-    return rendezVous.filter(rdv => rdv.date === selectedDate)
-      .sort((a, b) => a.heure.localeCompare(b.heure))
-  }, [rendezVous, selectedDate])
-
-  // Calculer les statistiques
-  const stats = React.useMemo(() => {
-    let distanceTotale = 0
-    let tempsDeplacement = 0
-    let coutTotal = 0
-    
-    // Distance depuis le domicile au premier RDV
-    if (filteredRdvs.length > 0 && commercialInfo.adresse) {
-      const fromHome = calculateFromHome(filteredRdvs[0].prospect)
-      distanceTotale += fromHome.distance
-      tempsDeplacement += fromHome.duration
-      coutTotal += fromHome.cost
-    }
-    
-    // Distances entre les RDV
-    for (let i = 0; i < filteredRdvs.length - 1; i++) {
-      const route = calculateDistance(
-        filteredRdvs[i].prospect,
-        filteredRdvs[i + 1].prospect
-      )
-      distanceTotale += route.distance
-      tempsDeplacement += route.duration
-      coutTotal += route.cost
-    }
-    
-    // Retour au domicile depuis le dernier RDV
-    if (filteredRdvs.length > 0 && commercialInfo.adresse) {
-      const toHome = calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect)
-      distanceTotale += toHome.distance
-      tempsDeplacement += toHome.duration
-      coutTotal += toHome.cost
-    }
-    
-    const tempsTotal = tempsDeplacement + filteredRdvs.reduce((sum, rdv) => sum + rdv.duree, 0)
-    
-    return {
-      totalRdvs: filteredRdvs.length,
-      distanceTotale: Math.round(distanceTotale * 10) / 10,
-      tempsDeplacement: Math.round(tempsDeplacement),
-      tempsTotal: Math.round(tempsTotal),
-      coutTotal: Math.round(coutTotal),
-      customDistancesUsed: customDistances.length
-    }
-  }, [filteredRdvs, commercialInfo, customDistances, settings])
-
-  // Fonctions CRUD RDV
-  function addRdv(rdv: RendezVous) {
-    const newRdvs = [...rendezVous, rdv]
-    setRendezVous(newRdvs)
-    saveRdvs(newRdvs)
-    toast({
-      title: "RDV ajouté",
-      description: `RDV avec ${rdv.prospect.nom} planifié`
-    })
-  }
-
-  function updateRdv(updatedRdv: RendezVous) {
-    const newRdvs = rendezVous.map(rdv => 
-      rdv.id === updatedRdv.id ? updatedRdv : rdv
-    )
-    setRendezVous(newRdvs)
-    saveRdvs(newRdvs)
-    toast({ title: "RDV modifié" })
-  }
-
-  function deleteRdv(rdvId: string) {
-    const newRdvs = rendezVous.filter(rdv => rdv.id !== rdvId)
-    setRendezVous(newRdvs)
-    saveRdvs(newRdvs)
-    toast({ title: "RDV supprimé" })
-  }
-
-  if (loading) {
+  if (loadingRdvs) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -562,7 +629,7 @@ export default function PlanningAdvancedSection() {
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <span className="text-xl">⚠️</span>
+              <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
               <div>
                 <h3 className="font-semibold text-amber-900">Configuration requise</h3>
                 <p className="text-sm text-amber-700 mt-1">
@@ -574,14 +641,34 @@ export default function PlanningAdvancedSection() {
         </Card>
       )}
 
-      {/* Statistiques */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+      {/* Statistiques améliorées */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="text-center">
               <div className="text-2xl mb-1">📅</div>
-              <p className="text-xs text-gray-600">RDV</p>
+              <p className="text-xs text-gray-600">Total RDV</p>
               <p className="text-xl font-bold">{stats.totalRdvs}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-blue-50">
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">📋</div>
+              <p className="text-xs text-gray-600">Planifiés</p>
+              <p className="text-xl font-bold text-blue-600">{stats.rdvStats.planifies}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-green-50">
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">✅</div>
+              <p className="text-xs text-gray-600">Confirmés</p>
+              <p className="text-xl font-bold text-green-600">{stats.rdvStats.confirmes}</p>
             </div>
           </CardContent>
         </Card>
@@ -590,7 +677,7 @@ export default function PlanningAdvancedSection() {
           <CardContent className="p-4">
             <div className="text-center">
               <div className="text-2xl mb-1">🗺️</div>
-              <p className="text-xs text-gray-600">Distance totale</p>
+              <p className="text-xs text-gray-600">Distance</p>
               <p className="text-xl font-bold">{stats.distanceTotale} km</p>
             </div>
           </CardContent>
@@ -614,16 +701,6 @@ export default function PlanningAdvancedSection() {
               <div className="text-2xl mb-1">💰</div>
               <p className="text-xs text-gray-600">Coût</p>
               <p className="text-xl font-bold">Rs {stats.coutTotal}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-center">
-              <div className="text-2xl mb-1">📍</div>
-              <p className="text-xs text-gray-600">Distances perso</p>
-              <p className="text-xl font-bold">{stats.customDistancesUsed}</p>
             </div>
           </CardContent>
         </Card>
@@ -669,6 +746,16 @@ export default function PlanningAdvancedSection() {
                 🔍 Rechercher dans la base
               </Button>
               
+              <Button
+                variant="outline"
+                onClick={loadRdvs}
+                className="bg-blue-50 text-blue-700"
+                disabled={loadingRdvs}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${loadingRdvs ? 'animate-spin' : ''}`} />
+                Actualiser
+              </Button>
+              
               {filteredRdvs.length > 1 && (
                 <Button 
                   variant="outline"
@@ -682,7 +769,7 @@ export default function PlanningAdvancedSection() {
         </CardContent>
       </Card>
 
-      {/* Planning de la journée */}
+      {/* Planning de la journée avec badges de statut */}
       <Card>
         <CardHeader>
           <CardTitle>
@@ -715,7 +802,7 @@ export default function PlanningAdvancedSection() {
                       Heure de départ prévue : {commercialInfo.startHour || '08:00'}
                     </div>
                   </div>
-                  {filteredRdvs.length > 0 && (
+                  {filteredRdvs.length > 0 && filteredRdvs[0].prospect && (
                     <div className="text-sm text-gray-600">
                       → {calculateFromHome(filteredRdvs[0].prospect).distance} km 
                       ({calculateFromHome(filteredRdvs[0].prospect).duration} min)
@@ -724,13 +811,15 @@ export default function PlanningAdvancedSection() {
                 </div>
               )}
 
-              {/* RDV de la journée */}
+              {/* RDV de la journée avec statuts améliorés */}
               {filteredRdvs.map((rdv, index) => {
+                if (!rdv.prospect) return null
+                
                 const districtConfig = DISTRICTS_CONFIG[rdv.prospect.district]
                 const secteurConfig = SECTEURS_CONFIG[rdv.prospect.secteur]
                 
                 let routeInfo = null
-                if (index > 0) {
+                if (index > 0 && filteredRdvs[index - 1].prospect) {
                   routeInfo = calculateDistance(
                     filteredRdvs[index - 1].prospect,
                     rdv.prospect
@@ -739,9 +828,24 @@ export default function PlanningAdvancedSection() {
                 
                 const priorityColors = {
                   haute: "border-red-500 bg-red-50",
-                  moyenne: "border-yellow-500 bg-yellow-50",
-                  basse: "border-green-500 bg-green-50"
+                  urgente: "border-orange-500 bg-orange-50",
+                  normale: "border-green-500 bg-green-50"
                 }
+                
+                const statutBadges = {
+                  planifie: { color: "bg-blue-100 text-blue-800", icon: "📋" },
+                  confirme: { color: "bg-green-100 text-green-800", icon: "✅" },
+                  'en-cours': { color: "bg-yellow-100 text-yellow-800", icon: "⏳" },
+                  termine: { color: "bg-gray-100 text-gray-800", icon: "✔️" },
+                  annule: { color: "bg-red-100 text-red-800", icon: "❌" },
+                  reporte: { color: "bg-orange-100 text-orange-800", icon: "📅" }
+                }
+                
+                const rdvTime = new Date(rdv.date_time)
+                const heureRdv = rdvTime.toLocaleTimeString('fr-FR', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })
                 
                 return (
                   <div key={rdv.id}>
@@ -756,24 +860,44 @@ export default function PlanningAdvancedSection() {
                       </div>
                     )}
                     
-                    <div className={`border-l-4 p-4 rounded-r-lg ${priorityColors[rdv.priorite || 'basse']}`}>
+                    <div className={`border-l-4 p-4 rounded-r-lg ${priorityColors[rdv.priorite || 'normale']}`}>
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
-                            <span className="text-lg font-semibold">⏰ {rdv.heure}</span>
-                            <span className="text-sm text-gray-600">({rdv.duree} min)</span>
+                            <span className="text-lg font-semibold">⏰ {heureRdv}</span>
+                            <span className="text-sm text-gray-600">({rdv.duree_min} min)</span>
+                            <Badge className={statutBadges[rdv.statut]?.color || "bg-gray-100"}>
+                              {statutBadges[rdv.statut]?.icon} {rdv.statut}
+                            </Badge>
+                            <Badge className="bg-purple-100 text-purple-800">
+                              {rdv.type_visite}
+                            </Badge>
                           </div>
                           
                           <div className="mb-2">
                             <div className="font-medium text-lg">{rdv.prospect.nom}</div>
                             <div className="text-sm text-gray-600">
-                              {secteurConfig?.icon} {secteurConfig?.label} • ⭐{rdv.prospect.score}
+                              {secteurConfig?.icon} {secteurConfig?.label} • ⭐{rdv.prospect.score}/5
                             </div>
                           </div>
                           
                           <div className="text-sm text-gray-600">
-                            <div>📍 {rdv.prospect.adresse || `${rdv.prospect.ville}, ${districtConfig?.label}`}</div>
-                            {rdv.prospect.telephone && <div>📞 {rdv.prospect.telephone}</div>}
+                            <div className="flex items-center gap-2">
+                              <MapPin className="h-4 w-4" />
+                              {rdv.lieu || rdv.prospect.adresse || `${rdv.prospect.ville}, ${districtConfig?.label}`}
+                            </div>
+                            {rdv.prospect.telephone && (
+                              <div className="flex items-center gap-2 mt-1">
+                                <Phone className="h-4 w-4" />
+                                {rdv.prospect.telephone}
+                              </div>
+                            )}
+                            {rdv.prospect.contact && (
+                              <div className="flex items-center gap-2 mt-1">
+                                <User className="h-4 w-4" />
+                                {rdv.prospect.contact}
+                              </div>
+                            )}
                           </div>
                           
                           {rdv.notes && (
@@ -792,12 +916,23 @@ export default function PlanningAdvancedSection() {
                             ✏️
                           </Button>
                           
+                          {rdv.statut === 'planifie' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-green-600"
+                              onClick={() => updateRdv(rdv.id, { statut: 'confirme' })}
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                            </Button>
+                          )}
+                          
                           <Button
                             size="sm"
                             variant="outline"
                             className="text-red-600"
                             onClick={() => {
-                              if (confirm(`Supprimer le RDV ?`)) {
+                              if (confirm(`Supprimer le RDV avec ${rdv.prospect?.nom} ?`)) {
                                 deleteRdv(rdv.id)
                               }
                             }}
@@ -812,7 +947,7 @@ export default function PlanningAdvancedSection() {
               })}
 
               {/* Retour au domicile */}
-              {commercialInfo.adresse && filteredRdvs.length > 0 && (
+              {commercialInfo.adresse && filteredRdvs.length > 0 && filteredRdvs[filteredRdvs.length - 1].prospect && (
                 <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
                   <span className="text-2xl">🏠</span>
                   <div className="flex-1">
@@ -832,44 +967,7 @@ export default function PlanningAdvancedSection() {
         </CardContent>
       </Card>
 
-      {/* Dialogs */}
-      <CommercialConfigDialog
-        open={showCommercialConfig}
-        onClose={() => setShowCommercialConfig(false)}
-        commercialInfo={commercialInfo}
-        onSave={saveCommercialInfo}
-      />
-
-      <DistanceConfigDialog
-        open={showDistanceConfig}
-        onClose={() => setShowDistanceConfig(false)}
-        distances={customDistances}
-        onSave={saveCustomDistances}
-        prospects={prospects}
-      />
-
-      <SearchProspectsDialog
-        open={showSearch}
-        onClose={() => setShowSearch(false)}
-        prospects={allProspects.length > 0 ? allProspects : prospects}
-        onAddToPlanning={(prospect) => {
-          // Créer un RDV pour ce prospect
-          const rdv: RendezVous = {
-            id: `rdv-${Date.now()}`,
-            prospectId: prospect.id,
-            prospect,
-            date: selectedDate,
-            heure: '10:00',
-            duree: 60,
-            type: 'decouverte',
-            statut: 'planifie',
-            priorite: prospect.score >= 4 ? 'haute' : prospect.score >= 3 ? 'moyenne' : 'basse'
-          }
-          addRdv(rdv)
-          setShowSearch(false)
-        }}
-      />
-
+      {/* Dialog Nouveau/Modifier RDV */}
       <RdvDialog
         open={showAddRdv || !!editingRdv}
         onClose={() => {
@@ -878,592 +976,114 @@ export default function PlanningAdvancedSection() {
         }}
         prospects={prospects}
         rdv={editingRdv}
-        onSave={(rdv) => {
+        onSave={async (data) => {
           if (editingRdv) {
-            updateRdv(rdv)
+            await updateRdv(editingRdv.id, data)
           } else {
-            addRdv(rdv)
+            const prospect = prospects.find(p => p.id === data.prospect_id)
+            if (prospect) {
+              await addRdv(
+                data.prospect_id,
+                prospect,
+                data.date,
+                data.time,
+                data.duree_min,
+                data.notes,
+                data.type_visite,
+                data.priorite
+              )
+            }
           }
           setShowAddRdv(false)
           setEditingRdv(null)
-        }}
-      />
-
-      <SettingsDialog
-        open={showSettings}
-        onClose={() => setShowSettings(false)}
-        settings={settings}
-        onSave={(newSettings) => {
-          setSettings(newSettings)
-          localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings))
-          toast({ title: "Paramètres sauvegardés" })
         }}
       />
     </div>
   )
 }
 
-// Dialog Configuration Commercial
-function CommercialConfigDialog({
-  open,
-  onClose,
-  commercialInfo,
-  onSave
-}: {
-  open: boolean
-  onClose: () => void
-  commercialInfo: CommercialInfo
-  onSave: (info: CommercialInfo) => void
-}) {
-  const [form, setForm] = React.useState(commercialInfo)
-
-  React.useEffect(() => {
-    setForm(commercialInfo)
-  }, [commercialInfo])
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>👤 Configuration du Commercial</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Nom</label>
-            <Input
-              value={form.nom}
-              onChange={(e) => setForm({...form, nom: e.target.value})}
-              placeholder="Votre nom"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Adresse de départ (domicile/bureau)</label>
-            <Input
-              value={form.adresse}
-              onChange={(e) => setForm({...form, adresse: e.target.value})}
-              placeholder="Ex: 10 Royal Road"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Ville</label>
-              <Input
-                value={form.ville}
-                onChange={(e) => setForm({...form, ville: e.target.value})}
-                placeholder="Ex: Port Louis"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">District</label>
-              <select
-                value={form.district}
-                onChange={(e) => setForm({...form, district: e.target.value as District})}
-                className="w-full border rounded-md px-3 py-2"
-              >
-                {Object.entries(DISTRICTS_CONFIG).map(([key, config]) => (
-                  <option key={key} value={key}>{config.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Heure de départ habituelle</label>
-              <Input
-                type="time"
-                value={form.startHour || '08:00'}
-                onChange={(e) => setForm({...form, startHour: e.target.value})}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Heure de retour souhaitée</label>
-              <Input
-                type="time"
-                value={form.endHour || '18:00'}
-                onChange={(e) => setForm({...form, endHour: e.target.value})}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Téléphone</label>
-            <Input
-              value={form.telephone || ''}
-              onChange={(e) => setForm({...form, telephone: e.target.value})}
-              placeholder="+230 5XXX XXXX"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Véhicule</label>
-            <Input
-              value={form.vehicule || ''}
-              onChange={(e) => setForm({...form, vehicule: e.target.value})}
-              placeholder="Marque, modèle (optionnel)"
-            />
-          </div>
-
-          <div className="p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800">
-              💡 Ces informations permettent de calculer les distances depuis votre point de départ
-              et d'optimiser vos tournées en fonction de vos horaires.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-3 mt-6">
-          <Button variant="outline" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button onClick={() => {
-            onSave(form)
-            onClose()
-          }}>
-            Enregistrer
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// Dialog Configuration Distances
-function DistanceConfigDialog({
-  open,
-  onClose,
-  distances,
-  onSave,
-  prospects
-}: {
-  open: boolean
-  onClose: () => void
-  distances: CustomDistance[]
-  onSave: (distances: CustomDistance[]) => void
-  prospects: Prospect[]
-}) {
-  const [list, setList] = React.useState(distances)
-  const [newDistance, setNewDistance] = React.useState({
-    from: '',
-    to: '',
-    distance: 0,
-    duration: 0,
-    notes: ''
-  })
-
-  React.useEffect(() => {
-    setList(distances)
-  }, [distances])
-
-  function addDistance() {
-    if (newDistance.from && newDistance.to && newDistance.distance > 0) {
-      setList([...list, {
-        id: `dist-${Date.now()}`,
-        ...newDistance
-      }])
-      setNewDistance({
-        from: '',
-        to: '',
-        distance: 0,
-        duration: 0,
-        notes: ''
-      })
-    }
-  }
-
-  function removeDistance(id: string) {
-    setList(list.filter(d => d.id !== id))
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>📏 Configuration des Distances Personnalisées</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          <div className="p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800">
-              Définissez des distances précises entre des adresses spécifiques.
-              Ces distances seront prioritaires sur les estimations par district.
-            </p>
-          </div>
-
-          {/* Formulaire d'ajout */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Ajouter une distance</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1">De</label>
-                  <Input
-                    value={newDistance.from}
-                    onChange={(e) => setNewDistance({...newDistance, from: e.target.value})}
-                    placeholder="Adresse de départ"
-                    list="addresses"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-1">À</label>
-                  <Input
-                    value={newDistance.to}
-                    onChange={(e) => setNewDistance({...newDistance, to: e.target.value})}
-                    placeholder="Adresse d'arrivée"
-                    list="addresses"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Distance (km)</label>
-                  <Input
-                    type="number"
-                    value={newDistance.distance}
-                    onChange={(e) => setNewDistance({...newDistance, distance: parseFloat(e.target.value) || 0})}
-                    min="0"
-                    step="0.1"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-1">Durée (min)</label>
-                  <Input
-                    type="number"
-                    value={newDistance.duration}
-                    onChange={(e) => setNewDistance({...newDistance, duration: parseInt(e.target.value) || 0})}
-                    min="0"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-1">Notes</label>
-                  <Input
-                    value={newDistance.notes}
-                    onChange={(e) => setNewDistance({...newDistance, notes: e.target.value})}
-                    placeholder="Optionnel"
-                  />
-                </div>
-              </div>
-
-              <Button 
-                onClick={addDistance}
-                disabled={!newDistance.from || !newDistance.to || newDistance.distance <= 0}
-                className="w-full"
-              >
-                ➕ Ajouter cette distance
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Liste des distances */}
-          <div className="space-y-2">
-            <h3 className="font-medium">Distances configurées ({list.length})</h3>
-            {list.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">
-                Aucune distance personnalisée configurée
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {list.map(dist => (
-                  <div key={dist.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <div className="text-sm">
-                        <span className="font-medium">{dist.from}</span>
-                        <span className="mx-2">→</span>
-                        <span className="font-medium">{dist.to}</span>
-                      </div>
-                      <div className="text-xs text-gray-600 mt-1">
-                        {dist.distance} km • {dist.duration} min
-                        {dist.notes && ` • ${dist.notes}`}
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-red-600"
-                      onClick={() => removeDistance(dist.id)}
-                    >
-                      🗑️
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Suggestions d'adresses */}
-          <datalist id="addresses">
-            {prospects.map(p => (
-              <option key={p.id} value={p.adresse || `${p.ville}, ${p.district}`} />
-            ))}
-          </datalist>
-        </div>
-
-        <div className="flex justify-end gap-3 mt-6">
-          <Button variant="outline" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button onClick={() => {
-            onSave(list)
-            onClose()
-          }}>
-            Enregistrer ({list.length} distances)
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// Dialog Recherche Prospects
-function SearchProspectsDialog({
-  open,
-  onClose,
-  prospects,
-  onAddToPlanning
+// Dialog RDV unifié
+function RdvDialog({ 
+  open, 
+  onClose, 
+  prospects, 
+  rdv, 
+  onSave 
 }: {
   open: boolean
   onClose: () => void
   prospects: Prospect[]
-  onAddToPlanning: (prospect: Prospect) => void
+  rdv: RendezVous | null
+  onSave: (data: any) => void
 }) {
-  const [search, setSearch] = React.useState('')
-  const [filters, setFilters] = React.useState({
-    district: '',
-    secteur: '',
-    statut: '',
-    score: 0
-  })
-
-  const filtered = React.useMemo(() => {
-    return prospects.filter(p => {
-      const matchSearch = !search || 
-        p.nom.toLowerCase().includes(search.toLowerCase()) ||
-        p.ville?.toLowerCase().includes(search.toLowerCase()) ||
-        p.adresse?.toLowerCase().includes(search.toLowerCase()) ||
-        p.contact?.toLowerCase().includes(search.toLowerCase())
-      
-      const matchDistrict = !filters.district || p.district === filters.district
-      const matchSecteur = !filters.secteur || p.secteur === filters.secteur
-      const matchStatut = !filters.statut || p.statut === filters.statut
-      const matchScore = !filters.score || p.score >= filters.score
-      
-      return matchSearch && matchDistrict && matchSecteur && matchStatut && matchScore
-    })
-  }, [prospects, search, filters])
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>🔍 Recherche dans la base ({prospects.length} prospects)</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          {/* Barre de recherche */}
-          <div>
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Rechercher par nom, ville, adresse, contact..."
-              className="w-full"
-            />
-          </div>
-
-          {/* Filtres */}
-          <div className="grid grid-cols-4 gap-3">
-            <select
-              value={filters.district}
-              onChange={(e) => setFilters({...filters, district: e.target.value})}
-              className="border rounded-md px-3 py-2"
-            >
-              <option value="">Tous les districts</option>
-              {Object.entries(DISTRICTS_CONFIG).map(([key, config]) => (
-                <option key={key} value={key}>{config.label}</option>
-              ))}
-            </select>
-
-            <select
-              value={filters.secteur}
-              onChange={(e) => setFilters({...filters, secteur: e.target.value})}
-              className="border rounded-md px-3 py-2"
-            >
-              <option value="">Tous les secteurs</option>
-              {Object.entries(SECTEURS_CONFIG).map(([key, config]) => (
-                <option key={key} value={key}>
-                  {config.icon} {config.label}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={filters.statut}
-              onChange={(e) => setFilters({...filters, statut: e.target.value})}
-              className="border rounded-md px-3 py-2"
-            >
-              <option value="">Tous les statuts</option>
-              <option value="nouveau">Nouveau</option>
-              <option value="contacte">Contacté</option>
-              <option value="qualifie">Qualifié</option>
-              <option value="proposition">Proposition</option>
-              <option value="negociation">Négociation</option>
-              <option value="signe">Signé</option>
-              <option value="perdu">Perdu</option>
-            </select>
-
-            <select
-              value={filters.score}
-              onChange={(e) => setFilters({...filters, score: parseInt(e.target.value)})}
-              className="border rounded-md px-3 py-2"
-            >
-              <option value="0">Tous les scores</option>
-              <option value="3">⭐⭐⭐ et plus</option>
-              <option value="4">⭐⭐⭐⭐ et plus</option>
-              <option value="5">⭐⭐⭐⭐⭐</option>
-            </select>
-          </div>
-
-          {/* Résultats */}
-          <div className="border rounded-lg max-h-96 overflow-y-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr>
-                  <th className="px-4 py-2 text-left text-sm font-medium">Nom</th>
-                  <th className="px-4 py-2 text-left text-sm font-medium">Secteur</th>
-                  <th className="px-4 py-2 text-left text-sm font-medium">Ville</th>
-                  <th className="px-4 py-2 text-left text-sm font-medium">District</th>
-                  <th className="px-4 py-2 text-left text-sm font-medium">Score</th>
-                  <th className="px-4 py-2 text-left text-sm font-medium">Contact</th>
-                  <th className="px-4 py-2 text-left text-sm font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.slice(0, 100).map(p => (
-                  <tr key={p.id} className="border-t hover:bg-gray-50">
-                    <td className="px-4 py-2 text-sm font-medium">{p.nom}</td>
-                    <td className="px-4 py-2 text-sm">
-                      {SECTEURS_CONFIG[p.secteur]?.icon} {SECTEURS_CONFIG[p.secteur]?.label}
-                    </td>
-                    <td className="px-4 py-2 text-sm">{p.ville}</td>
-                    <td className="px-4 py-2 text-sm">{DISTRICTS_CONFIG[p.district]?.label}</td>
-                    <td className="px-4 py-2 text-sm">{'⭐'.repeat(p.score)}</td>
-                    <td className="px-4 py-2 text-sm">{p.contact || '-'}</td>
-                    <td className="px-4 py-2">
-                      <Button
-                        size="sm"
-                        onClick={() => onAddToPlanning(p)}
-                      >
-                        ➕ Planifier
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            
-            {filtered.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                Aucun prospect ne correspond aux critères
-              </div>
-            )}
-            
-            {filtered.length > 100 && (
-              <div className="text-center py-2 text-sm text-gray-500 bg-gray-50">
-                Affichage limité aux 100 premiers résultats. Affinez votre recherche.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex justify-between items-center mt-6">
-          <span className="text-sm text-gray-600">
-            {filtered.length} prospect(s) trouvé(s)
-          </span>
-          <Button variant="outline" onClick={onClose}>
-            Fermer
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// Dialog RDV (simplifié)
-function RdvDialog({ open, onClose, prospects, rdv, onSave }: any) {
   const [form, setForm] = React.useState({
-    prospectId: rdv?.prospectId?.toString() || '',
-    date: rdv?.date || new Date().toISOString().split('T')[0],
-    heure: rdv?.heure || '10:00',
-    duree: rdv?.duree || 60,
-    type: rdv?.type || 'decouverte',
-    statut: rdv?.statut || 'planifie',
-    notes: rdv?.notes || ''
+    prospect_id: 0,
+    date: '',
+    time: '',
+    duree_min: 60,
+    type_visite: 'decouverte' as const,
+    priorite: 'normale' as const,
+    statut: 'planifie' as const,
+    notes: '',
+    lieu: ''
   })
 
   React.useEffect(() => {
     if (rdv) {
+      const dateTime = new Date(rdv.date_time)
       setForm({
-        prospectId: rdv.prospectId.toString(),
-        date: rdv.date,
-        heure: rdv.heure,
-        duree: rdv.duree,
-        type: rdv.type,
+        prospect_id: rdv.prospect_id,
+        date: dateTime.toISOString().split('T')[0],
+        time: dateTime.toTimeString().substring(0, 5),
+        duree_min: rdv.duree_min,
+        type_visite: rdv.type_visite,
+        priorite: rdv.priorite,
         statut: rdv.statut,
-        notes: rdv.notes || ''
+        notes: rdv.notes || '',
+        lieu: rdv.lieu || ''
+      })
+    } else {
+      setForm({
+        prospect_id: 0,
+        date: new Date().toISOString().split('T')[0],
+        time: '10:00',
+        duree_min: 60,
+        type_visite: 'decouverte',
+        priorite: 'normale',
+        statut: 'planifie',
+        notes: '',
+        lieu: ''
       })
     }
   }, [rdv])
 
   function handleSubmit() {
-    const prospect = prospects.find((p: any) => p.id === parseInt(form.prospectId))
-    if (!prospect) return
-
-    const newRdv = {
-      id: rdv?.id || `rdv-${Date.now()}`,
-      prospectId: prospect.id,
-      prospect,
-      date: form.date,
-      heure: form.heure,
-      duree: form.duree,
-      type: form.type,
-      statut: form.statut,
-      notes: form.notes,
-      priorite: prospect.score >= 4 ? 'haute' : prospect.score >= 3 ? 'moyenne' : 'basse'
-    }
-
-    onSave(newRdv)
+    if (!form.prospect_id || !form.date || !form.time) return
+    onSave(form)
   }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{rdv ? 'Modifier' : 'Planifier'} un RDV</DialogTitle>
+          <DialogTitle>
+            {rdv ? 'Modifier' : 'Planifier'} un rendez-vous
+          </DialogTitle>
         </DialogHeader>
         
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2">Prospect</label>
+            <label className="block text-sm font-medium mb-2">Prospect *</label>
             <select
-              value={form.prospectId}
-              onChange={(e) => setForm({...form, prospectId: e.target.value})}
+              value={form.prospect_id}
+              onChange={(e) => setForm({...form, prospect_id: parseInt(e.target.value)})}
               className="w-full border rounded-md px-3 py-2"
               disabled={!!rdv}
             >
-              <option value="">Sélectionner</option>
-              {prospects.map((p: any) => (
+              <option value="0">Sélectionner un prospect</option>
+              {prospects.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.nom} - {p.ville} ⭐{p.score}
+                  {p.nom} - {p.ville} ⭐{p.score}/5
                 </option>
               ))}
             </select>
@@ -1471,7 +1091,7 @@ function RdvDialog({ open, onClose, prospects, rdv, onSave }: any) {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Date</label>
+              <label className="block text-sm font-medium mb-2">Date *</label>
               <Input
                 type="date"
                 value={form.date}
@@ -1480,41 +1100,63 @@ function RdvDialog({ open, onClose, prospects, rdv, onSave }: any) {
             </div>
             
             <div>
-              <label className="block text-sm font-medium mb-2">Heure</label>
+              <label className="block text-sm font-medium mb-2">Heure *</label>
               <Input
                 type="time"
-                value={form.heure}
-                onChange={(e) => setForm({...form, heure: e.target.value})}
+                value={form.time}
+                onChange={(e) => setForm({...form, time: e.target.value})}
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Type de visite</label>
+              <select
+                value={form.type_visite}
+                onChange={(e) => setForm({...form, type_visite: e.target.value as any})}
+                className="w-full border rounded-md px-3 py-2"
+              >
+                <option value="decouverte">Découverte</option>
+                <option value="presentation">Présentation</option>
+                <option value="negociation">Négociation</option>
+                <option value="signature">Signature</option>
+                <option value="suivi">Suivi</option>
+              </select>
+            </div>
+
             <div>
               <label className="block text-sm font-medium mb-2">Durée (min)</label>
               <Input
                 type="number"
-                value={form.duree}
-                onChange={(e) => setForm({...form, duree: parseInt(e.target.value) || 60})}
+                value={form.duree_min}
+                onChange={(e) => setForm({...form, duree_min: parseInt(e.target.value) || 60})}
                 min="15"
                 step="15"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Type</label>
+              <label className="block text-sm font-medium mb-2">Priorité</label>
               <select
-                value={form.type}
-                onChange={(e) => setForm({...form, type: e.target.value})}
+                value={form.priorite}
+                onChange={(e) => setForm({...form, priorite: e.target.value as any})}
                 className="w-full border rounded-md px-3 py-2"
               >
-                <option value="decouverte">Découverte</option>
-                <option value="demo">Démonstration</option>
-                <option value="negociation">Négociation</option>
-                <option value="signature">Signature</option>
-                <option value="suivi">Suivi</option>
+                <option value="normale">Normale</option>
+                <option value="haute">Haute</option>
+                <option value="urgente">Urgente</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Lieu</label>
+            <Input
+              value={form.lieu}
+              onChange={(e) => setForm({...form, lieu: e.target.value})}
+              placeholder="Lieu du rendez-vous"
+            />
           </div>
 
           <div>
@@ -1523,146 +1165,35 @@ function RdvDialog({ open, onClose, prospects, rdv, onSave }: any) {
               value={form.notes}
               onChange={(e) => setForm({...form, notes: e.target.value})}
               rows={3}
+              placeholder="Points à aborder, objectifs..."
             />
           </div>
-        </div>
 
-        <div className="flex justify-end gap-3 mt-6">
-          <Button variant="outline" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button onClick={handleSubmit}>
-            {rdv ? 'Enregistrer' : 'Planifier'}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// Dialog Paramètres (simplifié)
-function SettingsDialog({ open, onClose, settings, onSave }: any) {
-  const [form, setForm] = React.useState(settings)
-
-  React.useEffect(() => {
-    setForm(settings)
-  }, [settings])
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>⚙️ Paramètres de calcul</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          <div className="p-4 bg-gray-50 rounded-lg">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.useIndemnity}
-                onChange={(e) => setForm({...form, useIndemnity: e.target.checked})}
-                className="w-4 h-4"
-              />
-              <div>
-                <div className="font-medium">Indemnités kilométriques</div>
-                <div className="text-sm text-gray-600">
-                  Sinon, calcul par consommation
-                </div>
-              </div>
-            </label>
-          </div>
-
-          {form.useIndemnity ? (
+          {rdv && (
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Indemnité par km (Rs)
-              </label>
-              <Input
-                type="number"
-                value={form.indemnityPerKm}
-                onChange={(e) => setForm({...form, indemnityPerKm: parseFloat(e.target.value) || 0})}
-              />
+              <label className="block text-sm font-medium mb-2">Statut</label>
+              <select
+                value={form.statut}
+                onChange={(e) => setForm({...form, statut: e.target.value as any})}
+                className="w-full border rounded-md px-3 py-2"
+              >
+                <option value="planifie">Planifié</option>
+                <option value="confirme">Confirmé</option>
+                <option value="en-cours">En cours</option>
+                <option value="termine">Terminé</option>
+                <option value="annule">Annulé</option>
+                <option value="reporte">Reporté</option>
+              </select>
             </div>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Prix essence (Rs/L)
-                </label>
-                <Input
-                  type="number"
-                  value={form.fuelPrice}
-                  onChange={(e) => setForm({...form, fuelPrice: parseFloat(e.target.value) || 0})}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Consommation (L/100km)
-                </label>
-                <Input
-                  type="number"
-                  value={form.consumption}
-                  onChange={(e) => setForm({...form, consumption: parseFloat(e.target.value) || 0})}
-                />
-              </div>
-            </>
           )}
-
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Vitesse moyenne normale (km/h)
-            </label>
-            <Input
-              type="number"
-              value={form.averageSpeed}
-              onChange={(e) => setForm({...form, averageSpeed: parseFloat(e.target.value) || 40})}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Début heures de pointe
-              </label>
-              <Input
-                type="time"
-                value={form.rushHourStart}
-                onChange={(e) => setForm({...form, rushHourStart: e.target.value})}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Fin heures de pointe
-              </label>
-              <Input
-                type="time"
-                value={form.rushHourEnd}
-                onChange={(e) => setForm({...form, rushHourEnd: e.target.value})}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Vitesse en heures de pointe (km/h)
-            </label>
-            <Input
-              type="number"
-              value={form.rushHourSpeed}
-              onChange={(e) => setForm({...form, rushHourSpeed: parseFloat(e.target.value) || 25})}
-            />
-          </div>
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="outline" onClick={onClose}>
             Annuler
           </Button>
-          <Button onClick={() => { onSave(form); onClose() }}>
-            Enregistrer
+          <Button onClick={handleSubmit} disabled={!form.prospect_id || !form.date || !form.time}>
+            {rdv ? 'Enregistrer' : 'Planifier'}
           </Button>
         </div>
       </DialogContent>
