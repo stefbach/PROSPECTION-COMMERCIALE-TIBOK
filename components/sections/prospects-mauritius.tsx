@@ -12,7 +12,7 @@ import {
   CalendarPlus, Phone, Plus, Search, Mail, Globe, MapPin, Building2, Eye, 
   FileText, TrendingUp, Users, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Trash2, Edit, X, Save, Calendar, Clock, CheckCircle, AlertCircle, DollarSign,
-  FileSignature, Download, Upload, Star, Activity, Target, Timer
+  FileSignature, Download, Upload, Star, Activity, Target, Timer, User
 } from 'lucide-react'
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
@@ -183,19 +183,6 @@ export default function MauritiusProspectsSection() {
         variant: "destructive"
       })
     }
-  }
-
-  // Changer de page
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= pagination.totalPages) {
-      loadProspects(newPage)
-    }
-  }
-
-  // Changer la limite
-  const handleLimitChange = (newLimit: number) => {
-    setPagination({ ...pagination, limit: newLimit })
-    loadProspects(1, newLimit)
   }
 
   // Appliquer les filtres
@@ -492,8 +479,33 @@ export default function MauritiusProspectsSection() {
       {/* Liste des prospects */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {filtered.map((p) => (
-       import { Calendar, Phone, MapPin, Clock, AlertCircle, User, Eye, Trash2, CheckCircle } from 'lucide-react'
+          <ProspectCard
+            key={p.id}
+            prospect={p}
+            onStatusChange={(statut) => updateStatus(p.id, statut)}
+            onUpdate={updateProspect}
+            onDelete={() => deleteProspect(p.id)}
+          />
+        ))}
+        {!loading && filtered.length === 0 && (
+          <div className="col-span-full text-center py-8 text-gray-600 bg-white rounded-lg border border-gray-200">
+            Aucun prospect ne correspond aux filtres sélectionnés.
+          </div>
+        )}
+        {loading && (
+          <div className="col-span-full text-center py-8 text-gray-600 bg-white rounded-lg border border-gray-200">
+            <div className="space-y-2">
+              <div className="animate-spin inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+              <div>{loadingMessage || 'Chargement des prospects...'}</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
+// ProspectCard amélioré avec indicateur de RDV
 function ProspectCard({ 
   prospect, 
   onStatusChange,
@@ -671,7 +683,7 @@ function ProspectCard({
             
             {prospect.contact && (
               <div className="flex items-center gap-2 text-gray-700">
-                <span className="text-gray-400">👤</span>
+                <User className="h-4 w-4 text-gray-400" />
                 <span>{prospect.contact}</span>
               </div>
             )}
@@ -761,8 +773,7 @@ function ProspectCard({
         open={showDetail}
         onClose={() => {
           setShowDetail(false)
-          // Recharger les RDV après fermeture de la modal
-          loadProspectRdvs()
+          loadProspectRdvs() // Recharger les RDV après fermeture
         }}
         onUpdate={(updated) => {
           onUpdate(updated)
@@ -779,7 +790,7 @@ function ProspectCard({
         open={showRdvDialog}
         onClose={() => setShowRdvDialog(false)}
         onSuccess={() => {
-          loadProspectRdvs() // Recharger les RDV après création/modification
+          loadProspectRdvs()
           setShowRdvDialog(false)
         }}
       />
@@ -808,64 +819,7 @@ function ProspectCard({
               Annuler
             </Button>
             <Button 
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete()
-                setShowDeleteDialog(false)
-              }}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              Supprimer
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
-}
-      
-      <ProspectDetailModal
-        prospect={prospect}
-        open={showDetail}
-        onClose={() => setShowDetail(false)}
-        onUpdate={(updated) => {
-          onUpdate(updated)
-          onStatusChange(updated.statut)
-        }}
-        onDelete={() => {
-          setShowDetail(false)
-          onDelete()
-        }}
-      />
-
-      <RdvDialog
-        prospect={prospect}
-        open={showRdvDialog}
-        onClose={() => setShowRdvDialog(false)}
-      />
-
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent className="bg-white max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-gray-900">Êtes-vous sûr ?</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-gray-600">
-              Cette action supprimera définitivement le prospect "{prospect.nom}". 
-              Cette action ne peut pas être annulée.
-            </p>
-          </div>
-          <div className="flex justify-end gap-3">
-            <Button 
-              variant="outline"
-              onClick={() => setShowDeleteDialog(false)}
-              className="bg-white text-gray-700 border-gray-300"
-            >
-              Annuler
-            </Button>
-            <Button 
-              onClick={(e) => {
-                e.stopPropagation()
+              onClick={() => {
                 onDelete()
                 setShowDeleteDialog(false)
               }}
@@ -1053,7 +1007,6 @@ function ProspectDetailModal({
             </TabsList>
 
             <TabsContent value="informations" className="space-y-4 mt-4">
-              {/* Contenu existant des informations */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card className="bg-gray-50 border-gray-200">
                   <CardHeader>
@@ -1089,11 +1042,9 @@ function ProspectDetailModal({
 
                     <div>
                       <label className="text-sm font-medium text-gray-700">Score</label>
-                     <p className="mt-1 text-yellow-500">
-  {"★".repeat(Math.min(5, Math.max(1, Math.ceil((form.score || 50) / 20)))) + 
-   "☆".repeat(Math.max(0, 5 - Math.min(5, Math.max(1, Math.ceil((form.score || 50) / 20)))))} 
-  ({Math.min(5, Math.max(1, Math.ceil((form.score || 50) / 20)))}/5)
-</p>
+                      <p className="mt-1 text-yellow-500">
+                        {getStars(form.score)} ({form.score}/5)
+                      </p>
                     </div>
 
                     <div>
@@ -1235,6 +1186,41 @@ function ProspectDetailModal({
           </Tabs>
         </DialogContent>
       </Dialog>
+
+      {showDeleteDialog && onDelete && (
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent className="bg-white max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-gray-900">Confirmer la suppression</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-gray-600">
+                Êtes-vous sûr de vouloir supprimer "{prospect.nom}" ?
+                Cette action est irréversible.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowDeleteDialog(false)}
+                className="bg-white text-gray-700 border-gray-300"
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={() => {
+                  onDelete()
+                  setShowDeleteDialog(false)
+                  onClose()
+                }}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Supprimer
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   )
 }
@@ -1281,7 +1267,7 @@ function RdvDialog({
     try {
       const rdvData = {
         prospect_id: prospect.id,
-        commercial: "Karine MOMUS", // À remplacer par l'utilisateur connecté
+        commercial: "Karine MOMUS",
         titre: `RDV - ${prospect.nom}`,
         date_time: `${form.date}T${form.time}:00`,
         duree_min: form.duree_min,
@@ -1416,7 +1402,6 @@ function RdvDialog({
           />
         </div>
 
-        {/* Informations de qualification */}
         <Card className="bg-blue-50 border-blue-200">
           <CardContent className="p-4">
             <h4 className="font-medium text-blue-900 mb-2">Critères de qualification</h4>
@@ -1479,7 +1464,7 @@ function RdvDialog({
   )
 }
 
-// AddProspectDialog reste identique
+// AddProspectDialog
 function AddProspectDialog({ onAdd }: { onAdd: (p: Omit<Prospect, "id">) => void }) {
   const [open, setOpen] = React.useState(false)
   const [form, setForm] = React.useState<Omit<Prospect, "id">>({
