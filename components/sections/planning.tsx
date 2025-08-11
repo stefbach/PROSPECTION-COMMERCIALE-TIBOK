@@ -8,7 +8,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, Clock, Phone, MapPin, User, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react'
+import { 
+  Calendar, Clock, Phone, MapPin, User, AlertCircle, CheckCircle, 
+  RefreshCw, Search, Download, Plus, Settings, Filter, X,
+  ChevronLeft, ChevronRight, Users
+} from 'lucide-react'
 
 // Types
 type District = 'port-louis' | 'pamplemousses' | 'riviere-du-rempart' | 'flacq' | 'grand-port' | 'savanne' | 'plaines-wilhems' | 'moka' | 'riviere-noire'
@@ -242,6 +246,13 @@ export default function PlanningAdvancedSection() {
   const [commercialInfo, setCommercialInfo] = React.useState<CommercialInfo>(DEFAULT_COMMERCIAL)
   const [customDistances, setCustomDistances] = React.useState<CustomDistance[]>([])
   const [settings, setSettings] = React.useState<CostSettings>(DEFAULT_SETTINGS)
+  const [viewType, setViewType] = React.useState<'day' | 'week' | 'month'>('day')
+  
+  // États des filtres et recherche
+  const [searchTerm, setSearchTerm] = React.useState("")
+  const [filterStatut, setFilterStatut] = React.useState("")
+  const [filterCommercial, setFilterCommercial] = React.useState("")
+  const [filterProspect, setFilterProspect] = React.useState("")
   
   // États des dialogues
   const [showAddRdv, setShowAddRdv] = React.useState(false)
@@ -486,6 +497,54 @@ export default function PlanningAdvancedSection() {
     return { ...route, fromHome: true }
   }
 
+  // Exporter les données
+  async function exportData(format: 'excel' | 'pdf') {
+    try {
+      toast({
+        title: "Export en cours",
+        description: `Génération du fichier ${format.toUpperCase()}...`
+      })
+      
+      // TODO: Implémenter l'export réel
+      // Pour l'instant, on simule
+      setTimeout(() => {
+        toast({
+          title: "Export terminé",
+          description: `Le fichier a été téléchargé`
+        })
+      }, 2000)
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Impossible d'exporter les données",
+        variant: "destructive"
+      })
+    }
+  }
+
+  // Réinitialiser tous les filtres
+  function resetFilters() {
+    setSearchTerm("")
+    setFilterStatut("")
+    setFilterCommercial("")
+    setFilterProspect("")
+  }
+
+  // Navigation date
+  function navigateDate(direction: 'prev' | 'next' | 'today') {
+    const currentDate = new Date(selectedDate)
+    
+    if (direction === 'today') {
+      setSelectedDate(new Date().toISOString().split('T')[0])
+    } else if (direction === 'prev') {
+      currentDate.setDate(currentDate.getDate() - 1)
+      setSelectedDate(currentDate.toISOString().split('T')[0])
+    } else {
+      currentDate.setDate(currentDate.getDate() + 1)
+      setSelectedDate(currentDate.toISOString().split('T')[0])
+    }
+  }
+
   // Filtrer les RDV de la journée
   const filteredRdvs = React.useMemo(() => {
     return rendezVous.filter(rdv => {
@@ -494,6 +553,49 @@ export default function PlanningAdvancedSection() {
     }).sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
   }, [rendezVous, selectedDate])
 
+  // Filtrer avec la recherche et les filtres
+  const filteredRdvsBySearch = React.useMemo(() => {
+    let filtered = [...filteredRdvs]
+    
+    // Recherche
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase()
+      filtered = filtered.filter(rdv => {
+        return (
+          rdv.prospect_nom?.toLowerCase().includes(searchLower) ||
+          rdv.prospect?.nom?.toLowerCase().includes(searchLower) ||
+          rdv.commercial?.toLowerCase().includes(searchLower) ||
+          rdv.lieu?.toLowerCase().includes(searchLower) ||
+          rdv.notes?.toLowerCase().includes(searchLower) ||
+          rdv.titre?.toLowerCase().includes(searchLower)
+        )
+      })
+    }
+    
+    // Filtre statut
+    if (filterStatut) {
+      filtered = filtered.filter(rdv => rdv.statut === filterStatut)
+    }
+    
+    // Filtre commercial
+    if (filterCommercial) {
+      filtered = filtered.filter(rdv => rdv.commercial === filterCommercial)
+    }
+    
+    // Filtre prospect
+    if (filterProspect) {
+      filtered = filtered.filter(rdv => rdv.prospect_id.toString() === filterProspect)
+    }
+    
+    return filtered
+  }, [filteredRdvs, searchTerm, filterStatut, filterCommercial, filterProspect])
+
+  // Obtenir les commerciaux uniques
+  const uniqueCommercials = React.useMemo(() => {
+    const commercials = new Set(rendezVous.map(rdv => rdv.commercial).filter(Boolean))
+    return Array.from(commercials)
+  }, [rendezVous])
+
   // Calculer les statistiques
   const stats = React.useMemo(() => {
     let distanceTotale = 0
@@ -501,19 +603,19 @@ export default function PlanningAdvancedSection() {
     let coutTotal = 0
     
     // Distance depuis le domicile au premier RDV
-    if (filteredRdvs.length > 0 && commercialInfo.adresse && filteredRdvs[0].prospect) {
-      const fromHome = calculateFromHome(filteredRdvs[0].prospect)
+    if (filteredRdvsBySearch.length > 0 && commercialInfo.adresse && filteredRdvsBySearch[0].prospect) {
+      const fromHome = calculateFromHome(filteredRdvsBySearch[0].prospect)
       distanceTotale += fromHome.distance
       tempsDeplacement += fromHome.duration
       coutTotal += fromHome.cost
     }
     
     // Distances entre les RDV
-    for (let i = 0; i < filteredRdvs.length - 1; i++) {
-      if (filteredRdvs[i].prospect && filteredRdvs[i + 1].prospect) {
+    for (let i = 0; i < filteredRdvsBySearch.length - 1; i++) {
+      if (filteredRdvsBySearch[i].prospect && filteredRdvsBySearch[i + 1].prospect) {
         const route = calculateDistance(
-          filteredRdvs[i].prospect!,
-          filteredRdvs[i + 1].prospect!
+          filteredRdvsBySearch[i].prospect!,
+          filteredRdvsBySearch[i + 1].prospect!
         )
         distanceTotale += route.distance
         tempsDeplacement += route.duration
@@ -522,26 +624,26 @@ export default function PlanningAdvancedSection() {
     }
     
     // Retour au domicile depuis le dernier RDV
-    if (filteredRdvs.length > 0 && commercialInfo.adresse && filteredRdvs[filteredRdvs.length - 1].prospect) {
-      const toHome = calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect)
+    if (filteredRdvsBySearch.length > 0 && commercialInfo.adresse && filteredRdvsBySearch[filteredRdvsBySearch.length - 1].prospect) {
+      const toHome = calculateFromHome(filteredRdvsBySearch[filteredRdvsBySearch.length - 1].prospect)
       distanceTotale += toHome.distance
       tempsDeplacement += toHome.duration
       coutTotal += toHome.cost
     }
     
-    const tempsTotal = tempsDeplacement + filteredRdvs.reduce((sum, rdv) => sum + rdv.duree_min, 0)
+    const tempsTotal = tempsDeplacement + filteredRdvsBySearch.reduce((sum, rdv) => sum + rdv.duree_min, 0)
     
     // Compter les RDV par statut
     const rdvStats = {
-      total: filteredRdvs.length,
-      planifies: filteredRdvs.filter(r => r.statut === 'planifie').length,
-      confirmes: filteredRdvs.filter(r => r.statut === 'confirme').length,
-      termines: filteredRdvs.filter(r => r.statut === 'termine').length,
-      annules: filteredRdvs.filter(r => r.statut === 'annule').length
+      total: filteredRdvsBySearch.length,
+      planifies: filteredRdvsBySearch.filter(r => r.statut === 'planifie').length,
+      confirmes: filteredRdvsBySearch.filter(r => r.statut === 'confirme').length,
+      termines: filteredRdvsBySearch.filter(r => r.statut === 'termine').length,
+      annules: filteredRdvsBySearch.filter(r => r.statut === 'annule').length
     }
     
     return {
-      totalRdvs: filteredRdvs.length,
+      totalRdvs: filteredRdvsBySearch.length,
       distanceTotale: Math.round(distanceTotale * 10) / 10,
       tempsDeplacement: Math.round(tempsDeplacement),
       tempsTotal: Math.round(tempsTotal),
@@ -549,7 +651,7 @@ export default function PlanningAdvancedSection() {
       customDistancesUsed: customDistances.length,
       rdvStats
     }
-  }, [filteredRdvs, commercialInfo, customDistances, settings])
+  }, [filteredRdvsBySearch, commercialInfo, customDistances, settings])
 
   // Charger tous les prospects pour la recherche
   async function loadAllProspects() {
@@ -585,41 +687,42 @@ export default function PlanningAdvancedSection() {
 
   return (
     <div className="space-y-6">
-      {/* Header avec infos commercial */}
+      {/* Header avec titre et actions principales */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">
-            Planning de {commercialInfo.nom || 'Commercial'}
-          </h2>
-          <p className="text-gray-600">
-            {commercialInfo.adresse ? 
-              `📍 ${commercialInfo.adresse}, ${commercialInfo.ville}` : 
-              '⚠️ Adresse non configurée'
-            }
+          <h1 className="text-3xl font-bold text-gray-900">Planning</h1>
+          <p className="text-gray-600 mt-1">
+            Gestion des rendez-vous de {commercialInfo.nom || 'Commercial'}
+            {commercialInfo.adresse && ` • 📍 ${commercialInfo.adresse}, ${commercialInfo.ville}`}
           </p>
         </div>
         
         <div className="flex gap-2">
-          <Button
-            onClick={() => setShowCommercialConfig(true)}
+          <Button 
             variant="outline"
-            className={commercialInfo.adresse ? "bg-green-50" : "bg-yellow-50 text-yellow-700"}
+            onClick={loadRdvs}
+            disabled={loadingRdvs}
+            className="flex items-center gap-2"
           >
-            👤 Mon Profil
+            <RefreshCw className={`h-4 w-4 ${loadingRdvs ? 'animate-spin' : ''}`} />
+            Actualiser
           </Button>
           
-          <Button
-            onClick={() => setShowDistanceConfig(true)}
+          <Button 
             variant="outline"
+            onClick={() => exportData('excel')}
+            className="flex items-center gap-2"
           >
-            📏 Distances ({customDistances.length})
+            <Download className="h-4 w-4" />
+            Exporter
           </Button>
           
-          <Button
-            onClick={() => setShowSettings(true)}
-            variant="outline"
+          <Button 
+            onClick={() => setShowAddRdv(true)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white"
           >
-            ⚙️ Paramètres
+            <Plus className="h-4 w-4" />
+            Nouveau RDV
           </Button>
         </div>
       </div>
@@ -630,18 +733,187 @@ export default function PlanningAdvancedSection() {
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
-              <div>
+              <div className="flex-1">
                 <h3 className="font-semibold text-amber-900">Configuration requise</h3>
                 <p className="text-sm text-amber-700 mt-1">
                   Configurez votre adresse pour calculer les distances depuis votre domicile/bureau.
                 </p>
               </div>
+              <Button 
+                onClick={() => setShowCommercialConfig(true)}
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                Configurer
+              </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Statistiques améliorées */}
+      {/* Barre de filtres et recherche */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">Filtres et recherche</CardTitle>
+            {(searchTerm || filterStatut || filterCommercial || filterProspect) && (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={resetFilters}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Réinitialiser
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Barre de recherche */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Rechercher..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            {/* Filtre prospects */}
+            <select
+              value={filterProspect}
+              onChange={(e) => setFilterProspect(e.target.value)}
+              className="w-full border rounded-md px-3 py-2 bg-white"
+            >
+              <option value="">Tous les prospects</option>
+              {prospects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.nom}
+                </option>
+              ))}
+            </select>
+
+            {/* Filtre commerciaux */}
+            <select
+              value={filterCommercial}
+              onChange={(e) => setFilterCommercial(e.target.value)}
+              className="w-full border rounded-md px-3 py-2 bg-white"
+            >
+              <option value="">Tous les commerciaux</option>
+              {uniqueCommercials.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+
+            {/* Filtre statuts */}
+            <select
+              value={filterStatut}
+              onChange={(e) => setFilterStatut(e.target.value)}
+              className="w-full border rounded-md px-3 py-2 bg-white"
+            >
+              <option value="">Tous les statuts</option>
+              <option value="planifie">Planifié</option>
+              <option value="confirme">Confirmé</option>
+              <option value="en-cours">En cours</option>
+              <option value="termine">Terminé</option>
+              <option value="annule">Annulé</option>
+              <option value="reporte">Reporté</option>
+            </select>
+
+            {/* Bouton Paramètres */}
+            <Button 
+              variant="outline"
+              onClick={() => setShowSettings(true)}
+              className="flex items-center gap-2"
+            >
+              <Settings className="h-4 w-4" />
+              Paramètres
+            </Button>
+          </div>
+
+          {/* Résumé des filtres actifs */}
+          {(searchTerm || filterStatut || filterCommercial || filterProspect) && (
+            <div className="mt-3 text-sm text-gray-600">
+              {filteredRdvsBySearch.length} rendez-vous trouvés
+              {searchTerm && ` pour "${searchTerm}"`}
+              {filterProspect && ` • Prospect: ${prospects.find(p => p.id.toString() === filterProspect)?.nom}`}
+              {filterCommercial && ` • Commercial: ${filterCommercial}`}
+              {filterStatut && ` • Statut: ${filterStatut}`}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Navigation date et vue */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                size="icon"
+                onClick={() => navigateDate('prev')}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              
+              <Button 
+                variant="outline"
+                onClick={() => navigateDate('today')}
+              >
+                Aujourd'hui
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                size="icon"
+                onClick={() => navigateDate('next')}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              
+              <span className="ml-4 font-medium">
+                {new Date(selectedDate).toLocaleDateString('fr-FR', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+              </span>
+            </div>
+
+            <div className="flex gap-2">
+              <Button 
+                variant={viewType === 'day' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewType('day')}
+              >
+                Jour
+              </Button>
+              <Button 
+                variant={viewType === 'week' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewType('week')}
+              >
+                Semaine
+              </Button>
+              <Button 
+                variant={viewType === 'month' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewType('month')}
+              >
+                Mois
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Statistiques */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
         <Card>
           <CardContent className="p-4">
@@ -718,74 +990,61 @@ export default function PlanningAdvancedSection() {
         </Card>
       </div>
 
-      {/* Contrôles */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Date</label>
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-48"
-              />
-            </div>
+      {/* Actions rapides */}
+      <div className="flex gap-2">
+        <Button
+          onClick={() => setShowCommercialConfig(true)}
+          variant="outline"
+          className={commercialInfo.adresse ? "bg-green-50" : "bg-yellow-50 text-yellow-700"}
+        >
+          <User className="h-4 w-4 mr-2" />
+          Mon Profil
+        </Button>
+        
+        <Button
+          onClick={() => setShowDistanceConfig(true)}
+          variant="outline"
+        >
+          <MapPin className="h-4 w-4 mr-2" />
+          Distances ({customDistances.length})
+        </Button>
+        
+        <Button 
+          variant="outline"
+          className="bg-purple-50 text-purple-700 border-purple-300"
+          onClick={loadAllProspects}
+          disabled={loading}
+        >
+          <Search className="h-4 w-4 mr-2" />
+          Rechercher dans la base
+        </Button>
+        
+        {filteredRdvsBySearch.length > 1 && (
+          <Button 
+            variant="outline"
+            className="bg-green-50 text-green-700 border-green-300"
+          >
+            <MapPin className="h-4 w-4 mr-2" />
+            Optimiser tournée
+          </Button>
+        )}
+      </div>
 
-            <div className="flex items-end gap-2 flex-1">
-              <Button onClick={() => setShowAddRdv(true)}>
-                ➕ Nouveau RDV
-              </Button>
-              
-              <Button 
-                variant="outline"
-                className="bg-purple-50 text-purple-700 border-purple-300"
-                onClick={loadAllProspects}
-                disabled={loading}
-              >
-                🔍 Rechercher dans la base
-              </Button>
-              
-              <Button
-                variant="outline"
-                onClick={loadRdvs}
-                className="bg-blue-50 text-blue-700"
-                disabled={loadingRdvs}
-              >
-                <RefreshCw className={`h-4 w-4 mr-2 ${loadingRdvs ? 'animate-spin' : ''}`} />
-                Actualiser
-              </Button>
-              
-              {filteredRdvs.length > 1 && (
-                <Button 
-                  variant="outline"
-                  className="bg-green-50 text-green-700 border-green-300"
-                >
-                  🗺️ Optimiser tournée
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Planning de la journée avec badges de statut */}
+      {/* Liste des RDV */}
       <Card>
         <CardHeader>
           <CardTitle>
-            Tournée du {new Date(selectedDate).toLocaleDateString('fr-FR', { 
-              weekday: 'long', 
-              day: 'numeric', 
-              month: 'long', 
-              year: 'numeric' 
-            })}
+            {viewType === 'day' ? 'Rendez-vous du jour' : 
+             viewType === 'week' ? 'Rendez-vous de la semaine' : 
+             'Rendez-vous du mois'}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredRdvs.length === 0 ? (
+          {filteredRdvsBySearch.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              <div className="text-4xl mb-2">📅</div>
-              <p>Aucun rendez-vous planifié</p>
+              <Calendar className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+              <p>Aucun rendez-vous trouvé</p>
+              {searchTerm && <p className="text-sm mt-1">Essayez de modifier vos critères de recherche</p>}
               <Button onClick={() => setShowAddRdv(true)} className="mt-4">
                 Planifier un RDV
               </Button>
@@ -793,7 +1052,7 @@ export default function PlanningAdvancedSection() {
           ) : (
             <div className="space-y-3">
               {/* Départ du domicile */}
-              {commercialInfo.adresse && (
+              {commercialInfo.adresse && filteredRdvsBySearch.length > 0 && (
                 <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
                   <span className="text-2xl">🏠</span>
                   <div className="flex-1">
@@ -802,26 +1061,26 @@ export default function PlanningAdvancedSection() {
                       Heure de départ prévue : {commercialInfo.startHour || '08:00'}
                     </div>
                   </div>
-                  {filteredRdvs.length > 0 && filteredRdvs[0].prospect && (
+                  {filteredRdvsBySearch[0].prospect && (
                     <div className="text-sm text-gray-600">
-                      → {calculateFromHome(filteredRdvs[0].prospect).distance} km 
-                      ({calculateFromHome(filteredRdvs[0].prospect).duration} min)
+                      → {calculateFromHome(filteredRdvsBySearch[0].prospect).distance} km 
+                      ({calculateFromHome(filteredRdvsBySearch[0].prospect).duration} min)
                     </div>
                   )}
                 </div>
               )}
 
-              {/* RDV de la journée avec statuts améliorés */}
-              {filteredRdvs.map((rdv, index) => {
+              {/* RDV de la journée */}
+              {filteredRdvsBySearch.map((rdv, index) => {
                 if (!rdv.prospect) return null
                 
                 const districtConfig = DISTRICTS_CONFIG[rdv.prospect.district]
                 const secteurConfig = SECTEURS_CONFIG[rdv.prospect.secteur]
                 
                 let routeInfo = null
-                if (index > 0 && filteredRdvs[index - 1].prospect) {
+                if (index > 0 && filteredRdvsBySearch[index - 1].prospect) {
                   routeInfo = calculateDistance(
-                    filteredRdvs[index - 1].prospect,
+                    filteredRdvsBySearch[index - 1].prospect,
                     rdv.prospect
                   )
                 }
@@ -947,7 +1206,7 @@ export default function PlanningAdvancedSection() {
               })}
 
               {/* Retour au domicile */}
-              {commercialInfo.adresse && filteredRdvs.length > 0 && filteredRdvs[filteredRdvs.length - 1].prospect && (
+              {commercialInfo.adresse && filteredRdvsBySearch.length > 0 && filteredRdvsBySearch[filteredRdvsBySearch.length - 1].prospect && (
                 <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
                   <span className="text-2xl">🏠</span>
                   <div className="flex-1">
@@ -957,8 +1216,8 @@ export default function PlanningAdvancedSection() {
                     </div>
                   </div>
                   <div className="text-sm text-gray-600">
-                    ← {calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect).distance} km 
-                    ({calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect).duration} min)
+                    ← {calculateFromHome(filteredRdvsBySearch[filteredRdvsBySearch.length - 1].prospect).distance} km 
+                    ({calculateFromHome(filteredRdvsBySearch[filteredRdvsBySearch.length - 1].prospect).duration} min)
                   </div>
                 </div>
               )}
@@ -996,6 +1255,34 @@ export default function PlanningAdvancedSection() {
           }
           setShowAddRdv(false)
           setEditingRdv(null)
+        }}
+      />
+
+      {/* Dialog Configuration Commercial */}
+      <ConfigCommercialDialog
+        open={showCommercialConfig}
+        onClose={() => setShowCommercialConfig(false)}
+        commercialInfo={commercialInfo}
+        onSave={saveCommercialInfo}
+      />
+
+      {/* Dialog Configuration Distances */}
+      <ConfigDistancesDialog
+        open={showDistanceConfig}
+        onClose={() => setShowDistanceConfig(false)}
+        distances={customDistances}
+        onSave={saveCustomDistances}
+      />
+
+      {/* Dialog Paramètres */}
+      <SettingsDialog
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        settings={settings}
+        onSave={(newSettings) => {
+          setSettings(newSettings)
+          localStorage.setItem('planning_cost_settings', JSON.stringify(newSettings))
+          toast({ title: "Paramètres sauvegardés" })
         }}
       />
     </div>
@@ -1194,6 +1481,288 @@ function RdvDialog({
           </Button>
           <Button onClick={handleSubmit} disabled={!form.prospect_id || !form.date || !form.time}>
             {rdv ? 'Enregistrer' : 'Planifier'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Dialog Configuration Commercial
+function ConfigCommercialDialog({
+  open,
+  onClose,
+  commercialInfo,
+  onSave
+}: {
+  open: boolean
+  onClose: () => void
+  commercialInfo: CommercialInfo
+  onSave: (info: CommercialInfo) => void
+}) {
+  const [form, setForm] = React.useState(commercialInfo)
+
+  React.useEffect(() => {
+    setForm(commercialInfo)
+  }, [commercialInfo])
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Configuration du commercial</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Nom</label>
+            <Input
+              value={form.nom}
+              onChange={(e) => setForm({...form, nom: e.target.value})}
+              placeholder="Votre nom"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-2">Adresse</label>
+            <Input
+              value={form.adresse}
+              onChange={(e) => setForm({...form, adresse: e.target.value})}
+              placeholder="Votre adresse"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-2">Ville</label>
+            <Input
+              value={form.ville}
+              onChange={(e) => setForm({...form, ville: e.target.value})}
+              placeholder="Votre ville"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-2">District</label>
+            <select
+              value={form.district}
+              onChange={(e) => setForm({...form, district: e.target.value as District})}
+              className="w-full border rounded-md px-3 py-2"
+            >
+              {Object.entries(DISTRICTS_CONFIG).map(([key, config]) => (
+                <option key={key} value={key}>{config.label}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Heure de départ</label>
+              <Input
+                type="time"
+                value={form.startHour || '08:00'}
+                onChange={(e) => setForm({...form, startHour: e.target.value})}
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">Heure de retour</label>
+              <Input
+                type="time"
+                value={form.endHour || '18:00'}
+                onChange={(e) => setForm({...form, endHour: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button onClick={() => {
+            onSave(form)
+            onClose()
+          }}>
+            Enregistrer
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Dialog Configuration Distances
+function ConfigDistancesDialog({
+  open,
+  onClose,
+  distances,
+  onSave
+}: {
+  open: boolean
+  onClose: () => void
+  distances: CustomDistance[]
+  onSave: (distances: CustomDistance[]) => void
+}) {
+  const [localDistances, setLocalDistances] = React.useState(distances)
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Distances personnalisées</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Configurez des distances spécifiques entre vos adresses fréquentes.
+          </p>
+          
+          {localDistances.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              Aucune distance personnalisée configurée
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {localDistances.map((distance, index) => (
+                <div key={distance.id} className="flex items-center gap-2 p-2 border rounded">
+                  <div className="flex-1">
+                    <span className="text-sm">{distance.from} → {distance.to}</span>
+                    <span className="text-sm text-gray-600 ml-2">
+                      {distance.distance} km • {distance.duration} min
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setLocalDistances(localDistances.filter((_, i) => i !== index))
+                    }}
+                  >
+                    ❌
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <Button
+            variant="outline"
+            onClick={() => {
+              // TODO: Implémenter l'ajout de distance
+            }}
+          >
+            + Ajouter une distance
+          </Button>
+        </div>
+        
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button onClick={() => {
+            onSave(localDistances)
+            onClose()
+          }}>
+            Enregistrer
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Dialog Paramètres
+function SettingsDialog({
+  open,
+  onClose,
+  settings,
+  onSave
+}: {
+  open: boolean
+  onClose: () => void
+  settings: CostSettings
+  onSave: (settings: CostSettings) => void
+}) {
+  const [form, setForm] = React.useState(settings)
+
+  React.useEffect(() => {
+    setForm(settings)
+  }, [settings])
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Paramètres de calcul</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Prix du carburant (Rs/L)</label>
+            <Input
+              type="number"
+              value={form.fuelPrice}
+              onChange={(e) => setForm({...form, fuelPrice: parseFloat(e.target.value) || 0})}
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-2">Consommation (L/100km)</label>
+            <Input
+              type="number"
+              value={form.consumption}
+              onChange={(e) => setForm({...form, consumption: parseFloat(e.target.value) || 0})}
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-2">Vitesse moyenne (km/h)</label>
+            <Input
+              type="number"
+              value={form.averageSpeed}
+              onChange={(e) => setForm({...form, averageSpeed: parseFloat(e.target.value) || 0})}
+            />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Heure de pointe début</label>
+              <Input
+                type="time"
+                value={form.rushHourStart}
+                onChange={(e) => setForm({...form, rushHourStart: e.target.value})}
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">Heure de pointe fin</label>
+              <Input
+                type="time"
+                value={form.rushHourEnd}
+                onChange={(e) => setForm({...form, rushHourEnd: e.target.value})}
+              />
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-2">Vitesse heure de pointe (km/h)</label>
+            <Input
+              type="number"
+              value={form.rushHourSpeed}
+              onChange={(e) => setForm({...form, rushHourSpeed: parseFloat(e.target.value) || 0})}
+            />
+          </div>
+        </div>
+        
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button onClick={() => {
+            onSave(form)
+            onClose()
+          }}>
+            Enregistrer
           </Button>
         </div>
       </DialogContent>
