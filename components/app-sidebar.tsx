@@ -17,7 +17,7 @@ import {
 import { Building2, CalendarPlus, ClipboardCheck, LayoutDashboard, Route, Brain } from 'lucide-react'
 
 type Props = {
-  onNavigate?: (key: "dashboard" | "prospects" | "rdv" | "planning" | "ai") => void
+  onNavigate?: (key: "dashboard" | "prospects" | "planning" | "ai") => void
   current?: "dashboard" | "prospects" | "rdv" | "qualification" | "planning" | "ai"
 }
 
