@@ -1,6 +1,7 @@
 // app/api/prospects/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '../../../lib/database'
+import { rdvDB } from '../../../lib/rdv-database'
 
 export async function GET(request: NextRequest) {
   try {
@@ -145,7 +146,13 @@ export async function DELETE(request: NextRequest) {
       )
     }
     
-    const success = db.deleteProspect(parseInt(id))
+    const prospectId = parseInt(id)
+    
+    // Supprimer d'abord tous les RDV associés au prospect
+    const deletedRdvCount = rdvDB.deleteProspectRDVs(prospectId)
+    
+    // Puis supprimer le prospect
+    const success = db.deleteProspect(prospectId)
     
     if (!success) {
       return NextResponse.json(
@@ -154,7 +161,10 @@ export async function DELETE(request: NextRequest) {
       )
     }
     
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ 
+      success: true,
+      deletedRdvs: deletedRdvCount 
+    })
   } catch (error) {
     console.error('Erreur DELETE /api/prospects:', error)
     return NextResponse.json({ error: 'Erreur lors de la suppression' }, { status: 500 })
