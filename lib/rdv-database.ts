@@ -1,4 +1,6 @@
 // lib/rdv-database.ts
+// MODULE HYBRIDE RDV : SUPABASE + BASE EN MÉMOIRE
+
 import { createClient } from '@supabase/supabase-js'
 
 export interface RDV {
@@ -19,387 +21,300 @@ export interface RDV {
 }
 
 // Configuration Supabase
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+let supabaseClient: ReturnType<typeof createClient> | null = null
 
-// Créer le client Supabase
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
-class RDVDatabase {
-  // Récupérer tous les RDV ou ceux d'un prospect
-  async getRDVs(prospect_id?: number): Promise<RDV[]> {
-    try {
-      let query = supabase.from('rdvs').select('*')
-      
-      if (prospect_id) {
-        query = query.eq('prospect_id', prospect_id)
-      }
-      
-      const { data, error } = await query.order('date_time', { ascending: true })
-      
-      if (error) {
-        console.error('Erreur récupération RDV:', error)
-        return []
-      }
-      
-      return data || []
-    } catch (error) {
-      console.error('Erreur Supabase RDV:', error)
-      return []
-    }
+function getSupabaseClient() {
+  if (supabaseClient) return supabaseClient
+  
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  
+  if (url && key) {
+    supabaseClient = createClient(url, key)
+    return supabaseClient
   }
   
-  // Récupérer un RDV par ID
-  async getRDV(id: number): Promise<RDV | undefined> {
-    try {
-      const { data, error } = await supabase
-        .from('rdvs')
-        .select('*')
-        .eq('id', id)
-        .single()
-      
-      if (error) {
-        console.error('Erreur récupération RDV:', error)
-        return undefined
-      }
-      
-      return data
-    } catch (error) {
-      console.error('Erreur Supabase RDV:', error)
-      return undefined
-    }
-  }
-  
-  // Créer un nouveau RDV
-  async createRDV(rdv: Omit<RDV, 'id' | 'created_at' | 'updated_at'>): Promise<RDV> {
-    try {
-      const newRDV = {
-        ...rdv,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-      
-      const { data, error } = await supabase
-        .from('rdvs')
-        .insert([newRDV])
-        .select()
-        .single()
-      
-      if (error) {
-        console.error('Erreur création RDV:', error)
-        throw error
-      }
-      
-      console.log('✅ RDV créé dans Supabase')
-      return data
-    } catch (error) {
-      console.error('Erreur création RDV:', error)
-      throw error
-    }
-  }
-  
-  // Mettre à jour un RDV
-  async updateRDV(id: number, updates: Partial<RDV>): Promise<RDV | null> {
-    try {
-      const { data, error } = await supabase
-        .from('rdvs')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id)
-        .select()
-        .single()
-      
-      if (error) {
-        console.error('Erreur mise à jour RDV:', error)
-        return null
-      }
-      
-      return data
-    } catch (error) {
-      console.error('Erreur mise à jour RDV:', error)
-      return null
-    }
-  }
-  
-  // Supprimer un RDV
-  async deleteRDV(id: number): Promise<boolean> {
-    try {
-      const { error } = await supabase
-        .from('rdvs')
-        .delete()
-        .eq('id', id)
-      
-      if (error) {
-        console.error('Erreur suppression RDV:', error)
-        return false
-      }
-      
-      return true
-    } catch (error) {
-      console.error('Erreur suppression RDV:', error)
-      return false
-    }
-  }
-  
-  // Supprimer tous les RDV d'un prospect
-  async deleteProspectRDVs(prospect_id: number): Promise<number> {
-    try {
-      // D'abord compter
-      const { count } = await supabase
-        .from('rdvs')
-        .select('*', { count: 'exact', head: true })
-        .eq('prospect_id', prospect_id)
-      
-      // Puis supprimer
-      const { error } = await supabase
-        .from('rdvs')
-        .delete()
-        .eq('prospect_id', prospect_id)
-      
-      if (error) {
-        console.error('Erreur suppression RDV prospect:', error)
-        return 0
-      }
-      
-      return count || 0
-    } catch (error) {
-      console.error('Erreur suppression RDV prospect:', error)
-      return 0
-    }
-  }
-  
-  // Obtenir les prochains RDV
-  async getUpcomingRDVs(limit: number = 10): Promise<RDV[]> {
-    try {
-      const now = new Date().toISOString()
-      
-      const { data, error } = await supabase
-        .from('rdvs')
-        .select('*')
-        .gte('date_time', now)
-        .in('statut', ['planifie', 'confirme'])
-        .order('date_time', { ascending: true })
-        .limit(limit)
-      
-      if (error) {
-        console.error('Erreur récupération RDV à venir:', error)
-        return []
-      }
-      
-      return data || []
-    } catch (error) {
-      console.error('Erreur:', error)
-      return []
-    }
-  }
-  
-  // Obtenir les RDV du jour
-  async getTodayRDVs(): Promise<RDV[]> {
-    try {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const tomorrow = new Date(today)
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      
-      const { data, error } = await supabase
-        .from('rdvs')
-        .select('*')
-        .gte('date_time', today.toISOString())
-        .lt('date_time', tomorrow.toISOString())
-        .order('date_time', { ascending: true })
-      
-      if (error) {
-        console.error('Erreur récupération RDV du jour:', error)
-        return []
-      }
-      
-      return data || []
-    } catch (error) {
-      console.error('Erreur:', error)
-      return []
-    }
-  }
-  
-  // Statistiques
-  async getStats() {
-    try {
-      const { data, error } = await supabase
-        .from('rdvs')
-        .select('statut, date_time')
-      
-      if (error) {
-        console.error('Erreur stats RDV:', error)
-        return {
-          total: 0,
-          planifie: 0,
-          confirme: 0,
-          termine: 0,
-          annule: 0,
-          futurs: 0,
-          passes: 0,
-          aujourdhui: 0
-        }
-      }
-      
-      const now = new Date()
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const tomorrow = new Date(today)
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      
-      const rdvs = data || []
-      
-      return {
-        total: rdvs.length,
-        planifie: rdvs.filter(r => r.statut === 'planifie').length,
-        confirme: rdvs.filter(r => r.statut === 'confirme').length,
-        termine: rdvs.filter(r => r.statut === 'termine').length,
-        annule: rdvs.filter(r => r.statut === 'annule').length,
-        futurs: rdvs.filter(r => new Date(r.date_time) > now && r.statut !== 'annule' && r.statut !== 'termine').length,
-        passes: rdvs.filter(r => new Date(r.date_time) <= now || r.statut === 'termine').length,
-        aujourdhui: rdvs.filter(r => {
-          const rdvDate = new Date(r.date_time)
-          return rdvDate >= today && rdvDate < tomorrow
-        }).length
-      }
-    } catch (error) {
-      console.error('Erreur stats:', error)
-      return {
-        total: 0,
-        planifie: 0,
-        confirme: 0,
-        termine: 0,
-        annule: 0,
-        futurs: 0,
-        passes: 0,
-        aujourdhui: 0
-      }
-    }
-  }
-  
-  reset() {
-    console.warn('⚠️ Reset non implémenté pour Supabase par sécurité')
-  }
+  return null
 }
 
-// Version synchrone pour compatibilité
-class RDVDatabaseSync {
-  private db: RDVDatabase
-  private cache: RDV[] = []
-  private cacheLoaded = false
+// Utiliser le stockage global de database.ts
+declare global {
+  var mauritiusDB: {
+    prospects: any[]
+    rdvs: RDV[]
+    lastProspectId: number
+    lastRdvId: number
+    initialized: boolean
+  } | undefined
+}
+
+class RDVDatabase {
+  private supabase: ReturnType<typeof createClient> | null
+  private useSupabase: boolean = false
   
   constructor() {
-    this.db = new RDVDatabase()
-    this.loadCache()
+    this.supabase = getSupabaseClient()
+    this.useSupabase = !!this.supabase
+    
+    if (!this.useSupabase && !global.mauritiusDB) {
+      // Initialiser la base mémoire si nécessaire
+      global.mauritiusDB = {
+        prospects: [],
+        rdvs: [],
+        lastProspectId: 1,
+        lastRdvId: 1,
+        initialized: true
+      }
+    }
   }
   
-  private async loadCache() {
-    this.cache = await this.db.getRDVs()
-    this.cacheLoaded = true
-    console.log(`📦 Cache RDV chargé: ${this.cache.length} rendez-vous`)
-  }
-  
-  getRDVs(prospect_id?: number): RDV[] {
-    if (!this.cacheLoaded) {
-      this.loadCache()
-      return []
+  async getRDVs(prospect_id?: number): Promise<RDV[]> {
+    if (this.useSupabase && this.supabase) {
+      try {
+        let query = this.supabase.from('rdvs').select('*')
+        
+        if (prospect_id) {
+          query = query.eq('prospect_id', prospect_id)
+        }
+        
+        const { data, error } = await query.order('date_time', { ascending: true })
+        
+        if (error) {
+          console.error('Erreur Supabase RDV:', error)
+          // Fallback sur la base mémoire
+          const rdvs = global.mauritiusDB?.rdvs || []
+          return prospect_id ? rdvs.filter(r => r.prospect_id === prospect_id) : rdvs
+        }
+        
+        return data || []
+      } catch (error) {
+        console.error('Erreur connexion Supabase:', error)
+        const rdvs = global.mauritiusDB?.rdvs || []
+        return prospect_id ? rdvs.filter(r => r.prospect_id === prospect_id) : rdvs
+      }
     }
     
-    if (prospect_id) {
-      return this.cache.filter(r => r.prospect_id === prospect_id)
+    const rdvs = global.mauritiusDB?.rdvs || []
+    return prospect_id ? rdvs.filter(r => r.prospect_id === prospect_id) : rdvs
+  }
+  
+  async getRDV(id: number): Promise<RDV | undefined> {
+    if (this.useSupabase && this.supabase) {
+      try {
+        const { data, error } = await this.supabase
+          .from('rdvs')
+          .select('*')
+          .eq('id', id)
+          .single()
+        
+        if (error) {
+          console.error('Erreur récupération RDV:', error)
+          return global.mauritiusDB?.rdvs.find(r => r.id === id)
+        }
+        
+        return data
+      } catch (error) {
+        console.error('Erreur:', error)
+        return global.mauritiusDB?.rdvs.find(r => r.id === id)
+      }
     }
-    return [...this.cache]
+    
+    return global.mauritiusDB?.rdvs.find(r => r.id === id)
   }
   
-  getRDV(id: number): RDV | undefined {
-    return this.cache.find(r => r.id === id)
-  }
-  
-  createRDV(rdv: Omit<RDV, 'id' | 'created_at' | 'updated_at'>): RDV {
-    const tempRDV: RDV = {
+  async createRDV(rdv: Omit<RDV, 'id' | 'created_at' | 'updated_at'>): Promise<RDV> {
+    const newRDV = {
       ...rdv,
-      id: Date.now(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
     
-    this.cache.unshift(tempRDV)
-    
-    this.db.createRDV(rdv).then(created => {
-      const index = this.cache.findIndex(r => r.id === tempRDV.id)
-      if (index !== -1) {
-        this.cache[index] = created
+    if (this.useSupabase && this.supabase) {
+      try {
+        const { data, error } = await this.supabase
+          .from('rdvs')
+          .insert([newRDV])
+          .select()
+          .single()
+        
+        if (error) {
+          console.error('Erreur création RDV Supabase:', error)
+          throw error
+        }
+        
+        return data
+      } catch (error) {
+        console.error('Erreur:', error)
+        // Fallback sur la base mémoire
+        if (!global.mauritiusDB) throw new Error('Database not initialized')
+        
+        const rdvWithId: RDV = {
+          ...newRDV,
+          id: global.mauritiusDB.lastRdvId++
+        }
+        
+        global.mauritiusDB.rdvs.push(rdvWithId)
+        return rdvWithId
       }
-    }).catch(error => {
-      this.cache = this.cache.filter(r => r.id !== tempRDV.id)
-      console.error('Erreur création RDV:', error)
-    })
+    }
     
-    return tempRDV
+    if (!global.mauritiusDB) throw new Error('Database not initialized')
+    
+    const rdvWithId: RDV = {
+      ...newRDV,
+      id: global.mauritiusDB.lastRdvId++
+    }
+    
+    global.mauritiusDB.rdvs.push(rdvWithId)
+    return rdvWithId
   }
   
-  updateRDV(id: number, updates: Partial<RDV>): RDV | null {
-    const index = this.cache.findIndex(r => r.id === id)
-    if (index === -1) return null
-    
-    const updated = {
-      ...this.cache[index],
+  async updateRDV(id: number, updates: Partial<RDV>): Promise<RDV | null> {
+    const updateData = {
       ...updates,
       updated_at: new Date().toISOString()
     }
-    this.cache[index] = updated
     
-    this.db.updateRDV(id, updates).catch(error => {
-      console.error('Erreur mise à jour RDV:', error)
-      this.loadCache()
-    })
+    if (this.useSupabase && this.supabase) {
+      try {
+        const { data, error } = await this.supabase
+          .from('rdvs')
+          .update(updateData)
+          .eq('id', id)
+          .select()
+          .single()
+        
+        if (error) {
+          console.error('Erreur mise à jour RDV:', error)
+          return null
+        }
+        
+        return data
+      } catch (error) {
+        console.error('Erreur:', error)
+        // Fallback sur la base mémoire
+        if (!global.mauritiusDB) return null
+        
+        const index = global.mauritiusDB.rdvs.findIndex(r => r.id === id)
+        if (index === -1) return null
+        
+        global.mauritiusDB.rdvs[index] = {
+          ...global.mauritiusDB.rdvs[index],
+          ...updateData,
+          id: id
+        }
+        
+        return global.mauritiusDB.rdvs[index]
+      }
+    }
     
-    return updated
+    if (!global.mauritiusDB) return null
+    
+    const index = global.mauritiusDB.rdvs.findIndex(r => r.id === id)
+    if (index === -1) return null
+    
+    global.mauritiusDB.rdvs[index] = {
+      ...global.mauritiusDB.rdvs[index],
+      ...updateData,
+      id: id
+    }
+    
+    return global.mauritiusDB.rdvs[index]
   }
   
-  deleteRDV(id: number): boolean {
-    const index = this.cache.findIndex(r => r.id === id)
+  async deleteRDV(id: number): Promise<boolean> {
+    if (this.useSupabase && this.supabase) {
+      try {
+        const { error } = await this.supabase
+          .from('rdvs')
+          .delete()
+          .eq('id', id)
+        
+        if (error) {
+          console.error('Erreur suppression RDV:', error)
+          return false
+        }
+        
+        return true
+      } catch (error) {
+        console.error('Erreur:', error)
+        // Fallback sur la base mémoire
+        if (!global.mauritiusDB) return false
+        
+        const index = global.mauritiusDB.rdvs.findIndex(r => r.id === id)
+        if (index === -1) return false
+        
+        global.mauritiusDB.rdvs.splice(index, 1)
+        return true
+      }
+    }
+    
+    if (!global.mauritiusDB) return false
+    
+    const index = global.mauritiusDB.rdvs.findIndex(r => r.id === id)
     if (index === -1) return false
     
-    this.cache = this.cache.filter(r => r.id !== id)
-    
-    this.db.deleteRDV(id).catch(error => {
-      console.error('Erreur suppression RDV:', error)
-      this.loadCache()
-    })
-    
+    global.mauritiusDB.rdvs.splice(index, 1)
     return true
   }
   
-  deleteProspectRDVs(prospect_id: number): number {
-    const count = this.cache.filter(r => r.prospect_id === prospect_id).length
-    this.cache = this.cache.filter(r => r.prospect_id !== prospect_id)
+  async deleteProspectRDVs(prospect_id: number): Promise<number> {
+    if (this.useSupabase && this.supabase) {
+      try {
+        // D'abord compter
+        const { count } = await this.supabase
+          .from('rdvs')
+          .select('*', { count: 'exact', head: true })
+          .eq('prospect_id', prospect_id)
+        
+        // Puis supprimer
+        const { error } = await this.supabase
+          .from('rdvs')
+          .delete()
+          .eq('prospect_id', prospect_id)
+        
+        if (error) {
+          console.error('Erreur suppression RDV prospect:', error)
+          return 0
+        }
+        
+        return count || 0
+      } catch (error) {
+        console.error('Erreur:', error)
+        // Fallback
+        if (!global.mauritiusDB) return 0
+        
+        const initialLength = global.mauritiusDB.rdvs.length
+        global.mauritiusDB.rdvs = global.mauritiusDB.rdvs.filter(r => r.prospect_id !== prospect_id)
+        return initialLength - global.mauritiusDB.rdvs.length
+      }
+    }
     
-    this.db.deleteProspectRDVs(prospect_id).catch(error => {
-      console.error('Erreur suppression RDV prospect:', error)
-      this.loadCache()
-    })
+    if (!global.mauritiusDB) return 0
     
-    return count
+    const initialLength = global.mauritiusDB.rdvs.length
+    global.mauritiusDB.rdvs = global.mauritiusDB.rdvs.filter(r => r.prospect_id !== prospect_id)
+    return initialLength - global.mauritiusDB.rdvs.length
   }
   
-  getUpcomingRDVs(limit: number = 10): RDV[] {
+  async getUpcomingRDVs(limit: number = 10): Promise<RDV[]> {
+    const rdvs = await this.getRDVs()
     const now = new Date()
-    return this.cache
+    
+    return rdvs
       .filter(r => new Date(r.date_time) >= now && r.statut !== 'annule' && r.statut !== 'termine')
       .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
       .slice(0, limit)
   }
   
-  getTodayRDVs(): RDV[] {
+  async getTodayRDVs(): Promise<RDV[]> {
+    const rdvs = await this.getRDVs()
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
     
-    return this.cache
+    return rdvs
       .filter(r => {
         const rdvDate = new Date(r.date_time)
         return rdvDate >= today && rdvDate < tomorrow
@@ -407,7 +322,8 @@ class RDVDatabaseSync {
       .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
   }
   
-  getStats() {
+  async getStats() {
+    const rdvs = await this.getRDVs()
     const now = new Date()
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -415,14 +331,14 @@ class RDVDatabaseSync {
     tomorrow.setDate(tomorrow.getDate() + 1)
     
     return {
-      total: this.cache.length,
-      planifie: this.cache.filter(r => r.statut === 'planifie').length,
-      confirme: this.cache.filter(r => r.statut === 'confirme').length,
-      termine: this.cache.filter(r => r.statut === 'termine').length,
-      annule: this.cache.filter(r => r.statut === 'annule').length,
-      futurs: this.cache.filter(r => new Date(r.date_time) > now && r.statut !== 'annule' && r.statut !== 'termine').length,
-      passes: this.cache.filter(r => new Date(r.date_time) <= now || r.statut === 'termine').length,
-      aujourdhui: this.cache.filter(r => {
+      total: rdvs.length,
+      planifie: rdvs.filter(r => r.statut === 'planifie').length,
+      confirme: rdvs.filter(r => r.statut === 'confirme').length,
+      termine: rdvs.filter(r => r.statut === 'termine').length,
+      annule: rdvs.filter(r => r.statut === 'annule').length,
+      futurs: rdvs.filter(r => new Date(r.date_time) > now && r.statut !== 'annule' && r.statut !== 'termine').length,
+      passes: rdvs.filter(r => new Date(r.date_time) <= now || r.statut === 'termine').length,
+      aujourdhui: rdvs.filter(r => {
         const rdvDate = new Date(r.date_time)
         return rdvDate >= today && rdvDate < tomorrow
       }).length
@@ -430,13 +346,20 @@ class RDVDatabaseSync {
   }
   
   reset() {
-    this.cache = []
-    console.warn('Cache RDV vidé (Supabase non affecté)')
+    if (this.useSupabase) {
+      console.warn('⚠️ Reset non implémenté pour Supabase par sécurité')
+      return
+    }
+    
+    if (global.mauritiusDB) {
+      global.mauritiusDB.rdvs = []
+      global.mauritiusDB.lastRdvId = 1
+    }
   }
 }
 
-// Export de l'instance
-export const rdvDB = new RDVDatabaseSync()
+// Export de l'instance unique
+export const rdvDB = new RDVDatabase()
 
 // Export des types
 export type { RDV as RDVType }
