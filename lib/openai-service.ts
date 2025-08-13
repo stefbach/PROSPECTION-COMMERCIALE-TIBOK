@@ -941,6 +941,37 @@ export async function planifyWeeklyTours(prospects: ProspectData[]): Promise<any
   }
 }
 
+<<<<<<< HEAD
 // Export pour utilisation dans l'application
 export { AIService, planifyWeeklyTours }
 export default AIService
+=======
+/**
+ * Recherche sémantique dans les documents
+ */
+export async function semanticSearch(query: string, documents: Array<{ id: string; content: string }>): Promise<Array<{ id: string; score: number }>> {
+  const queryEmbedding = await createEmbedding(query)
+  
+  const results = await Promise.all(
+    documents.map(async (doc) => {
+      const docEmbedding = await createEmbedding(doc.content)
+      const similarity = cosineSimilarity(queryEmbedding, docEmbedding)
+      return { id: doc.id, score: similarity }
+    })
+  )
+  
+  return results.sort((a, b) => b.score - a.score)
+}
+
+// Fonction de similarité cosinus
+function cosineSimilarity(a: number[], b: number[]): number {
+  const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0)
+  const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0))
+  const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0))
+  return dotProduct / (magnitudeA * magnitudeB)
+}
+
+// Export par défaut AIService à la fin du fichier
+export default AIService
+
+>>>>>>> 68f2e01 (Ajout système IA commercial)
