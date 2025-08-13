@@ -942,7 +942,6 @@ export async function planifyWeeklyTours(prospects: ProspectData[]): Promise<any
 }
 
 // Export pour utilisation dans l'application
-export { planifyWeeklyTours }
 export default AIService
 /**
  * Recherche sémantique dans les documents
