@@ -942,7 +942,6 @@ export async function planifyWeeklyTours(prospects: ProspectData[]): Promise<any
 }
 
 // Export pour utilisation dans l'application
-export default AIService
 /**
  * Recherche sémantique dans les documents
  */
@@ -969,5 +968,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 // Export par défaut AIService à la fin du fichier
-export default AIService
 
+
+// Export final
+export default AIService
