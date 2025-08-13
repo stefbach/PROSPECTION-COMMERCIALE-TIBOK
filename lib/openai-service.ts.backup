@@ -576,7 +576,3 @@ function cosineSimilarity(a: number[], b: number[]): number {
   const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0))
   return dotProduct / (magnitudeA * magnitudeB)
 }
-
-// Export par défaut AIService à la fin du fichier
-export default AIService
-
