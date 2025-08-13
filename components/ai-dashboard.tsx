@@ -1,4 +1,4 @@
-// components/ai-dashboard.tsx
+// components/ai-dashboard-enhanced.tsx
 'use client'
 
 import * as React from 'react'
@@ -30,206 +30,353 @@ import {
   BarChart3,
   Navigation,
   Zap,
-  Send
+  Send,
+  Hotel,
+  Building2,
+  Map,
+  RefreshCw,
+  FileText,
+  Download,
+  Star,
+  Activity
 } from 'lucide-react'
 
-interface NextAction {
-  prospect: string
-  action: string
-  raison: string
-  urgence: 'immediate' | 'aujourd\'hui' | 'cette_semaine' | 'ce_mois'
-  scriptSuggere?: string
-  resultatAttendu?: string
-}
-
-interface ProspectAnalysis {
-  score: number
-  potentielRevenu: number
-  probabiliteConversion: number
-  meilleureApproche: string
-  argumentsVente: string[]
-  objectionsProbables: string[]
-  prochainnesActions: Array<{
-    action: string
-    deadline: string
-    priorite: string
+// Types
+interface ZonePlanning {
+  zone: string
+  jour: string
+  prospects: Array<{
+    id: number
+    nom: string
+    secteur: string
+    ville: string
+    score: number
+    priorite: number
+    telephone?: string
+    statut?: string
   }>
-  insights: string[]
+  potentielRevenu: number
+  distanceEstimee: number
+  tempsEstime: number
 }
 
-export function AIDashboard({ commercial }: { commercial: string }) {
+interface WeeklyPlanning {
+  [key: string]: {
+    zone: string
+    focus: string
+    prospects: any[]
+  }
+}
+
+interface AIMetrics {
+  scoreGlobal: number
+  opportunitesIdentifiees: number
+  tauxConversionPrevu: number
+  revenuPotentielMensuel: number
+  zonesOptimales: string[]
+  prochaineActionPrioritaire: string
+}
+
+export function AIDashboardEnhanced({ commercial }: { commercial: string }) {
   const [loading, setLoading] = React.useState(false)
-  const [nextActions, setNextActions] = React.useState<NextAction[]>([])
-  const [selectedProspect, setSelectedProspect] = React.useState<any>(null)
-  const [prospectAnalysis, setProspectAnalysis] = React.useState<ProspectAnalysis | null>(null)
-  const [chatMessage, setChatMessage] = React.useState('')
-  const [chatHistory, setChatHistory] = React.useState<Array<{ role: string; content: string }>>([])
-  const [optimizationResult, setOptimizationResult] = React.useState<any>(null)
+  const [activeTab, setActiveTab] = React.useState('planning')
+  const [weeklyPlanning, setWeeklyPlanning] = React.useState<WeeklyPlanning | null>(null)
+  const [selectedZone, setSelectedZone] = React.useState<string>('Nord')
+  const [aiMetrics, setAiMetrics] = React.useState<AIMetrics | null>(null)
+  const [prospects, setProspects] = React.useState<any[]>([])
+  const [generatingPlan, setGeneratingPlan] = React.useState(false)
   const { toast } = useToast()
 
-  // Charger les prochaines actions suggérées
-  const loadNextActions = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/ai/next-actions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commercial })
-      })
-      
-      if (res.ok) {
-        const actions = await res.json()
-        setNextActions(actions)
-      }
-    } catch (error) {
-      toast({
-        title: 'Erreur',
-        description: 'Impossible de charger les suggestions IA',
-        variant: 'destructive'
-      })
-    } finally {
-      setLoading(false)
+  // Configuration des zones de Maurice
+  const ZONES_MAURICE = {
+    'Nord': {
+      villes: ['Grand Baie', 'Pereybère', 'Cap Malheureux', 'Trou aux Biches'],
+      couleur: 'blue',
+      icone: '🏖️',
+      focus: 'Hôtels touristiques et resorts'
+    },
+    'Centre': {
+      villes: ['Port Louis', 'Quatre Bornes', 'Rose Hill', 'Curepipe'],
+      couleur: 'purple',
+      icone: '🏢',
+      focus: 'Entreprises et pharmacies urbaines'
+    },
+    'Ouest': {
+      villes: ['Flic en Flac', 'Tamarin', 'Le Morne', 'Cascavelle'],
+      couleur: 'orange',
+      icone: '🌅',
+      focus: 'Hôtels côte ouest et centres commerciaux'
+    },
+    'Sud': {
+      villes: ['Mahébourg', 'Blue Bay', 'Souillac', 'Bel Ombre'],
+      couleur: 'green',
+      icone: '✈️',
+      focus: 'Zone aéroport et hôtels sud'
+    },
+    'Est': {
+      villes: ['Belle Mare', 'Trou d\'Eau Douce', 'Flacq', 'Poste de Flacq'],
+      couleur: 'cyan',
+      icone: '🏝️',
+      focus: 'Resorts de luxe côte est'
     }
   }
 
-  // Analyser un prospect
-  const analyzeProspect = async (prospectId: number) => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/ai/analyze-prospect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prospectId })
-      })
-      
-      if (res.ok) {
-        const analysis = await res.json()
-        setProspectAnalysis(analysis)
-        toast({
-          title: 'Analyse complète',
-          description: `Score IA: ${analysis.score}/100`
-        })
-      }
-    } catch (error) {
-      toast({
-        title: 'Erreur',
-        description: 'Erreur lors de l\'analyse',
-        variant: 'destructive'
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Optimiser le planning
-  const optimizePlanning = async () => {
-    setLoading(true)
-    try {
-      // Récupérer les RDV du jour
-      const today = new Date().toISOString().split('T')[0]
-      const appointmentsRes = await fetch(`/api/appointments?date=${today}&commercial=${commercial}`)
-      const appointments = await appointmentsRes.json()
-      
-      const res = await fetch('/api/ai/optimize-planning', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          commercial,
-          date: today,
-          appointments,
-          constraints: {
-            startTime: '08:30',
-            endTime: '17:30',
-            lunchBreak: true
-          }
-        })
-      })
-      
-      if (res.ok) {
-        const optimization = await res.json()
-        setOptimizationResult(optimization)
-        toast({
-          title: 'Planning optimisé',
-          description: `Économie: ${optimization.savings.kmSaved}km, ${optimization.savings.timeSaved}min`
-        })
-      }
-    } catch (error) {
-      toast({
-        title: 'Erreur',
-        description: 'Erreur lors de l\'optimisation',
-        variant: 'destructive'
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Chat avec l'assistant IA
-  const sendChatMessage = async () => {
-    if (!chatMessage.trim()) return
-    
-    const userMessage = chatMessage
-    setChatMessage('')
-    setChatHistory(prev => [...prev, { role: 'user', content: userMessage }])
-    
-    try {
-      const res = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userMessage,
-          userId: commercial,
-          context: {
-            currentProspectId: selectedProspect?.id
-          }
-        })
-      })
-      
-      if (res.ok) {
-        const { response } = await res.json()
-        setChatHistory(prev => [...prev, { role: 'assistant', content: response }])
-      }
-    } catch (error) {
-      toast({
-        title: 'Erreur',
-        description: 'Erreur de communication avec l\'IA',
-        variant: 'destructive'
-      })
-    }
-  }
-
+  // Charger les données au démarrage
   React.useEffect(() => {
-    loadNextActions()
-  }, [commercial])
+    loadProspects()
+    calculateAIMetrics()
+  }, [])
 
-  const urgencyColors = {
-    immediate: 'bg-red-500',
-    'aujourd\'hui': 'bg-orange-500',
-    'cette_semaine': 'bg-yellow-500',
-    'ce_mois': 'bg-blue-500'
+  // Charger les prospects
+  async function loadProspects() {
+    try {
+      const res = await fetch('/api/prospects?limit=500')
+      const result = await res.json()
+      const data = result.data || result || []
+      
+      // Enrichir avec scoring priorité
+      const enrichedProspects = data.map((p: any) => ({
+        ...p,
+        priorite: calculatePriority(p)
+      }))
+      
+      setProspects(enrichedProspects)
+      return enrichedProspects
+    } catch (error) {
+      console.error('Erreur chargement prospects:', error)
+      return []
+    }
   }
 
-  const urgencyIcons = {
-    immediate: <Zap className="h-4 w-4" />,
-    'aujourd\'hui': <Clock className="h-4 w-4" />,
-    'cette_semaine': <Calendar className="h-4 w-4" />,
-    'ce_mois': <Target className="h-4 w-4" />
+  // Calculer le score de priorité
+  function calculatePriority(prospect: any): number {
+    let score = 50
+    
+    // Bonus secteur (hôtels et pharmacies prioritaires)
+    if (prospect.secteur === 'hotel') score += 35
+    else if (prospect.secteur === 'pharmacie') score += 30
+    else if (prospect.secteur === 'clinique') score += 20
+    else if (prospect.secteur === 'entreprise') score += 15
+    
+    // Bonus score qualité
+    score += (prospect.score || 3) * 5
+    
+    // Bonus statut
+    if (prospect.statut === 'qualifie') score += 10
+    else if (prospect.statut === 'proposition') score += 15
+    else if (prospect.statut === 'negociation') score += 20
+    
+    return Math.min(100, score)
+  }
+
+  // Calculer les métriques IA globales
+  async function calculateAIMetrics() {
+    try {
+      const prospectsData = prospects.length > 0 ? prospects : await loadProspects()
+      
+      const hotels = prospectsData.filter((p: any) => p.secteur === 'hotel')
+      const pharmacies = prospectsData.filter((p: any) => p.secteur === 'pharmacie')
+      
+      const metrics: AIMetrics = {
+        scoreGlobal: Math.round((hotels.length * 2 + pharmacies.length * 1.5 + prospectsData.length) / 10),
+        opportunitesIdentifiees: hotels.length + pharmacies.length,
+        tauxConversionPrevu: hotels.length > 0 ? 35 : 25,
+        revenuPotentielMensuel: (hotels.length * 35000 + pharmacies.length * 25000 + (prospectsData.length - hotels.length - pharmacies.length) * 15000),
+        zonesOptimales: ['Nord', 'Centre', 'Ouest'],
+        prochaineActionPrioritaire: hotels.length > 0 ? 
+          `Contacter ${hotels[0]?.nom || 'hôtel prioritaire'} - Fort potentiel` :
+          'Prospecter nouveaux hôtels Grand Baie'
+      }
+      
+      setAiMetrics(metrics)
+    } catch (error) {
+      console.error('Erreur calcul métriques:', error)
+    }
+  }
+
+  // Générer le planning hebdomadaire automatique
+  async function generateWeeklyPlanning() {
+    setGeneratingPlan(true)
+    try {
+      // Simuler l'appel API (en production, utiliser le service AIService)
+      const planning = await generatePlanningFromProspects(prospects)
+      setWeeklyPlanning(planning)
+      
+      toast({
+        title: '✅ Planning généré avec succès',
+        description: `${Object.values(planning).reduce((sum, day) => sum + day.prospects.length, 0)} visites planifiées sur la semaine`
+      })
+    } catch (error) {
+      toast({
+        title: 'Erreur',
+        description: 'Impossible de générer le planning',
+        variant: 'destructive'
+      })
+    } finally {
+      setGeneratingPlan(false)
+    }
+  }
+
+  // Logique de génération du planning
+  async function generatePlanningFromProspects(allProspects: any[]): Promise<WeeklyPlanning> {
+    // Grouper par zones
+    const zoneGroups: Record<string, any[]> = {}
+    
+    allProspects.forEach(prospect => {
+      const zone = getProspectZone(prospect.district || prospect.ville)
+      if (!zoneGroups[zone]) zoneGroups[zone] = []
+      zoneGroups[zone].push(prospect)
+    })
+    
+    // Créer le planning optimisé
+    const planning: WeeklyPlanning = {
+      'Lundi': {
+        zone: 'Centre',
+        focus: 'Pharmacies et entreprises Port Louis',
+        prospects: (zoneGroups['Centre'] || [])
+          .filter(p => ['pharmacie', 'entreprise'].includes(p.secteur))
+          .sort((a, b) => b.priorite - a.priorite)
+          .slice(0, 8)
+      },
+      'Mardi': {
+        zone: 'Nord',
+        focus: 'Hôtels Grand Baie et Pereybère',
+        prospects: (zoneGroups['Nord'] || [])
+          .filter(p => p.secteur === 'hotel')
+          .sort((a, b) => b.priorite - a.priorite)
+          .slice(0, 6)
+      },
+      'Mercredi': {
+        zone: 'Centre',
+        focus: 'Cliniques et pharmacies Quatre Bornes',
+        prospects: (zoneGroups['Centre'] || [])
+          .filter(p => ['clinique', 'pharmacie'].includes(p.secteur))
+          .sort((a, b) => b.priorite - a.priorite)
+          .slice(0, 7)
+      },
+      'Jeudi': {
+        zone: 'Ouest',
+        focus: 'Hôtels Flic en Flac et Tamarin',
+        prospects: (zoneGroups['Ouest'] || [])
+          .filter(p => p.secteur === 'hotel')
+          .sort((a, b) => b.priorite - a.priorite)
+          .slice(0, 5)
+      },
+      'Vendredi': {
+        zone: 'Sud',
+        focus: 'Zone aéroport et hôtels Blue Bay',
+        prospects: (zoneGroups['Sud'] || [])
+          .sort((a, b) => b.priorite - a.priorite)
+          .slice(0, 5)
+      }
+    }
+    
+    return planning
+  }
+
+  // Déterminer la zone d'un prospect
+  function getProspectZone(location: string): string {
+    if (!location) return 'Centre'
+    
+    for (const [zone, config] of Object.entries(ZONES_MAURICE)) {
+      if (config.villes.some(ville => location.toLowerCase().includes(ville.toLowerCase()))) {
+        return zone
+      }
+    }
+    
+    return 'Centre'
+  }
+
+  // Créer des RDV automatiquement pour une journée
+  async function createAutomaticAppointments(jour: string, prospects: any[]) {
+    setLoading(true)
+    let successCount = 0
+    
+    try {
+      // Calculer les créneaux horaires
+      const startHour = 9
+      const appointmentDuration = 45 // minutes
+      const travelTime = 30 // minutes entre RDV
+      
+      for (let i = 0; i < prospects.length; i++) {
+        const prospect = prospects[i]
+        const totalMinutes = startHour * 60 + i * (appointmentDuration + travelTime)
+        const hours = Math.floor(totalMinutes / 60)
+        const minutes = totalMinutes % 60
+        
+        if (hours >= 17) break // Arrêter après 17h
+        
+        const appointmentData = {
+          prospect_id: prospect.id,
+          date: getNextDateForDay(jour),
+          time: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+          duree_min: appointmentDuration,
+          type_visite: prospect.statut === 'nouveau' ? 'decouverte' : 'presentation',
+          priorite: prospect.priorite >= 80 ? 'haute' : 'normale',
+          notes: `Visite automatique - ${prospect.secteur === 'hotel' ? 'Présentation service hôtelier' : 'Démonstration téléconsultation'}`,
+          commercial: commercial
+        }
+        
+        const res = await fetch('/api/rdv', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(appointmentData)
+        })
+        
+        if (res.ok) {
+          successCount++
+        }
+      }
+      
+      toast({
+        title: '✅ RDV créés',
+        description: `${successCount} rendez-vous planifiés pour ${jour}`
+      })
+      
+    } catch (error) {
+      toast({
+        title: 'Erreur',
+        description: 'Problème lors de la création des RDV',
+        variant: 'destructive'
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Obtenir la prochaine date pour un jour donné
+  function getNextDateForDay(dayName: string): string {
+    const days: Record<string, number> = {
+      'Lundi': 1, 'Mardi': 2, 'Mercredi': 3, 'Jeudi': 4, 'Vendredi': 5
+    }
+    
+    const today = new Date()
+    const targetDay = days[dayName]
+    const currentDay = today.getDay()
+    
+    let daysToAdd = targetDay - currentDay
+    if (daysToAdd <= 0) daysToAdd += 7
+    
+    const targetDate = new Date(today)
+    targetDate.setDate(today.getDate() + daysToAdd)
+    
+    return targetDate.toISOString().split('T')[0]
   }
 
   return (
     <div className="space-y-6">
-      {/* En-tête IA */}
-      <Card className="border-gradient bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20">
+      {/* Header avec métriques IA */}
+      <Card className="border-gradient bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/20 dark:to-purple-950/20">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg">
+              <div className="p-3 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-lg">
                 <Brain className="h-6 w-6 text-white" />
               </div>
               <div>
-                <CardTitle className="text-2xl">Assistant IA ProspectMed</CardTitle>
+                <CardTitle className="text-2xl">ProspectMed IA - Téléconsultation Médicale</CardTitle>
                 <CardDescription>
-                  Intelligence artificielle pour optimiser vos ventes
+                  Optimisation intelligente pour installations QR Code chez partenaires
                 </CardDescription>
               </div>
             </div>
@@ -241,212 +388,432 @@ export function AIDashboard({ commercial }: { commercial: string }) {
         </CardHeader>
       </Card>
 
-      <Tabs defaultValue="actions" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="actions">Actions Suggérées</TabsTrigger>
-          <TabsTrigger value="planning">Optimisation Planning</TabsTrigger>
-          <TabsTrigger value="analysis">Analyse Prospects</TabsTrigger>
-          <TabsTrigger value="assistant">Assistant Chat</TabsTrigger>
-        </TabsList>
-
-        {/* Tab 1: Actions Suggérées */}
-        <TabsContent value="actions" className="space-y-4">
+      {/* Métriques principales */}
+      {aiMetrics && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
           <Card>
-            <CardHeader>
+            <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <Target className="h-5 w-5" />
-                  Prochaines Actions Recommandées
-                </CardTitle>
-                <Button onClick={loadNextActions} disabled={loading} size="sm">
-                  Actualiser
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {nextActions.length === 0 && !loading && (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Aucune action suggérée. Cliquez sur Actualiser pour générer des recommandations.
-                  </AlertDescription>
-                </Alert>
-              )}
-              
-              {nextActions.map((action, index) => (
-                <Card key={index} className="border-l-4" style={{ borderLeftColor: urgencyColors[action.urgence] }}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-2">
-                          <Badge className={urgencyColors[action.urgence]}>
-                            {urgencyIcons[action.urgence]}
-                            {action.urgence.replace('_', ' ')}
-                          </Badge>
-                          <span className="font-semibold">{action.prospect}</span>
-                        </div>
-                        
-                        <p className="text-sm font-medium">{action.action}</p>
-                        <p className="text-xs text-muted-foreground">{action.raison}</p>
-                        
-                        {action.scriptSuggere && (
-                          <details className="mt-2">
-                            <summary className="cursor-pointer text-xs text-blue-600 hover:underline">
-                              Voir le script suggéré
-                            </summary>
-                            <div className="mt-2 p-3 bg-muted rounded text-xs">
-                              {action.scriptSuggere}
-                            </div>
-                          </details>
-                        )}
-                        
-                        {action.resultatAttendu && (
-                          <div className="flex items-center gap-1 text-xs text-green-600">
-                            <CheckCircle className="h-3 w-3" />
-                            Résultat attendu: {action.resultatAttendu}
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="ghost">
-                          <Phone className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost">
-                          <Mail className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              
-              {loading && (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Score Global IA</p>
+                  <p className="text-2xl font-bold">{aiMetrics.scoreGlobal}/100</p>
                 </div>
-              )}
+                <Brain className="h-8 w-8 text-indigo-500 opacity-50" />
+              </div>
+              <Progress value={aiMetrics.scoreGlobal} className="mt-2" />
             </CardContent>
           </Card>
-        </TabsContent>
 
-        {/* Tab 2: Optimisation Planning */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Opportunités</p>
+                  <p className="text-2xl font-bold">{aiMetrics.opportunitesIdentifiees}</p>
+                </div>
+                <Target className="h-8 w-8 text-green-500 opacity-50" />
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">Hôtels + Pharmacies</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Taux Conversion</p>
+                  <p className="text-2xl font-bold">{aiMetrics.tauxConversionPrevu}%</p>
+                </div>
+                <TrendingUp className="h-8 w-8 text-blue-500 opacity-50" />
+              </div>
+              <Progress value={aiMetrics.tauxConversionPrevu} className="mt-2" />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Potentiel/mois</p>
+                  <p className="text-xl font-bold">Rs {(aiMetrics.revenuPotentielMensuel / 1000).toFixed(0)}k</p>
+                </div>
+                <DollarSign className="h-8 w-8 text-purple-500 opacity-50" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="col-span-2 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Zap className="h-5 w-5 text-orange-500" />
+                <p className="text-sm font-medium">Action Prioritaire</p>
+              </div>
+              <p className="text-sm font-bold text-indigo-700">
+                {aiMetrics.prochaineActionPrioritaire}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Tabs principales */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="planning" className="flex items-center gap-2">
+            <Calendar className="h-4 w-4" />
+            Planning Auto
+          </TabsTrigger>
+          <TabsTrigger value="zones" className="flex items-center gap-2">
+            <Map className="h-4 w-4" />
+            Zones & Secteurs
+          </TabsTrigger>
+          <TabsTrigger value="hotels" className="flex items-center gap-2">
+            <Hotel className="h-4 w-4" />
+            Hôtels Prioritaires
+          </TabsTrigger>
+          <TabsTrigger value="pharmacies" className="flex items-center gap-2">
+            <Building2 className="h-4 w-4" />
+            Pharmacies
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Tab Planning Automatique */}
         <TabsContent value="planning" className="space-y-4">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <Navigation className="h-5 w-5" />
-                  Optimisation de Tournée
-                </CardTitle>
-                <Button onClick={optimizePlanning} disabled={loading}>
-                  <MapPin className="mr-2 h-4 w-4" />
-                  Optimiser
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5" />
+                    Planning Hebdomadaire Intelligent
+                  </CardTitle>
+                  <CardDescription>
+                    Génération automatique basée sur les zones et priorités
+                  </CardDescription>
+                </div>
+                <Button 
+                  onClick={generateWeeklyPlanning}
+                  disabled={generatingPlan}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                >
+                  {generatingPlan ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Génération...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Générer Planning
+                    </>
+                  )}
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
-              {optimizationResult ? (
+              {weeklyPlanning ? (
                 <div className="space-y-4">
-                  {/* Métriques d'économies */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <Card>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm text-muted-foreground">Distance économisée</p>
-                            <p className="text-2xl font-bold text-green-600">
-                              -{optimizationResult.savings.kmSaved} km
-                            </p>
-                          </div>
-                          <MapPin className="h-8 w-8 text-green-600 opacity-20" />
-                        </div>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm text-muted-foreground">Temps gagné</p>
-                            <p className="text-2xl font-bold text-blue-600">
-                              -{optimizationResult.savings.timeSaved} min
-                            </p>
-                          </div>
-                          <Clock className="h-8 w-8 text-blue-600 opacity-20" />
-                        </div>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm text-muted-foreground">Carburant économisé</p>
-                            <p className="text-2xl font-bold text-purple-600">
-                              {optimizationResult.savings.fuelCostSaved} MUR
-                            </p>
-                          </div>
-                          <DollarSign className="h-8 w-8 text-purple-600 opacity-20" />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Itinéraire optimisé */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Itinéraire Optimisé</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        {optimizationResult.optimizedRoute.map((stop: any, index: number) => (
-                          <div key={index} className="flex items-center gap-3">
-                            <div className="flex-shrink-0 w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-bold">
-                              {index + 1}
-                            </div>
+                  {Object.entries(weeklyPlanning).map(([jour, data]) => {
+                    const zoneConfig = ZONES_MAURICE[data.zone]
+                    return (
+                      <Card key={jour} className="border-l-4" style={{ borderLeftColor: `var(--${zoneConfig?.couleur || 'blue'}-500)` }}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <p className="font-medium">{stop.heure} - {stop.nom}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {stop.distanceKm}km • {stop.tempsTrajet}min • Durée: {stop.duree}min
-                              </p>
+                              <div className="flex items-center gap-3 mb-2">
+                                <span className="text-2xl">{zoneConfig?.icone}</span>
+                                <div>
+                                  <h3 className="font-semibold text-lg">{jour}</h3>
+                                  <p className="text-sm text-muted-foreground">
+                                    Zone {data.zone} • {data.focus}
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-2 mt-3">
+                                {data.prospects.length > 0 ? (
+                                  <>
+                                    <p className="text-sm font-medium text-muted-foreground">
+                                      {data.prospects.length} visites planifiées
+                                    </p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                      {data.prospects.slice(0, 4).map((prospect, idx) => (
+                                        <div key={idx} className="flex items-center gap-2 text-sm p-2 bg-muted rounded">
+                                          <Badge variant="outline" className="text-xs">
+                                            {prospect.secteur === 'hotel' ? '🏨' : 
+                                             prospect.secteur === 'pharmacie' ? '💊' :
+                                             prospect.secteur === 'clinique' ? '🏥' : '🏢'}
+                                          </Badge>
+                                          <span className="flex-1 truncate">{prospect.nom}</span>
+                                          <Badge className={prospect.priorite >= 80 ? 'bg-red-500' : 'bg-blue-500'}>
+                                            P{prospect.priorite}
+                                          </Badge>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {data.prospects.length > 4 && (
+                                      <p className="text-xs text-muted-foreground">
+                                        +{data.prospects.length - 4} autres prospects
+                                      </p>
+                                    )}
+                                  </>
+                                ) : (
+                                  <Alert>
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertDescription>
+                                      Aucun prospect disponible pour cette zone
+                                    </AlertDescription>
+                                  </Alert>
+                                )}
+                              </div>
                             </div>
-                            <Badge variant={stop.priorite === 'urgente' ? 'destructive' : 'secondary'}>
-                              {stop.priorite}
-                            </Badge>
+                            
+                            <div className="flex flex-col gap-2">
+                              {data.prospects.length > 0 && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => createAutomaticAppointments(jour, data.prospects)}
+                                    disabled={loading}
+                                    className="bg-green-600 hover:bg-green-700 text-white"
+                                  >
+                                    <Calendar className="h-4 w-4 mr-1" />
+                                    Créer RDV
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                  >
+                                    <Eye className="h-4 w-4 mr-1" />
+                                    Détails
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Suggestions IA */}
-                  {optimizationResult.suggestions && optimizationResult.suggestions.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <Sparkles className="h-4 w-4" />
-                          Suggestions d'Optimisation
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <ul className="space-y-2">
-                          {optimizationResult.suggestions.map((suggestion: string, index: number) => (
-                            <li key={index} className="flex items-start gap-2 text-sm">
-                              <ChevronRight className="h-4 w-4 text-muted-foreground mt-0.5" />
-                              <span>{suggestion}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </CardContent>
-                    </Card>
-                  )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               ) : (
                 <Alert>
-                  <AlertCircle className="h-4 w-4" />
+                  <Brain className="h-4 w-4" />
                   <AlertDescription>
-                    Cliquez sur "Optimiser" pour générer un itinéraire optimisé avec l'IA.
+                    Cliquez sur "Générer Planning" pour créer automatiquement votre planning hebdomadaire optimisé
+                  </AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recommandations IA */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Sparkles className="h-4 w-4" />
+                Recommandations IA pour la Prospection
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Prioriser Grand Baie et Pereybère</p>
+                    <p className="text-sm text-muted-foreground">
+                      Concentration maximale d'hôtels 4-5 étoiles avec clientèle internationale
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Visiter pharmacies après 14h</p>
+                    <p className="text-sm text-muted-foreground">
+                      Moins d'affluence, pharmaciens plus disponibles pour démonstration
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Argument clé hôtels : Touristes sans médecin local</p>
+                    <p className="text-sm text-muted-foreground">
+                      Service 24/7 multilingue, évite complications et mauvais avis TripAdvisor
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Package démo : QR Code test + 1 mois gratuit</p>
+                    <p className="text-sm text-muted-foreground">
+                      Proposition sans risque pour faciliter la signature
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab Zones & Secteurs */}
+        <TabsContent value="zones" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Analyse des Zones Géographiques</CardTitle>
+              <CardDescription>
+                Répartition optimale par zones pour maximiser les opportunités
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.entries(ZONES_MAURICE).map(([zone, config]) => {
+                  const zoneProspects = prospects.filter(p => 
+                    config.villes.some(v => p.ville?.toLowerCase().includes(v.toLowerCase()))
+                  )
+                  const hotels = zoneProspects.filter(p => p.secteur === 'hotel').length
+                  const pharmacies = zoneProspects.filter(p => p.secteur === 'pharmacie').length
+                  
+                  return (
+                    <Card key={zone} className="cursor-pointer hover:shadow-lg transition-all"
+                          onClick={() => setSelectedZone(zone)}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">{config.icone}</span>
+                            <h3 className="font-semibold">{zone}</h3>
+                          </div>
+                          <Badge className={`bg-${config.couleur}-100 text-${config.couleur}-800`}>
+                            {zoneProspects.length} prospects
+                          </Badge>
+                        </div>
+                        
+                        <p className="text-xs text-muted-foreground mb-3">{config.focus}</p>
+                        
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="flex items-center gap-1">
+                              <Hotel className="h-3 w-3" />
+                              Hôtels
+                            </span>
+                            <span className="font-medium">{hotels}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="flex items-center gap-1">
+                              <Building2 className="h-3 w-3" />
+                              Pharmacies
+                            </span>
+                            <span className="font-medium">{pharmacies}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span>Potentiel</span>
+                            <span className="font-medium text-green-600">
+                              Rs {((hotels * 35 + pharmacies * 25) / 1000).toFixed(0)}k/mois
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-3 pt-3 border-t">
+                          <p className="text-xs text-muted-foreground">Villes principales:</p>
+                          <p className="text-xs font-medium mt-1">{config.villes.slice(0, 3).join(', ')}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab Hôtels Prioritaires */}
+        <TabsContent value="hotels" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Hotel className="h-5 w-5" />
+                    Hôtels Prioritaires - Cibles Premium
+                  </CardTitle>
+                  <CardDescription>
+                    Focus sur hôtels 4-5 étoiles avec clientèle internationale
+                  </CardDescription>
+                </div>
+                <Badge variant="outline" className="text-lg px-3 py-1">
+                  <Star className="h-4 w-4 mr-1" />
+                  {prospects.filter(p => p.secteur === 'hotel').length} hôtels
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {prospects
+                  .filter(p => p.secteur === 'hotel')
+                  .sort((a, b) => b.priorite - a.priorite)
+                  .slice(0, 10)
+                  .map((hotel, idx) => (
+                    <Card key={hotel.id} className="hover:shadow-md transition-all">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 font-bold">
+                                {idx + 1}
+                              </div>
+                              <div>
+                                <h4 className="font-semibold">{hotel.nom}</h4>
+                                <p className="text-sm text-muted-foreground">
+                                  {hotel.ville} • {getProspectZone(hotel.ville)}
+                                </p>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-4 mt-2 text-sm">
+                              <span className="flex items-center gap-1">
+                                <Star className="h-3 w-3 text-yellow-500" />
+                                Score: {hotel.score}/5
+                              </span>
+                              <Badge variant={hotel.statut === 'nouveau' ? 'default' : 'secondary'}>
+                                {hotel.statut}
+                              </Badge>
+                              <span className="text-green-600 font-medium">
+                                Rs 35k/mois
+                              </span>
+                            </div>
+                            
+                            {hotel.notes && (
+                              <p className="text-xs text-muted-foreground mt-2 line-clamp-1">
+                                {hotel.notes}
+                              </p>
+                            )}
+                          </div>
+                          
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline">
+                              <Phone className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                              <Calendar className="h-4 w-4 mr-1" />
+                              RDV
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+              </div>
+              
+              {prospects.filter(p => p.secteur === 'hotel').length === 0 && (
+                <Alert>
+                  <Hotel className="h-4 w-4" />
+                  <AlertDescription>
+                    Aucun hôtel dans la base. Commencez par ajouter des hôtels 4-5 étoiles de Grand Baie et Flic en Flac.
                   </AlertDescription>
                 </Alert>
               )}
@@ -454,228 +821,75 @@ export function AIDashboard({ commercial }: { commercial: string }) {
           </Card>
         </TabsContent>
 
-        {/* Tab 3: Analyse Prospects */}
-        <TabsContent value="analysis" className="space-y-4">
+        {/* Tab Pharmacies */}
+        <TabsContent value="pharmacies" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Analyse IA des Prospects
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Sélecteur de prospect */}
-              <div className="flex gap-2">
-                <Input
-                  placeholder="ID du prospect à analyser"
-                  type="number"
-                  onChange={(e) => setSelectedProspect({ id: parseInt(e.target.value) })}
-                />
-                <Button
-                  onClick={() => selectedProspect && analyzeProspect(selectedProspect.id)}
-                  disabled={!selectedProspect || loading}
-                >
-                  Analyser
-                </Button>
-              </div>
-
-              {/* Résultats de l'analyse */}
-              {prospectAnalysis && (
-                <div className="space-y-4">
-                  {/* Score et métriques */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <Card>
-                      <CardContent className="p-4">
-                        <p className="text-sm text-muted-foreground">Score IA</p>
-                        <div className="flex items-end gap-2">
-                          <p className="text-3xl font-bold">{prospectAnalysis.score}</p>
-                          <span className="text-sm text-muted-foreground">/100</span>
-                        </div>
-                        <Progress value={prospectAnalysis.score} className="mt-2" />
-                      </CardContent>
-                    </Card>
-                    
-                    <Card>
-                      <CardContent className="p-4">
-                        <p className="text-sm text-muted-foreground">Probabilité conversion</p>
-                        <div className="flex items-end gap-2">
-                          <p className="text-3xl font-bold">{prospectAnalysis.probabiliteConversion}%</p>
-                        </div>
-                        <Progress value={prospectAnalysis.probabiliteConversion} className="mt-2" />
-                      </CardContent>
-                    </Card>
-                    
-                    <Card>
-                      <CardContent className="p-4">
-                        <p className="text-sm text-muted-foreground">Potentiel revenu/an</p>
-                        <p className="text-2xl font-bold">
-                          {prospectAnalysis.potentielRevenu.toLocaleString()} MUR
-                        </p>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Approche recommandée */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Meilleure Approche</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm">{prospectAnalysis.meilleureApproche}</p>
-                    </CardContent>
-                  </Card>
-
-                  {/* Arguments de vente */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-sm text-green-600">Arguments de Vente</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <ul className="space-y-1">
-                          {prospectAnalysis.argumentsVente.map((arg, i) => (
-                            <li key={i} className="text-sm flex items-start gap-2">
-                              <CheckCircle className="h-4 w-4 text-green-600 mt-0.5" />
-                              <span>{arg}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-sm text-orange-600">Objections Probables</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <ul className="space-y-1">
-                          {prospectAnalysis.objectionsProbables.map((obj, i) => (
-                            <li key={i} className="text-sm flex items-start gap-2">
-                              <AlertCircle className="h-4 w-4 text-orange-600 mt-0.5" />
-                              <span>{obj}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Prochaines actions */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Plan d'Action Recommandé</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        {prospectAnalysis.prochainnesActions.map((action, i) => (
-                          <div key={i} className="flex items-center justify-between p-2 bg-muted rounded">
-                            <div className="flex items-center gap-2">
-                              <Badge variant={action.priorite === 'haute' ? 'destructive' : 'secondary'}>
-                                {action.priorite}
-                              </Badge>
-                              <span className="text-sm">{action.action}</span>
-                            </div>
-                            <span className="text-xs text-muted-foreground">{action.deadline}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="h-5 w-5" />
+                    Pharmacies Stratégiques
+                  </CardTitle>
+                  <CardDescription>
+                    Partenaires pour service de téléconsultation avec commission
+                  </CardDescription>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Tab 4: Assistant Chat */}
-        <TabsContent value="assistant" className="space-y-4">
-          <Card className="h-[600px] flex flex-col">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5" />
-                Assistant IA Conversationnel
-              </CardTitle>
-              <CardDescription>
-                Posez vos questions sur les prospects, stratégies de vente, ou demandez des conseils
-              </CardDescription>
+                <Badge variant="outline" className="text-lg px-3 py-1">
+                  💊 {prospects.filter(p => p.secteur === 'pharmacie').length} pharmacies
+                </Badge>
+              </div>
             </CardHeader>
-            <CardContent className="flex-1 flex flex-col">
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto space-y-3 mb-4 p-4 bg-muted/50 rounded">
-                {chatHistory.length === 0 && (
-                  <div className="text-center text-muted-foreground text-sm py-8">
-                    <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                    <p>Commencez une conversation avec l'assistant IA</p>
-                    <div className="mt-4 space-y-2">
-                      <p className="text-xs">Exemples de questions:</p>
-                      <div className="flex flex-wrap gap-2 justify-center">
-                        <Badge
-                          variant="outline"
-                          className="cursor-pointer hover:bg-muted"
-                          onClick={() => setChatMessage("Comment approcher un hôtel 5 étoiles?")}
-                        >
-                          Comment approcher un hôtel 5 étoiles?
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="cursor-pointer hover:bg-muted"
-                          onClick={() => setChatMessage("Quels sont les meilleurs arguments pour la télémédecine?")}
-                        >
-                          Arguments télémédecine
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="cursor-pointer hover:bg-muted"
-                          onClick={() => setChatMessage("Comment gérer l'objection sur le prix?")}
-                        >
-                          Gérer objection prix
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {chatHistory.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[80%] p-3 rounded-lg ${
-                        msg.role === 'user'
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-background border'
-                      }`}
-                    >
-                      <div className="flex items-start gap-2">
-                        {msg.role === 'assistant' && (
-                          <Brain className="h-4 w-4 mt-0.5" />
-                        )}
-                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {prospects
+                  .filter(p => p.secteur === 'pharmacie')
+                  .sort((a, b) => b.priorite - a.priorite)
+                  .slice(0, 8)
+                  .map((pharmacy) => (
+                    <Card key={pharmacy.id} className="hover:shadow-md transition-all">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <h4 className="font-semibold flex items-center gap-2">
+                              💊 {pharmacy.nom}
+                            </h4>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {pharmacy.ville} • Zone {getProspectZone(pharmacy.ville)}
+                            </p>
+                            
+                            <div className="flex items-center gap-3 mt-3 text-sm">
+                              <Badge variant="outline">
+                                Score: {pharmacy.score}/5
+                              </Badge>
+                              <span className="text-green-600 font-medium">
+                                Rs 25k/mois + commissions
+                              </span>
+                            </div>
+                            
+                            <div className="mt-3 p-2 bg-green-50 rounded text-xs">
+                              <p className="font-medium text-green-800">Avantages clés:</p>
+                              <ul className="mt-1 space-y-0.5 text-green-700">
+                                <li>• Revenus additionnels garantis</li>
+                                <li>• Service moderne différenciant</li>
+                                <li>• Formation équipe incluse</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
               </div>
               
-              {/* Input */}
-              <div className="flex gap-2">
-                <Textarea
-                  placeholder="Posez votre question..."
-                  value={chatMessage}
-                  onChange={(e) => setChatMessage(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      sendChatMessage()
-                    }
-                  }}
-                  className="flex-1 min-h-[60px] max-h-[120px]"
-                />
-                <Button onClick={sendChatMessage} disabled={!chatMessage.trim()}>
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
+              {prospects.filter(p => p.secteur === 'pharmacie').length === 0 && (
+                <Alert>
+                  <Building2 className="h-4 w-4" />
+                  <AlertDescription>
+                    Aucune pharmacie dans la base. Ajoutez les grandes pharmacies de Port Louis et Quatre Bornes en priorité.
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
