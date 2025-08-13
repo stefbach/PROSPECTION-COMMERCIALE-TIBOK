@@ -77,7 +77,7 @@ interface AIMetrics {
   prochaineActionPrioritaire: string
 }
 
-export function AIDashboardEnhanced({ commercial }: { commercial: string }) {
+export function AIDashboard({ commercial }: { commercial: string }) {
   const [loading, setLoading] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState('planning')
   const [weeklyPlanning, setWeeklyPlanning] = React.useState<WeeklyPlanning | null>(null)
