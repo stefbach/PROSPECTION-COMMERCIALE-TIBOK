@@ -1,4 +1,4 @@
-// components/ai-dashboard-enhanced.tsx
+// components/ai-dashboard.tsx
 'use client'
 
 import * as React from 'react'
@@ -52,10 +52,15 @@ interface ZonePlanning {
     nom: string
     secteur: string
     ville: string
+    district?: string
     score: number
     priorite: number
     telephone?: string
+    email?: string
+    contact?: string
+    adresse?: string
     statut?: string
+    notes?: string
   }>
   potentielRevenu: number
   distanceEstimee: number
@@ -80,6 +85,7 @@ interface AIMetrics {
 }
 
 export function AIDashboard({ commercial }: { commercial: string }) {
+  // États principaux
   const [loading, setLoading] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState('planning')
   const [weeklyPlanning, setWeeklyPlanning] = React.useState<WeeklyPlanning | null>(null)
@@ -88,6 +94,16 @@ export function AIDashboard({ commercial }: { commercial: string }) {
   const [prospects, setProspects] = React.useState<any[]>([])
   const [generatingPlan, setGeneratingPlan] = React.useState(false)
   const { toast } = useToast()
+
+  // États pour la gestion des RDV
+  const [showRdvDialog, setShowRdvDialog] = React.useState(false)
+  const [selectedProspectForRdv, setSelectedProspectForRdv] = React.useState<any>(null)
+  const [commercialInfo] = React.useState({
+    nom: commercial || 'Karine MOMUS',
+    adresse: 'Port Louis',
+    ville: 'Port Louis',
+    district: 'port-louis' as const
+  })
 
   // Configuration des zones de Maurice
   const ZONES_MAURICE = {
@@ -146,6 +162,11 @@ export function AIDashboard({ commercial }: { commercial: string }) {
       return enrichedProspects
     } catch (error) {
       console.error('Erreur chargement prospects:', error)
+      toast({
+        title: 'Erreur',
+        description: 'Impossible de charger les prospects',
+        variant: 'destructive'
+      })
       return []
     }
   }
@@ -196,16 +217,93 @@ export function AIDashboard({ commercial }: { commercial: string }) {
     }
   }
 
+  // Fonction pour créer un RDV
+  async function handleCreateRdv(prospect: any) {
+    setSelectedProspectForRdv(prospect)
+    setShowRdvDialog(true)
+  }
+
+  // Fonction pour sauvegarder le RDV
+  async function saveRdv(data: any) {
+    try {
+      const response = await fetch('/api/rdv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...data,
+          date_time: `${data.date}T${data.time}:00`,
+          commercial: commercial || 'Karine MOMUS'
+        })
+      })
+
+      if (!response.ok) throw new Error('Erreur création RDV')
+
+      toast({
+        title: '✅ RDV créé',
+        description: `Rendez-vous planifié avec ${data.prospect?.nom || selectedProspectForRdv?.nom}`
+      })
+      
+      setShowRdvDialog(false)
+      setSelectedProspectForRdv(null)
+      
+    } catch (error) {
+      console.error('Erreur création RDV:', error)
+      toast({
+        title: 'Erreur',
+        description: 'Impossible de créer le RDV',
+        variant: 'destructive'
+      })
+    }
+  }
+
   // Générer le planning hebdomadaire automatique
   async function generateWeeklyPlanning() {
     setGeneratingPlan(true)
     try {
-      // Simuler l'appel API (en production, utiliser le service AIService)
       const planning = await generatePlanningFromProspects(prospects)
       setWeeklyPlanning(planning)
       
+      // Optionnel : créer automatiquement les RDV
+      const createRdvs = window.confirm('Voulez-vous créer automatiquement les RDV pour cette semaine ?')
+      
+      if (createRdvs) {
+        let rdvCount = 0
+        for (const [jour, data] of Object.entries(planning)) {
+          const date = getNextDateForDay(jour)
+          let heure = 9 // Commencer à 9h
+          
+          for (const prospect of data.prospects) {
+            await fetch('/api/rdv', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                prospect_id: prospect.id,
+                prospect_nom: prospect.nom,
+                commercial: commercial || 'Karine MOMUS',
+                date_time: `${date}T${String(heure).padStart(2, '0')}:00:00`,
+                duree_min: 45,
+                type_visite: 'decouverte',
+                priorite: prospect.priorite >= 80 ? 'haute' : 'normale',
+                statut: 'planifie',
+                lieu: prospect.adresse || `${prospect.ville}`,
+                notes: `Visite planifiée automatiquement - ${prospect.secteur}`,
+                prospect: prospect
+              })
+            })
+            rdvCount++
+            heure++ // Incrémenter l'heure pour le prochain RDV
+            if (heure >= 17) break // Arrêter après 17h
+          }
+        }
+        
+        toast({
+          title: '✅ Planning créé',
+          description: `${rdvCount} RDV créés dans votre planning`
+        })
+      }
+      
       toast({
-        title: '✅ Planning généré avec succès',
+        title: '✅ Planning généré',
         description: `${Object.values(planning).reduce((sum, day) => sum + day.prospects.length, 0)} visites planifiées sur la semaine`
       })
     } catch (error) {
@@ -289,6 +387,25 @@ export function AIDashboard({ commercial }: { commercial: string }) {
     return 'Centre'
   }
 
+  // Obtenir la prochaine date pour un jour donné
+  function getNextDateForDay(dayName: string): string {
+    const days: Record<string, number> = {
+      'Lundi': 1, 'Mardi': 2, 'Mercredi': 3, 'Jeudi': 4, 'Vendredi': 5
+    }
+    
+    const today = new Date()
+    const targetDay = days[dayName]
+    const currentDay = today.getDay()
+    
+    let daysToAdd = targetDay - currentDay
+    if (daysToAdd <= 0) daysToAdd += 7
+    
+    const targetDate = new Date(today)
+    targetDate.setDate(today.getDate() + daysToAdd)
+    
+    return targetDate.toISOString().split('T')[0]
+  }
+
   // Créer des RDV automatiquement pour une journée
   async function createAutomaticAppointments(jour: string, prospects: any[]) {
     setLoading(true)
@@ -322,7 +439,10 @@ export function AIDashboard({ commercial }: { commercial: string }) {
         const res = await fetch('/api/rdv', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(appointmentData)
+          body: JSON.stringify({
+            ...appointmentData,
+            date_time: `${appointmentData.date}T${appointmentData.time}:00`
+          })
         })
         
         if (res.ok) {
@@ -344,25 +464,6 @@ export function AIDashboard({ commercial }: { commercial: string }) {
     } finally {
       setLoading(false)
     }
-  }
-
-  // Obtenir la prochaine date pour un jour donné
-  function getNextDateForDay(dayName: string): string {
-    const days: Record<string, number> = {
-      'Lundi': 1, 'Mardi': 2, 'Mercredi': 3, 'Jeudi': 4, 'Vendredi': 5
-    }
-    
-    const today = new Date()
-    const targetDay = days[dayName]
-    const currentDay = today.getDay()
-    
-    let daysToAdd = targetDay - currentDay
-    if (daysToAdd <= 0) daysToAdd += 7
-    
-    const targetDate = new Date(today)
-    targetDate.setDate(today.getDate() + daysToAdd)
-    
-    return targetDate.toISOString().split('T')[0]
   }
 
   return (
@@ -540,7 +641,11 @@ export function AIDashboard({ commercial }: { commercial: string }) {
                                     </p>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                       {data.prospects.slice(0, 4).map((prospect, idx) => (
-                                        <div key={idx} className="flex items-center gap-2 text-sm p-2 bg-muted rounded">
+                                        <div 
+                                          key={idx} 
+                                          className="flex items-center gap-2 text-sm p-2 bg-muted rounded cursor-pointer hover:bg-accent"
+                                          onClick={() => handleCreateRdv(prospect)}
+                                        >
                                           <Badge variant="outline" className="text-xs">
                                             {prospect.secteur === 'hotel' ? '🏨' : 
                                              prospect.secteur === 'pharmacie' ? '💊' :
@@ -760,7 +865,11 @@ export function AIDashboard({ commercial }: { commercial: string }) {
                   .sort((a, b) => b.priorite - a.priorite)
                   .slice(0, 10)
                   .map((hotel, idx) => (
-                    <Card key={hotel.id} className="hover:shadow-md transition-all">
+                    <Card 
+                      key={hotel.id} 
+                      className="hover:shadow-md transition-all cursor-pointer"
+                      onClick={() => handleCreateRdv(hotel)}
+                    >
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
@@ -797,10 +906,26 @@ export function AIDashboard({ commercial }: { commercial: string }) {
                           </div>
                           
                           <div className="flex gap-2">
-                            <Button size="sm" variant="outline">
-                              <Phone className="h-4 w-4" />
-                            </Button>
-                            <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                            {hotel.telephone && (
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  window.location.href = `tel:${hotel.telephone}`
+                                }}
+                              >
+                                <Phone className="h-4 w-4" />
+                              </Button>
+                            )}
+                            <Button 
+                              size="sm" 
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleCreateRdv(hotel)
+                              }}
+                            >
                               <Calendar className="h-4 w-4 mr-1" />
                               RDV
                             </Button>
@@ -849,7 +974,11 @@ export function AIDashboard({ commercial }: { commercial: string }) {
                   .sort((a, b) => b.priorite - a.priorite)
                   .slice(0, 8)
                   .map((pharmacy) => (
-                    <Card key={pharmacy.id} className="hover:shadow-md transition-all">
+                    <Card 
+                      key={pharmacy.id} 
+                      className="hover:shadow-md transition-all cursor-pointer"
+                      onClick={() => handleCreateRdv(pharmacy)}
+                    >
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -896,6 +1025,35 @@ export function AIDashboard({ commercial }: { commercial: string }) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Dialog RDV */}
+      {showRdvDialog && (
+        <RdvDialogEnhanced
+          open={showRdvDialog}
+          onClose={() => {
+            setShowRdvDialog(false)
+            setSelectedProspectForRdv(null)
+          }}
+          prospects={prospects}
+          rdv={selectedProspectForRdv ? {
+            id: 0,
+            prospect_id: selectedProspectForRdv.id,
+            prospect_nom: selectedProspectForRdv.nom,
+            prospect: selectedProspectForRdv,
+            commercial: commercial || 'Karine MOMUS',
+            titre: `RDV - ${selectedProspectForRdv.nom}`,
+            date_time: new Date().toISOString(),
+            duree_min: 60,
+            type_visite: 'decouverte' as const,
+            priorite: 'normale' as const,
+            statut: 'planifie' as const,
+            notes: '',
+            lieu: selectedProspectForRdv.adresse || `${selectedProspectForRdv.ville}, ${selectedProspectForRdv.district || ''}`
+          } : null}
+          onSave={saveRdv}
+          commercialInfo={commercialInfo}
+        />
+      )}
     </div>
   )
 }
