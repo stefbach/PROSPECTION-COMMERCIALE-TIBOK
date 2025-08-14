@@ -1460,15 +1460,16 @@ export default function PlanningAdvancedSection() {
       </Card>
 
       {/* Dialogs */}
-      <RdvDialog
-        open={showAddRdv || !!editingRdv}
-        onClose={() => {
-          setShowAddRdv(false)
-          setEditingRdv(null)
-        }}
-        prospects={prospects}
-        rdv={editingRdv}
-        onSave={async (data) => {
+     {/* Dialogs */}
+<RdvDialogEnhanced
+  open={showAddRdv || !!editingRdv}
+  onClose={() => {
+    setShowAddRdv(false)
+    setEditingRdv(null)
+  }}
+  prospects={prospects}
+  rdv={editingRdv}
+  onSave={async (data) => {
           if (editingRdv) {
             const success = await updateRdv(editingRdv.id, data)
             if (success) {
