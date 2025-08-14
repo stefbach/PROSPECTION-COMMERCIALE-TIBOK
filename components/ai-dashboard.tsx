@@ -38,7 +38,7 @@ import {
   FileText,
   Download,
   Star,
-  Activity
+  Activity,
   Eye
 } from 'lucide-react'
 
