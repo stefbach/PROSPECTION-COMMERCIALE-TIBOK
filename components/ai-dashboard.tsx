@@ -39,6 +39,7 @@ import {
   Download,
   Star,
   Activity
+  Eye
 } from 'lucide-react'
 
 // Types
