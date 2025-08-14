@@ -382,12 +382,22 @@ export default function PlanningAdvancedSection() {
 
   // ========== GESTION DES RDV ==========
   
-  async function createRdv(data: any) {
-    try {
-      const prospect = prospects.find(p => p.id === data.prospect_id)
-      if (!prospect) {
-        throw new Error("Prospect non trouvé")
-      }
+ async function createRdv(data: any) {
+  try {
+    // VALIDATION : Vérifier que prospect_id est valide
+    if (!data.prospect_id || data.prospect_id === 0) {
+      toast({
+        title: "Erreur",
+        description: "Veuillez sélectionner un prospect",
+        variant: "destructive"
+      })
+      return false
+    }
+    
+    const prospect = prospects.find(p => p.id === data.prospect_id)
+    if (!prospect) {
+      throw new Error("Prospect non trouvé")
+    }
 
       const rdvData = {
         prospect_id: data.prospect_id,
