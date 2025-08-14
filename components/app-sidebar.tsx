@@ -1,77 +1,74 @@
-"use client"
+'use client'
 
-import * as React from "react"
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarRail,
+import * as React from 'react'
+import { 
+  Sidebar, 
+  SidebarContent, 
+  SidebarFooter, 
+  SidebarHeader, 
+  SidebarMenu, 
+  SidebarMenuItem, 
+  SidebarMenuButton 
 } from "@/components/ui/sidebar"
-import { Building2, CalendarPlus, ClipboardCheck, LayoutDashboard, Route, Brain } from 'lucide-react'
+import { Home, Users, Calendar, Brain } from "lucide-react"
 
-type Props = {
-  onNavigate?: (key: "dashboard" | "prospects" | "planning" | "ai") => void
-  current?: "dashboard" | "prospects" | "planning" | "ai"
+interface AppSidebarProps {
+  onNavigate?: (section: string) => void
+  current?: string
 }
 
-export function AppSidebar({ onNavigate = () => {}, current = "dashboard" }: Props) {
-  const items = [
-    { key: "dashboard", title: "Tableau de Bord", icon: LayoutDashboard },
-    { key: "prospects", title: "Base Prospects", icon: Building2 },
-    { key: "planning", title: "Planning", icon: Route },
-    { key: "ai", title: "Intelligence IA", icon: Brain, badge: "NEW" },
-  ] as const
+export function AppSidebar({ onNavigate = () => {}, current = 'dashboard' }: AppSidebarProps) {
+  const menuItems = [
+    { id: 'dashboard', label: 'Tableau de bord', icon: Home },
+    { id: 'prospects', label: 'Prospects', icon: Users },
+    { id: 'rdv', label: 'Rendez-vous', icon: Calendar },
+    { id: 'planning', label: 'Planning', icon: Calendar },
+    { id: 'ai', label: 'Assistant IA', icon: Brain }
+  ]
+
+  // Protection contre undefined
+  if (!menuItems || !Array.isArray(menuItems)) {
+    return <Sidebar><SidebarContent>Loading...</SidebarContent></Sidebar>
+  }
 
   return (
-    <Sidebar variant="sidebar" collapsible="offcanvas">
+    <Sidebar>
       <SidebarHeader>
-        <div className="px-2 py-1 text-xs text-sidebar-foreground/70">Navigation</div>
+        <div className="flex items-center gap-2 px-2 py-4">
+          <div className="h-8 w-8 rounded-md bg-blue-100 text-blue-700 grid place-items-center font-bold">
+            PM
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold">ProspectMed</h2>
+            <p className="text-xs text-muted-foreground">Pro Version</p>
+          </div>
+        </div>
       </SidebarHeader>
+      
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>ProspectMed Pro</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {items.map((item) => (
-                <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton
-                    tooltip={item.title}
-                    isActive={current === item.key}
-                    onClick={() => onNavigate(item.key)}
-                    aria-current={current === item.key ? "page" : undefined}
-                  >
-                    <item.icon />
-                    <span className="flex items-center gap-2">
-                      {item.title}
-                      {item.badge && (
-                        <span className="text-xs bg-gradient-to-r from-purple-500 to-blue-500 text-white px-1.5 py-0.5 rounded">
-                          {item.badge}
-                        </span>
-                      )}
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <SidebarMenu>
+          {menuItems.map((item) => {
+            const Icon = item?.icon || Home
+            return (
+              <SidebarMenuItem key={item.id}>
+                <SidebarMenuButton
+                  onClick={() => onNavigate && onNavigate(item.id)}
+                  isActive={current === item.id}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{item.label || 'Menu'}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )
+          })}
+        </SidebarMenu>
       </SidebarContent>
+      
       <SidebarFooter>
-        <div className="px-2 py-1 text-xs text-sidebar-foreground/60">
-          🤖 Propulsé par GPT-4
+        <div className="px-2 py-4 text-xs text-muted-foreground">
+          © 2025 ProspectMed
         </div>
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   )
 }
-
-export default AppSidebar
-

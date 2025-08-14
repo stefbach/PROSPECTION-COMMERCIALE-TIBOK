@@ -1,106 +1,108 @@
 "use client"
 
 import * as React from "react"
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
-import { AppSidebar } from "@/components/app-sidebar"
-import { Button } from "@/components/ui/button"
-import { useToast } from "@/hooks/use-toast"
-import { Bell, Brain } from 'lucide-react'
-import DashboardSection from "@/components/sections/dashboard"
-import ProspectsSection from "@/components/sections/prospects-mauritius"
-import PlanningSection from "@/components/sections/planning"
-import { AIDashboard } from "@/components/ai-dashboard"
-
-type SectionKey = "dashboard" | "prospects" | "planning" | "ai"
 
 export default function Page() {
-  const [section, setSection] = React.useState<SectionKey>("dashboard")
-  const [showAI, setShowAI] = React.useState(false)
-  const { toast } = useToast()
+  const [section, setSection] = React.useState("dashboard")
   const today = new Date().toLocaleDateString("fr-FR")
-  
-  // Commercial actuel (à remplacer par authentification réelle)
   const currentCommercial = "Jean Dupont"
 
-  function navigateTo(next: SectionKey) {
-    setSection(next)
+  const sections = {
+    dashboard: <DashboardSection />,
+    prospects: <ProspectsSection />,
+    planning: <PlanningSection />,
+    ai: <AISection commercial={currentCommercial} />
   }
 
   return (
-    <SidebarProvider>
-      <AppSidebar onNavigate={navigateTo} current={section} />
-      <SidebarInset>
-        <header className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b">
-          <div className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-3">
-              <SidebarTrigger />
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-md bg-blue-100 text-blue-700 grid place-items-center font-bold">
-                  PM
-                </div>
-                <h1 className="text-xl font-semibold text-gray-900">ProspectMed Pro</h1>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 text-sm text-gray-600">
-              <span className="hidden md:inline">{currentCommercial} • {today}</span>
-              
-              {/* Bouton IA */}
-              <Button 
-                variant={showAI ? "default" : "outline"} 
-                size="sm"
-                onClick={() => setShowAI(!showAI)}
-                className="gap-2"
-              >
-                <Brain className="h-4 w-4" />
-                Assistant IA
-              </Button>
-              
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                aria-label="Notifications" 
-                onClick={() => toast({ title: 'Notifications', description: 'Aucune notification' })}
-              >
-                <Bell className="h-5 w-5" />
-              </Button>
-            </div>
+    <div className="flex min-h-screen">
+      {/* Sidebar simple */}
+      <aside className="w-64 bg-gray-100 p-4">
+        <h2 className="text-xl font-bold mb-4">ProspectMed Pro</h2>
+        <nav className="space-y-2">
+          {["dashboard", "prospects", "planning", "ai"].map(key => (
+            <button
+              key={key}
+              onClick={() => setSection(key)}
+              className={`w-full text-left p-2 rounded ${section === key ? 'bg-blue-500 text-white' : 'hover:bg-gray-200'}`}
+            >
+              {key.charAt(0).toUpperCase() + key.slice(1)}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      {/* Main content */}
+      <main className="flex-1 p-6">
+        <header className="mb-6">
+          <div className="flex justify-between items-center">
+            <h1 className="text-2xl font-bold">ProspectMed Pro</h1>
+            <span className="text-sm text-gray-600">{currentCommercial} • {today}</span>
           </div>
         </header>
+        {sections[section as keyof typeof sections] || <div>Section non trouvée</div>}
+      </main>
+    </div>
+  )
+}
 
-        <main className="p-4 md:p-6">
-          {/* Panel IA flottant */}
-          {showAI && (
-            <div className="fixed right-4 top-20 w-[400px] max-h-[calc(100vh-100px)] z-50 bg-background border rounded-lg shadow-xl overflow-hidden">
-              <div className="p-2 border-b bg-muted/50">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Assistant IA</span>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    onClick={() => setShowAI(false)}
-                  >
-                    ✕
-                  </Button>
-                </div>
-              </div>
-              <div className="max-h-[500px] overflow-y-auto">
-                <AIDashboard commercial={currentCommercial} />
-              </div>
-            </div>
-          )}
+function DashboardSection() {
+  const metrics = [
+    { title: 'Total Prospects', value: '254' },
+    { title: 'RDV cette semaine', value: '18' },
+    { title: 'Taux de conversion', value: '32%' },
+    { title: 'Objectif mensuel', value: '67%' }
+  ]
 
-          {/* Sections principales */}
-          {section === "dashboard" && <DashboardSection />}
-          {section === "prospects" && (
-            <ProspectsSection onPlanifierRdv={() => setSection("rdv")} />
-          )}
-          {section === "rdv" && <RdvSection />}
-          {section === "planning" && <PlanningSection />}
-          {section === "ai" && (
-            <AIDashboard commercial={currentCommercial} />
-          )}
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4">Tableau de bord</h2>
+      <div className="grid grid-cols-4 gap-4">
+        {metrics && metrics.map((metric, i) => (
+          <div key={i} className="p-4 border rounded">
+            <p className="text-sm text-gray-600">{metric.title}</p>
+            <p className="text-2xl font-bold">{metric.value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ProspectsSection() {
+  const prospects = [
+    { id: 1, nom: "Hôtel Paradise", ville: "Grand Baie" },
+    { id: 2, nom: "Pharmacie Centrale", ville: "Port Louis" }
+  ]
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4">Prospects Maurice</h2>
+      <div className="space-y-2">
+        {prospects && prospects.map(p => (
+          <div key={p.id} className="p-4 border rounded">
+            {p.nom} - {p.ville}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PlanningSection() {
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4">Planning</h2>
+      <p>Planning hebdomadaire</p>
+    </div>
+  )
+}
+
+function AISection({ commercial }: { commercial: string }) {
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-4">Assistant IA</h2>
+      <p>Bienvenue {commercial}</p>
+    </div>
   )
 }
