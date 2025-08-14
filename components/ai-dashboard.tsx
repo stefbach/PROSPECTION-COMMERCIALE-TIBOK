@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
+import RdvDialogEnhanced from '@/components/dialogs/rdv-dialog-enhanced'
 import {
   Brain,
   Calendar,
