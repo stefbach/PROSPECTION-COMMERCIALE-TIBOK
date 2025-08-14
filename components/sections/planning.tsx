@@ -1512,7 +1512,7 @@ export default function PlanningAdvancedSection() {
 // ========== COMPOSANTS DIALOGS ==========
 
 // Dialog RDV
-function RdvDialog({ 
+*function RdvDialog({ 
   open, 
   onClose, 
   prospects, 
@@ -1753,7 +1753,7 @@ function RdvDialog({
     </Dialog>
   )
 }
-
+*
 // Dialog Configuration Commercial
 function ConfigCommercialDialog({
   open,
