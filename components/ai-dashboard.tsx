@@ -36,9 +36,6 @@ import {
   BarChart3,
   Activity,
   Filter,
-  BarChart3,
-  Activity,
-  Filter,
   ChevronRight,
   Info,
   Users
