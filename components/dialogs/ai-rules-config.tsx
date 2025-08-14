@@ -16,7 +16,8 @@ import { useToast } from '@/hooks/use-toast'
 import {
   Brain, Settings, Clock, Calendar, Target, MapPin, 
   TrendingUp, Users, AlertCircle, Save, RefreshCw,
-  Plus, Trash2, Edit, Check, X, Sparkles, Info
+  Plus, Trash2, Edit, Check, X, Sparkles, Info,
+  Download, Upload
 } from 'lucide-react'
 
 // Types pour les règles IA
