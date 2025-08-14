@@ -45,8 +45,6 @@ import {
 } from 'lucide-react'
   ChevronRight,
   Info
-} from 'lucide-react'
-
 // Types
 interface Prospect {
   id: number
