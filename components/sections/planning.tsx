@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
+import RdvDialogEnhanced from '@/components/dialogs/rdv-dialog-enhanced'
 import { 
   Calendar, Clock, Phone, MapPin, User, AlertCircle, CheckCircle, 
   RefreshCw, Search, Download, Plus, Settings, Filter, X,
