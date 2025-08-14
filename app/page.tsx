@@ -5,13 +5,43 @@ import { AIDashboard } from "@/components/ai-dashboard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Brain, Home, Users, Calendar, TrendingUp, Target, MapPin } from "lucide-react"
+import { Brain, Home, Users, Calendar, TrendingUp, Target, MapPin, RefreshCw } from "lucide-react"
 
 export default function Page() {
   const [section, setSection] = React.useState("dashboard")
   const [showAI, setShowAI] = React.useState(false)
+  const [prospects, setProspects] = React.useState([])
+  const [loading, setLoading] = React.useState(false)
   const today = new Date().toLocaleDateString("fr-FR")
   const currentCommercial = "Jean Dupont"
+
+  // Charger les prospects depuis l'API
+  React.useEffect(() => {
+    loadProspects()
+  }, [])
+
+  async function loadProspects() {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/prospects')
+      if (res.ok) {
+        const data = await res.json()
+        setProspects(data.data || data || [])
+        console.log('Prospects chargés:', data)
+      } else {
+        console.error('Erreur API:', res.status)
+      }
+    } catch (error) {
+      console.error('Erreur chargement prospects:', error)
+      // Données de fallback si l'API ne fonctionne pas
+      setProspects([
+        { id: 1, nom: "Hôtel Paradise Beach", ville: "Grand Baie", zone: "Nord", statut: "nouveau", secteur: "hotel" },
+        { id: 2, nom: "Pharmacie Centrale", ville: "Port Louis", zone: "Centre", statut: "qualifié", secteur: "pharmacie" }
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const menuItems = [
     { id: 'dashboard', label: 'Tableau de bord', icon: Home },
@@ -21,15 +51,15 @@ export default function Page() {
   ]
 
   const sections = {
-    dashboard: <DashboardSection />,
-    prospects: <ProspectsSection />,
+    dashboard: <DashboardSection prospects={prospects} />,
+    prospects: <ProspectsSection prospects={prospects} onReload={loadProspects} loading={loading} />,
     planning: <PlanningSection />,
     ai: <AIDashboard commercial={currentCommercial} />
   }
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {/* Sidebar améliorée */}
+      {/* Sidebar */}
       <aside className="w-64 bg-white shadow-md">
         <div className="p-4 border-b">
           <div className="flex items-center gap-2">
@@ -49,9 +79,12 @@ export default function Page() {
             return (
               <button
                 key={item.id}
-                onClick={() => setSection(item.id)}
+                onClick={() => {
+                  setSection(item.id)
+                  setShowAI(false)
+                }}
                 className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${
-                  section === item.id 
+                  section === item.id && !showAI
                     ? 'bg-blue-50 text-blue-600 font-medium' 
                     : 'hover:bg-gray-50 text-gray-700'
                 }`}
@@ -86,9 +119,22 @@ export default function Page() {
             <h1 className="text-2xl font-bold text-gray-800">
               {showAI ? 'Assistant IA ProspectMed' : menuItems.find(m => m.id === section)?.label}
             </h1>
-            <Badge variant="outline" className="gap-1">
-              Île Maurice 🇲🇺
-            </Badge>
+            <div className="flex items-center gap-3">
+              {section === 'prospects' && (
+                <Button 
+                  onClick={loadProspects} 
+                  variant="outline" 
+                  size="sm"
+                  disabled={loading}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                  Actualiser
+                </Button>
+              )}
+              <Badge variant="outline" className="gap-1">
+                Île Maurice 🇲🇺
+              </Badge>
+            </div>
           </div>
         </header>
         
@@ -104,9 +150,9 @@ export default function Page() {
   )
 }
 
-function DashboardSection() {
+function DashboardSection({ prospects }: { prospects: any[] }) {
   const metrics = [
-    { title: 'Total Prospects', value: '254', change: '+12% ce mois', icon: Users, color: 'blue' },
+    { title: 'Total Prospects', value: prospects.length.toString(), change: '+12% ce mois', icon: Users, color: 'blue' },
     { title: 'RDV cette semaine', value: '18', change: '6 confirmés', icon: Calendar, color: 'green' },
     { title: 'Taux de conversion', value: '32%', change: '+5%', icon: TrendingUp, color: 'purple' },
     { title: 'Objectif mensuel', value: '67%', change: 'Rs 134k/200k', icon: Target, color: 'orange' }
@@ -136,19 +182,19 @@ function DashboardSection() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Activité récente</CardTitle>
+          <CardTitle>Statut Base de Données</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-              <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
-              <p className="text-sm">Nouveau prospect: Hôtel Belle Mare</p>
-              <span className="text-xs text-gray-500 ml-auto">Il y a 2h</span>
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span>API Prospects:</span>
+              <Badge variant={prospects.length > 0 ? "success" : "destructive"}>
+                {prospects.length > 0 ? 'Connectée' : 'Déconnectée'}
+              </Badge>
             </div>
-            <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
-              <div className="h-2 w-2 bg-green-500 rounded-full"></div>
-              <p className="text-sm">RDV confirmé: Pharmacie Port Louis</p>
-              <span className="text-xs text-gray-500 ml-auto">Il y a 4h</span>
+            <div className="flex justify-between">
+              <span>Nombre de prospects:</span>
+              <span className="font-bold">{prospects.length}</span>
             </div>
           </div>
         </CardContent>
@@ -157,15 +203,7 @@ function DashboardSection() {
   )
 }
 
-function ProspectsSection() {
-  const prospects = [
-    { id: 1, nom: "Hôtel Paradise Beach", ville: "Grand Baie", zone: "Nord", statut: "nouveau", secteur: "hotel" },
-    { id: 2, nom: "Pharmacie Centrale", ville: "Port Louis", zone: "Centre", statut: "qualifié", secteur: "pharmacie" },
-    { id: 3, nom: "Hôtel Flic en Flac Resort", ville: "Flic en Flac", zone: "Ouest", statut: "nouveau", secteur: "hotel" },
-    { id: 4, nom: "Clinique du Nord", ville: "Pereybère", zone: "Nord", statut: "proposition", secteur: "clinique" },
-    { id: 5, nom: "Pharmacie Blue Bay", ville: "Blue Bay", zone: "Sud", statut: "qualifié", secteur: "pharmacie" }
-  ]
-
+function ProspectsSection({ prospects, onReload, loading }: { prospects: any[], onReload: () => void, loading: boolean }) {
   const getIcon = (secteur: string) => {
     switch(secteur) {
       case 'hotel': return '🏨'
@@ -175,12 +213,27 @@ function ProspectsSection() {
     }
   }
 
+  if (loading) {
+    return <div className="text-center py-8">Chargement des prospects...</div>
+  }
+
+  if (prospects.length === 0) {
+    return (
+      <Card className="text-center py-8">
+        <CardContent>
+          <p className="text-gray-600 mb-4">Aucun prospect trouvé</p>
+          <Button onClick={onReload}>Recharger</Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold">Prospects Île Maurice</h2>
-          <p className="text-gray-600">Service de téléconsultation médicale</p>
+          <p className="text-gray-600">{prospects.length} prospects au total</p>
         </div>
         <Button className="bg-blue-600 hover:bg-blue-700">
           + Nouveau prospect
@@ -198,20 +251,30 @@ function ProspectsSection() {
                     <h3 className="font-semibold text-lg">{p.nom}</h3>
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <MapPin className="h-4 w-4" />
-                      <span>{p.ville} - Zone {p.zone}</span>
+                      <span>{p.ville || 'Non défini'} - Zone {p.zone || p.district || 'N/A'}</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge variant={
                     p.statut === 'nouveau' ? 'default' :
-                    p.statut === 'qualifié' ? 'secondary' :
+                    p.statut === 'qualifie' || p.statut === 'qualifié' ? 'secondary' :
                     'outline'
                   }>
-                    {p.statut}
+                    {p.statut || 'nouveau'}
                   </Badge>
-                  <Button size="sm" variant="outline">Détails</Button>
-                  <Button size="sm" className="bg-green-600 hover:bg-green-700">
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => alert(`Détails de ${p.nom}`)}
+                  >
+                    Détails
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    className="bg-green-600 hover:bg-green-700"
+                    onClick={() => alert(`Contacter ${p.nom}`)}
+                  >
                     Contacter
                   </Button>
                 </div>
