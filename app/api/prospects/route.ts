@@ -1,164 +1,118 @@
-// app/api/prospects/route.ts
-// VERSION SIMPLE - API pour les prospects
+import { NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
 
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '../../../lib/database'
-
-// GET - Récupérer les prospects
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    // Récupérer TOUS les prospects depuis Supabase
-    const prospects = await db.getAllProspects()
-    
-    // Extraire les paramètres de recherche
     const { searchParams } = new URL(request.url)
-    const search = searchParams.get('q')
-    const secteur = searchParams.get('secteur')
-    const district = searchParams.get('district')
-    const statut = searchParams.get('statut')
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
+    const search = searchParams.get('search') || ''
     
-    // Filtrer si nécessaire
-    let filtered = prospects
-    
+    // Calculer l'offset pour la pagination
+    const from = (page - 1) * limit
+    const to = from + limit - 1
+
+    console.log(`📥 Chargement prospects: page ${page}, limit ${limit}, from ${from} to ${to}`)
+
+    // Récupérer le nombre total SANS charger toutes les données
+    const { count } = await supabase
+      .from('prospects')
+      .select('*', { count: 'exact', head: true })
+
+    // Récupérer seulement la page demandée
+    let query = supabase
+      .from('prospects')
+      .select('*')
+      .range(from, to)
+      .order('id', { ascending: true })
+
+    // Ajouter la recherche si nécessaire
     if (search) {
-      filtered = filtered.filter(p => 
-        p.nom.toLowerCase().includes(search.toLowerCase()) ||
-        p.ville?.toLowerCase().includes(search.toLowerCase()) ||
-        p.contact?.toLowerCase().includes(search.toLowerCase())
-      )
+      query = query.or(`nom.ilike.%${search}%,ville.ilike.%${search}%`)
     }
-    
-    if (secteur) {
-      filtered = filtered.filter(p => p.secteur === secteur)
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('Erreur Supabase:', error)
+      throw error
     }
-    
-    if (district) {
-      filtered = filtered.filter(p => p.district === district)
-    }
-    
-    if (statut) {
-      filtered = filtered.filter(p => p.statut === statut)
-    }
-    
-    // Si on demande TOUT (limit > 1000), retourner tout
-    if (limit > 1000) {
-      return NextResponse.json({
-        data: filtered,
-        total: filtered.length
-      })
-    }
-    
-    // Sinon, paginer
-    const start = (page - 1) * limit
-    const end = start + limit
-    const paginated = filtered.slice(start, end)
-    
+
+    console.log(`✅ ${data?.length || 0} prospects chargés sur ${count} total`)
+
     return NextResponse.json({
-      data: paginated,
+      success: true,
+      data: data || [],
       pagination: {
-        page,
-        limit,
-        total: filtered.length,
-        totalPages: Math.ceil(filtered.length / limit)
+        page: page,
+        limit: limit,
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit),
+        from: from + 1,
+        to: Math.min(to + 1, count || 0)
       }
     })
-    
-  } catch (error) {
-    console.error('Erreur GET:', error)
-    return NextResponse.json({ 
-      error: 'Erreur serveur',
-      data: [],
-      pagination: { page: 1, limit: 50, total: 0, totalPages: 0 }
-    }, { status: 500 })
-  }
-}
 
-// POST - Créer un prospect
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    
-    if (!body.nom || !body.ville) {
-      return NextResponse.json(
-        { error: 'Nom et ville requis' },
-        { status: 400 }
-      )
-    }
-    
-    const newProspect = await db.createProspect(body)
-    return NextResponse.json(newProspect)
-    
-  } catch (error) {
-    console.error('Erreur POST:', error)
+  } catch (error: any) {
+    console.error('❌ Erreur API:', error)
     return NextResponse.json(
-      { error: 'Erreur création' },
+      { 
+        success: false, 
+        error: error?.message || 'Erreur serveur',
+        details: error
+      },
       { status: 500 }
     )
   }
 }
 
-// PATCH - Mettre à jour un prospect
-export async function PATCH(request: NextRequest) {
+// Ajouter un nouveau prospect
+export async function POST(request: Request) {
   try {
     const body = await request.json()
     
-    if (!body.id) {
-      return NextResponse.json(
-        { error: 'ID requis' },
-        { status: 400 }
-      )
-    }
-    
-    const updated = await db.updateProspect(body.id, body)
-    
-    if (!updated) {
-      return NextResponse.json(
-        { error: 'Prospect non trouvé' },
-        { status: 404 }
-      )
-    }
-    
-    return NextResponse.json(updated)
-    
-  } catch (error) {
-    console.error('Erreur PATCH:', error)
+    const { data, error } = await supabase
+      .from('prospects')
+      .insert([body])
+      .select()
+      .single()
+
+    if (error) throw error
+
+    return NextResponse.json({
+      success: true,
+      data: data
+    })
+  } catch (error: any) {
     return NextResponse.json(
-      { error: 'Erreur mise à jour' },
+      { success: false, error: error?.message },
       { status: 500 }
     )
   }
 }
 
-// DELETE - Supprimer un prospect
-export async function DELETE(request: NextRequest) {
+// Mettre à jour un prospect
+export async function PUT(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
-    
-    if (!id) {
-      return NextResponse.json(
-        { error: 'ID requis' },
-        { status: 400 }
-      )
-    }
-    
-    const success = await db.deleteProspect(parseInt(id))
-    
-    if (!success) {
-      return NextResponse.json(
-        { error: 'Prospect non trouvé' },
-        { status: 404 }
-      )
-    }
-    
-    return NextResponse.json({ success: true })
-    
-  } catch (error) {
-    console.error('Erreur DELETE:', error)
+    const body = await request.json()
+    const { id, ...updateData } = body
+
+    const { data, error } = await supabase
+      .from('prospects')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    return NextResponse.json({
+      success: true,
+      data: data
+    })
+  } catch (error: any) {
     return NextResponse.json(
-      { error: 'Erreur suppression' },
+      { success: false, error: error?.message },
       { status: 500 }
     )
   }
