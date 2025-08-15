@@ -1956,3 +1956,7 @@ export default function PlanningAdvancedSection() {
           }
         }}
         commercialInfo={commercialInfo}
+      />
+    </div>
+  )
+}
