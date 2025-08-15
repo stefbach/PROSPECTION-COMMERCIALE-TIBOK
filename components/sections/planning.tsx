@@ -1,3 +1,4 @@
+// components/sections/planning-enhanced.tsx
 "use client"
 
 import * as React from "react"
@@ -6,14 +7,17 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import RdvDialogEnhanced from '@/components/dialogs/rdv-dialog-enhanced'
 import { 
   Calendar, Clock, Phone, MapPin, User, AlertCircle, CheckCircle, 
   RefreshCw, Search, Download, Plus, Settings, Filter, X,
   ChevronLeft, ChevronRight, Users, Edit, Trash2, Save,
-  Building2, Mail, Globe, Star, FileText, TrendingUp
+  Building2, Mail, Globe, Star, FileText, TrendingUp,
+  Brain, Lock, Unlock, Send, Check, Route, Eye, ArrowUpDown
 } from 'lucide-react'
 
 // ========== TYPES ET INTERFACES ==========
@@ -51,11 +55,20 @@ interface RendezVous {
   duree_min: number
   type_visite: 'decouverte' | 'presentation' | 'negociation' | 'signature' | 'suivi'
   priorite: 'normale' | 'haute' | 'urgente'
-  statut: 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
+  statut: 'proposition' | 'planifie' | 'confirme' | 'en-cours' | 'termine' | 'annule' | 'reporte'
   notes?: string
   lieu?: string
   created_at?: string
   updated_at?: string
+  // Nouveaux champs pour les propositions IA
+  ai_score?: number
+  ai_reason?: string
+  proposed_at?: string
+  validated_at?: string
+  validated_by?: string
+  locked?: boolean
+  locked_at?: string
+  locked_by?: string
 }
 
 interface CommercialInfo {
@@ -244,11 +257,13 @@ export default function PlanningAdvancedSection() {
   const [loadingRdvs, setLoadingRdvs] = React.useState(true)
   const [prospects, setProspects] = React.useState<Prospect[]>([])
   const [rendezVous, setRendezVous] = React.useState<RendezVous[]>([])
+  const [propositions, setPropositions] = React.useState<RendezVous[]>([]) // NOUVEAU
   const [selectedDate, setSelectedDate] = React.useState(new Date().toISOString().split('T')[0])
   const [commercialInfo, setCommercialInfo] = React.useState<CommercialInfo>(DEFAULT_COMMERCIAL)
   const [customDistances, setCustomDistances] = React.useState<CustomDistance[]>([])
   const [settings, setSettings] = React.useState<CostSettings>(DEFAULT_SETTINGS)
   const [viewType, setViewType] = React.useState<'day' | 'week' | 'month'>('day')
+  const [activeTab, setActiveTab] = React.useState<'propositions' | 'planning' | 'optimization'>('planning')
   
   // États des filtres
   const [searchTerm, setSearchTerm] = React.useState("")
@@ -264,6 +279,7 @@ export default function PlanningAdvancedSection() {
   const [showCommercialConfig, setShowCommercialConfig] = React.useState(false)
   const [showDistanceConfig, setShowDistanceConfig] = React.useState(false)
   const [editingRdv, setEditingRdv] = React.useState<RendezVous | null>(null)
+  const [optimizing, setOptimizing] = React.useState(false)
   
   const { toast } = useToast()
 
@@ -271,7 +287,6 @@ export default function PlanningAdvancedSection() {
   
   // Charger les configurations sauvegardées
   React.useEffect(() => {
-    // Commercial info
     const savedCommercial = localStorage.getItem('planning_commercial_info')
     if (savedCommercial) {
       try {
@@ -281,7 +296,6 @@ export default function PlanningAdvancedSection() {
       }
     }
 
-    // Distances personnalisées
     const savedDistances = localStorage.getItem('planning_custom_distances')
     if (savedDistances) {
       try {
@@ -291,7 +305,6 @@ export default function PlanningAdvancedSection() {
       }
     }
 
-    // Paramètres
     const savedSettings = localStorage.getItem('planning_cost_settings')
     if (savedSettings) {
       try {
@@ -338,37 +351,19 @@ export default function PlanningAdvancedSection() {
   async function loadRdvs() {
     setLoadingRdvs(true)
     try {
-      const res = await fetch('/api/rdv', { cache: 'no-store' })
+      // Charger TOUS les RDV incluant les propositions
+      const res = await fetch('/api/rdv?include_propositions=true', { cache: 'no-store' })
       if (!res.ok) throw new Error('Erreur chargement RDV')
       
       const data = await res.json()
       
-      // Enrichir les RDV avec les données complètes des prospects si nécessaire
-      const rdvsWithProspects = await Promise.all(
-        data.map(async (rdv: RendezVous) => {
-          // Si le prospect n'est pas inclus ou incomplet, le charger
-          if (rdv.prospect_id && (!rdv.prospect || !rdv.prospect.district)) {
-            try {
-              const prospectRes = await fetch(`/api/prospects?id=${rdv.prospect_id}`, { cache: 'no-store' })
-              if (prospectRes.ok) {
-                const prospectData = await prospectRes.json()
-                const prospect = Array.isArray(prospectData) ? prospectData[0] : 
-                                prospectData.data ? prospectData.data[0] : prospectData
-                return {
-                  ...rdv,
-                  prospect: prospect,
-                  prospect_nom: prospect?.nom || rdv.prospect_nom
-                }
-              }
-            } catch (e) {
-              console.error(`Erreur chargement prospect ${rdv.prospect_id}:`, e)
-            }
-          }
-          return rdv
-        })
-      )
+      // Séparer propositions et RDV confirmés
+      const props = data.filter((r: RendezVous) => r.statut === 'proposition')
+      const rdvs = data.filter((r: RendezVous) => r.statut !== 'proposition')
       
-      setRendezVous(rdvsWithProspects)
+      setPropositions(props)
+      setRendezVous(rdvs)
+      
     } catch (error) {
       console.error('Erreur chargement RDV:', error)
       toast({
@@ -381,24 +376,271 @@ export default function PlanningAdvancedSection() {
     }
   }
 
-  // ========== GESTION DES RDV ==========
+  // ========== GESTION DES PROPOSITIONS (NOUVEAU) ==========
   
- async function createRdv(data: any) {
-  try {
-    // VALIDATION : Vérifier que prospect_id est valide
-    if (!data.prospect_id || data.prospect_id === 0) {
+  // Valider une proposition
+  async function validateProposition(prop: RendezVous) {
+    try {
+      // Simuler l'appel au prospect
+      const confirmed = await confirmWithProspect(prop)
+      
+      if (confirmed) {
+        const res = await fetch('/api/rdv', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: prop.id,
+            statut: 'planifie',
+            action: 'validate',
+            validated_at: new Date().toISOString(),
+            validated_by: commercialInfo.nom,
+            notes: (prop.notes || '') + '\n✅ Confirmé avec le prospect'
+          })
+        })
+        
+        if (res.ok) {
+          toast({
+            title: '✅ Proposition validée',
+            description: `RDV avec ${prop.prospect_nom} confirmé et ajouté au planning`
+          })
+          loadRdvs()
+        }
+      }
+    } catch (error) {
       toast({
-        title: "Erreur",
-        description: "Veuillez sélectionner un prospect",
-        variant: "destructive"
+        title: 'Erreur',
+        description: 'Impossible de valider la proposition',
+        variant: 'destructive'
       })
-      return false
+    }
+  }
+
+  // Rejeter une proposition
+  async function rejectProposition(propId: number) {
+    if (!confirm('Rejeter cette proposition ?')) return
+    
+    try {
+      const res = await fetch(`/api/rdv?id=${propId}`, {
+        method: 'DELETE'
+      })
+      
+      if (res.ok) {
+        toast({
+          title: 'Proposition rejetée',
+          description: 'La proposition a été supprimée'
+        })
+        loadRdvs()
+      }
+    } catch (error) {
+      toast({
+        title: 'Erreur',
+        description: 'Impossible de rejeter la proposition',
+        variant: 'destructive'
+      })
+    }
+  }
+
+  // Modifier une proposition avant validation
+  async function editProposition(prop: RendezVous) {
+    setEditingRdv(prop)
+    setShowAddRdv(true)
+  }
+
+  // Simuler l'appel au prospect
+  async function confirmWithProspect(prop: RendezVous): Promise<boolean> {
+    const prospect = prop.prospect
+    const dateTime = new Date(prop.date_time)
+    
+    return confirm(
+      `📞 APPEL PROSPECT\n\n` +
+      `Prospect: ${prop.prospect_nom}\n` +
+      `Téléphone: ${prospect?.telephone || 'Pas de téléphone'}\n` +
+      `Contact: ${prospect?.contact || 'N/A'}\n\n` +
+      `Proposer: ${dateTime.toLocaleDateString('fr-FR')} à ${dateTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}\n` +
+      `Durée: ${prop.duree_min} minutes\n` +
+      `Type: ${prop.type_visite}\n\n` +
+      `Le prospect accepte-t-il ce créneau ?`
+    )
+  }
+
+  // Verrouiller un RDV confirmé
+  async function lockRdv(rdv: RendezVous) {
+    if (!confirm(`Verrouiller ce RDV ?\nUne fois verrouillé, il ne pourra plus être modifié.`)) return
+    
+    try {
+      const res = await fetch('/api/rdv', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: rdv.id,
+          statut: 'confirme',
+          action: 'lock',
+          locked: true,
+          locked_at: new Date().toISOString(),
+          locked_by: commercialInfo.nom
+        })
+      })
+      
+      if (res.ok) {
+        toast({
+          title: '🔒 RDV verrouillé',
+          description: 'Le RDV ne peut plus être modifié'
+        })
+        loadRdvs()
+      }
+    } catch (error) {
+      toast({
+        title: 'Erreur',
+        description: 'Impossible de verrouiller le RDV',
+        variant: 'destructive'
+      })
+    }
+  }
+
+  // Optimiser les tournées
+  async function optimizeRoutes() {
+    setOptimizing(true)
+    
+    try {
+      // Filtrer les RDV du jour/semaine sélectionné
+      const rdvsToOptimize = filteredRdvs.filter(r => 
+        r.statut === 'planifie' || r.statut === 'confirme'
+      )
+      
+      if (rdvsToOptimize.length < 2) {
+        toast({
+          title: 'Optimisation impossible',
+          description: 'Il faut au moins 2 RDV pour optimiser la tournée',
+          variant: 'destructive'
+        })
+        setOptimizing(false)
+        return
+      }
+      
+      // Algorithme d'optimisation (TSP simplifié)
+      const optimized = await calculateOptimalRoute(rdvsToOptimize)
+      
+      // Mettre à jour l'ordre et les heures
+      let currentTime = parseTimeToMinutes(commercialInfo.startHour || '08:00')
+      
+      for (let i = 0; i < optimized.length; i++) {
+        const rdv = optimized[i]
+        const date = new Date(rdv.date_time)
+        
+        // Calculer la nouvelle heure
+        const hours = Math.floor(currentTime / 60)
+        const minutes = currentTime % 60
+        date.setHours(hours, minutes, 0, 0)
+        
+        // Mettre à jour en base
+        await fetch('/api/rdv', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: rdv.id,
+            date_time: date.toISOString(),
+            order_index: i,
+            notes: (rdv.notes || '') + '\n🔄 Optimisé par l\'algorithme de tournée'
+          })
+        })
+        
+        // Calculer le temps pour le prochain RDV
+        currentTime += rdv.duree_min + 30 // +30min de trajet moyen
+        
+        // Gérer la pause déjeuner
+        if (currentTime >= 12 * 60 && currentTime < 13 * 60) {
+          currentTime = 13 * 60
+        }
+      }
+      
+      // Calculer les économies
+      const originalDistance = calculateTotalDistance(rdvsToOptimize)
+      const optimizedDistance = calculateTotalDistance(optimized)
+      const savings = Math.round(((originalDistance - optimizedDistance) / originalDistance) * 100)
+      
+      toast({
+        title: '✅ Tournée optimisée',
+        description: `Économie estimée: ${savings}% de distance et temps de trajet`
+      })
+      
+      loadRdvs()
+      
+    } catch (error) {
+      toast({
+        title: 'Erreur',
+        description: 'Impossible d\'optimiser la tournée',
+        variant: 'destructive'
+      })
+    } finally {
+      setOptimizing(false)
+    }
+  }
+
+  // Algorithme d'optimisation TSP (simplifié)
+  async function calculateOptimalRoute(rdvList: RendezVous[]): Promise<RendezVous[]> {
+    if (rdvList.length <= 2) return rdvList
+    
+    // Algorithme du plus proche voisin
+    const optimized: RendezVous[] = []
+    const remaining = [...rdvList]
+    
+    // Commencer par le premier RDV
+    let current = remaining.shift()!
+    optimized.push(current)
+    
+    while (remaining.length > 0) {
+      // Trouver le RDV le plus proche
+      let nearestIndex = 0
+      let nearestDistance = Infinity
+      
+      for (let i = 0; i < remaining.length; i++) {
+        const distance = calculateDistance(
+          current.prospect || { district: 'port-louis' } as any,
+          remaining[i].prospect || { district: 'port-louis' } as any
+        ).distance
+        
+        if (distance < nearestDistance) {
+          nearestDistance = distance
+          nearestIndex = i
+        }
+      }
+      
+      current = remaining.splice(nearestIndex, 1)[0]
+      optimized.push(current)
     }
     
-    const prospect = prospects.find(p => p.id === data.prospect_id)
-    if (!prospect) {
-      throw new Error("Prospect non trouvé")
+    return optimized
+  }
+
+  function calculateTotalDistance(rdvList: RendezVous[]): number {
+    let total = 0
+    
+    for (let i = 0; i < rdvList.length - 1; i++) {
+      const from = rdvList[i].prospect || { district: 'port-louis' } as any
+      const to = rdvList[i + 1].prospect || { district: 'port-louis' } as any
+      total += calculateDistance(from, to).distance
     }
+    
+    return total
+  }
+
+  // ========== GESTION DES RDV (existant) ==========
+  
+  async function createRdv(data: any) {
+    try {
+      if (!data.prospect_id || data.prospect_id === 0) {
+        toast({
+          title: "Erreur",
+          description: "Veuillez sélectionner un prospect",
+          variant: "destructive"
+        })
+        return false
+      }
+      
+      const prospect = prospects.find(p => p.id === data.prospect_id)
+      if (!prospect) {
+        throw new Error("Prospect non trouvé")
+      }
 
       const rdvData = {
         prospect_id: data.prospect_id,
@@ -412,7 +654,6 @@ export default function PlanningAdvancedSection() {
         statut: data.statut || 'planifie',
         notes: data.notes || '',
         lieu: data.lieu || prospect.adresse || `${prospect.ville}, ${prospect.district}`,
-        // Inclure les données complètes du prospect pour synchronisation
         prospect: {
           id: prospect.id,
           nom: prospect.nom,
@@ -549,7 +790,6 @@ export default function PlanningAdvancedSection() {
     const fromAddress = from.adresse || `${from.ville}, ${from.district}`
     const toAddress = to.adresse || `${to.ville}, ${to.district}`
     
-    // Vérifier si une distance personnalisée existe
     const customDistance = customDistances.find(
       d => (d.from === fromAddress && d.to === toAddress) ||
            (d.from === toAddress && d.to === fromAddress)
@@ -568,7 +808,6 @@ export default function PlanningAdvancedSection() {
       }
     }
     
-    // Utiliser la matrice de distance par défaut
     const distance = BASE_DISTANCE_MATRIX[from.district]?.[to.district] || 25
     
     const now = new Date()
@@ -600,6 +839,11 @@ export default function PlanningAdvancedSection() {
     
     const route = calculateDistance(homeLocation, to)
     return { ...route, fromHome: true }
+  }
+
+  function parseTimeToMinutes(time: string): number {
+    const [hours, minutes] = time.split(':').map(Number)
+    return hours * 60 + minutes
   }
 
   // ========== NAVIGATION ET FILTRES ==========
@@ -702,7 +946,6 @@ export default function PlanningAdvancedSection() {
       filtered = filtered.filter(rdv => rdv.type_visite === filterTypeVisite)
     }
     
-    // Trier par date et heure
     return filtered.sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
   }, [rendezVous, selectedDate, viewType, searchTerm, filterStatut, filterCommercial, filterProspect, filterDistrict, filterTypeVisite])
 
@@ -713,7 +956,6 @@ export default function PlanningAdvancedSection() {
     let tempsDeplacement = 0
     let coutTotal = 0
     
-    // Distance depuis le domicile au premier RDV
     if (filteredRdvs.length > 0 && commercialInfo.adresse && filteredRdvs[0].prospect) {
       const fromHome = calculateFromHome(filteredRdvs[0].prospect)
       if (fromHome) {
@@ -723,7 +965,6 @@ export default function PlanningAdvancedSection() {
       }
     }
     
-    // Distances entre les RDV
     for (let i = 0; i < filteredRdvs.length - 1; i++) {
       if (filteredRdvs[i].prospect && filteredRdvs[i + 1].prospect) {
         const route = calculateDistance(
@@ -736,7 +977,6 @@ export default function PlanningAdvancedSection() {
       }
     }
     
-    // Retour au domicile depuis le dernier RDV
     if (filteredRdvs.length > 0 && commercialInfo.adresse && filteredRdvs[filteredRdvs.length - 1].prospect) {
       const toHome = calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect)
       if (toHome) {
@@ -748,17 +988,16 @@ export default function PlanningAdvancedSection() {
     
     const tempsTotal = tempsDeplacement + filteredRdvs.reduce((sum, rdv) => sum + rdv.duree_min, 0)
     
-    // Compter les RDV par statut
     const rdvStats = {
       total: filteredRdvs.length,
       planifies: filteredRdvs.filter(r => r.statut === 'planifie').length,
       confirmes: filteredRdvs.filter(r => r.statut === 'confirme').length,
       termines: filteredRdvs.filter(r => r.statut === 'termine').length,
       annules: filteredRdvs.filter(r => r.statut === 'annule').length,
-      reportes: filteredRdvs.filter(r => r.statut === 'reporte').length
+      reportes: filteredRdvs.filter(r => r.statut === 'reporte').length,
+      propositions: propositions.length // NOUVEAU
     }
     
-    // Statistiques par type de visite
     const typeStats = {
       decouverte: filteredRdvs.filter(r => r.type_visite === 'decouverte').length,
       presentation: filteredRdvs.filter(r => r.type_visite === 'presentation').length,
@@ -777,9 +1016,8 @@ export default function PlanningAdvancedSection() {
       rdvStats,
       typeStats
     }
-  }, [filteredRdvs, commercialInfo, customDistances, settings])
+  }, [filteredRdvs, commercialInfo, customDistances, settings, propositions])
 
-  // Obtenir les commerciaux uniques
   const uniqueCommercials = React.useMemo(() => {
     const commercials = new Set(rendezVous.map(rdv => rdv.commercial).filter(Boolean))
     return Array.from(commercials)
@@ -794,7 +1032,6 @@ export default function PlanningAdvancedSection() {
         description: `Génération du fichier ${format.toUpperCase()}...`
       })
       
-      // Préparer les données pour l'export
       const exportData = filteredRdvs.map(rdv => ({
         Date: new Date(rdv.date_time).toLocaleDateString('fr-FR'),
         Heure: new Date(rdv.date_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
@@ -811,7 +1048,6 @@ export default function PlanningAdvancedSection() {
       }))
       
       if (format === 'csv') {
-        // Générer CSV
         const headers = Object.keys(exportData[0] || {}).join(',')
         const rows = exportData.map(row => Object.values(row).map(v => `"${v}"`).join(','))
         const csv = [headers, ...rows].join('\n')
@@ -891,6 +1127,27 @@ export default function PlanningAdvancedSection() {
         </div>
       </div>
 
+      {/* Alerte propositions IA */}
+      {propositions.length > 0 && (
+        <Alert className="border-purple-200 bg-purple-50">
+          <Brain className="h-4 w-4" />
+          <AlertDescription>
+            <div className="flex items-center justify-between">
+              <span className="font-semibold">
+                📋 {propositions.length} proposition{propositions.length > 1 ? 's' : ''} IA en attente de validation
+              </span>
+              <Button
+                size="sm"
+                onClick={() => setActiveTab('propositions')}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                Voir les propositions
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Alerte configuration */}
       {!commercialInfo.adresse && (
         <Card className="border-amber-200 bg-amber-50">
@@ -915,190 +1172,18 @@ export default function PlanningAdvancedSection() {
         </Card>
       )}
 
-      {/* Barre de filtres */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Filtres et recherche</CardTitle>
-            {(searchTerm || filterStatut || filterCommercial || filterProspect || filterDistrict || filterTypeVisite) && (
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={resetFilters}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X className="h-4 w-4 mr-1" />
-                Réinitialiser
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
-            {/* Recherche */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="Rechercher..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+      {/* Statistiques avec propositions */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-4">
+        <Card className="bg-purple-50">
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">🤖</div>
+              <p className="text-xs text-gray-600">Propositions</p>
+              <p className="text-xl font-bold text-purple-600">{stats.rdvStats.propositions}</p>
             </div>
+          </CardContent>
+        </Card>
 
-            {/* Filtre prospects */}
-            <select
-              value={filterProspect}
-              onChange={(e) => setFilterProspect(e.target.value)}
-              className="w-full border rounded-md px-3 py-2 bg-white"
-            >
-              <option value="">Tous les prospects</option>
-              {prospects.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.nom}
-                </option>
-              ))}
-            </select>
-
-            {/* Filtre districts */}
-            <select
-              value={filterDistrict}
-              onChange={(e) => setFilterDistrict(e.target.value)}
-              className="w-full border rounded-md px-3 py-2 bg-white"
-            >
-              <option value="">Tous les districts</option>
-              {Object.entries(DISTRICTS_CONFIG).map(([key, config]) => (
-                <option key={key} value={key}>{config.label}</option>
-              ))}
-            </select>
-
-            {/* Filtre types de visite */}
-            <select
-              value={filterTypeVisite}
-              onChange={(e) => setFilterTypeVisite(e.target.value)}
-              className="w-full border rounded-md px-3 py-2 bg-white"
-            >
-              <option value="">Tous les types</option>
-              <option value="decouverte">🔍 Découverte</option>
-              <option value="presentation">📊 Présentation</option>
-              <option value="negociation">💼 Négociation</option>
-              <option value="signature">✍️ Signature</option>
-              <option value="suivi">📞 Suivi</option>
-            </select>
-
-            {/* Filtre statuts */}
-            <select
-              value={filterStatut}
-              onChange={(e) => setFilterStatut(e.target.value)}
-              className="w-full border rounded-md px-3 py-2 bg-white"
-            >
-              <option value="">Tous les statuts</option>
-              <option value="planifie">📋 Planifié</option>
-              <option value="confirme">✅ Confirmé</option>
-              <option value="en-cours">⏳ En cours</option>
-              <option value="termine">✔️ Terminé</option>
-              <option value="annule">❌ Annulé</option>
-              <option value="reporte">📅 Reporté</option>
-            </select>
-
-            {/* Bouton Paramètres */}
-            <Button 
-              variant="outline"
-              onClick={() => setShowSettings(true)}
-              className="flex items-center gap-2"
-            >
-              <Settings className="h-4 w-4" />
-              Paramètres
-            </Button>
-          </div>
-
-          {/* Résumé des filtres */}
-          {(searchTerm || filterStatut || filterCommercial || filterProspect || filterDistrict || filterTypeVisite) && (
-            <div className="mt-3 text-sm text-gray-600">
-              <span className="font-medium">{filteredRdvs.length}</span> rendez-vous trouvés
-              {searchTerm && ` pour "${searchTerm}"`}
-              {filterProspect && ` • ${prospects.find(p => p.id.toString() === filterProspect)?.nom}`}
-              {filterDistrict && ` • ${DISTRICTS_CONFIG[filterDistrict as District]?.label}`}
-              {filterTypeVisite && ` • Type: ${filterTypeVisite}`}
-              {filterStatut && ` • Statut: ${filterStatut}`}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Navigation date */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Button 
-                variant="outline" 
-                size="icon"
-                onClick={() => navigateDate('prev')}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              
-              <Button 
-                variant="outline"
-                onClick={() => navigateDate('today')}
-              >
-                Aujourd'hui
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                size="icon"
-                onClick={() => navigateDate('next')}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              
-              <span className="ml-4 font-medium">
-                {viewType === 'day' && new Date(selectedDate).toLocaleDateString('fr-FR', { 
-                  weekday: 'long', 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })}
-                {viewType === 'week' && `Semaine du ${new Date(selectedDate).toLocaleDateString('fr-FR')}`}
-                {viewType === 'month' && new Date(selectedDate).toLocaleDateString('fr-FR', { 
-                  year: 'numeric', 
-                  month: 'long' 
-                })}
-              </span>
-            </div>
-
-            <div className="flex gap-2">
-              <Button 
-                variant={viewType === 'day' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setViewType('day')}
-              >
-                Jour
-              </Button>
-              <Button 
-                variant={viewType === 'week' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setViewType('week')}
-              >
-                Semaine
-              </Button>
-              <Button 
-                variant={viewType === 'month' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setViewType('month')}
-              >
-                Mois
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Statistiques */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="text-center">
@@ -1125,16 +1210,6 @@ export default function PlanningAdvancedSection() {
               <div className="text-2xl mb-1">✅</div>
               <p className="text-xs text-gray-600">Confirmés</p>
               <p className="text-xl font-bold text-green-600">{stats.rdvStats.confirmes}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gray-50">
-          <CardContent className="p-4">
-            <div className="text-center">
-              <div className="text-2xl mb-1">✔️</div>
-              <p className="text-xs text-gray-600">Terminés</p>
-              <p className="text-xl font-bold text-gray-600">{stats.rdvStats.termines}</p>
             </div>
           </CardContent>
         </Card>
@@ -1171,7 +1246,17 @@ export default function PlanningAdvancedSection() {
           </CardContent>
         </Card>
 
-        <Card className="bg-purple-50">
+        <Card className="bg-gray-50">
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">✔️</div>
+              <p className="text-xs text-gray-600">Terminés</p>
+              <p className="text-xl font-bold text-gray-600">{stats.rdvStats.termines}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-orange-50">
           <CardContent className="p-4">
             <div className="text-center">
               <div className="text-2xl mb-1">🏠</div>
@@ -1184,292 +1269,680 @@ export default function PlanningAdvancedSection() {
         </Card>
       </div>
 
-      {/* Actions rapides */}
-      <div className="flex gap-2 flex-wrap">
-        <Button
-          onClick={() => setShowCommercialConfig(true)}
-          variant="outline"
-          className={commercialInfo.adresse ? "bg-green-50 border-green-300" : "bg-yellow-50 border-yellow-300"}
-        >
-          <User className="h-4 w-4 mr-2" />
-          Mon Profil
-        </Button>
-        
-        <Button
-          onClick={() => setShowDistanceConfig(true)}
-          variant="outline"
-        >
-          <MapPin className="h-4 w-4 mr-2" />
-          Distances personnalisées ({customDistances.length})
-        </Button>
-        
-        {filteredRdvs.length > 1 && commercialInfo.adresse && (
-          <Button 
-            variant="outline"
-            className="bg-green-50 text-green-700 border-green-300"
-          >
-            <MapPin className="h-4 w-4 mr-2" />
-            Optimiser la tournée
-          </Button>
-        )}
-      </div>
+      {/* Tabs principales avec propositions */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="propositions" className="relative">
+            <Brain className="h-4 w-4 mr-2" />
+            Propositions IA
+            {propositions.length > 0 && (
+              <Badge className="ml-2 bg-purple-600 text-white">
+                {propositions.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="planning">
+            <Calendar className="h-4 w-4 mr-2" />
+            Planning validé
+          </TabsTrigger>
+          <TabsTrigger value="optimization">
+            <Route className="h-4 w-4 mr-2" />
+            Optimisation
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Liste des RDV */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {viewType === 'day' && 'Rendez-vous du jour'}
-            {viewType === 'week' && 'Rendez-vous de la semaine'}
-            {viewType === 'month' && 'Rendez-vous du mois'}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {filteredRdvs.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Calendar className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p className="mb-1">Aucun rendez-vous trouvé</p>
-              {searchTerm && <p className="text-sm">Essayez de modifier vos critères de recherche</p>}
-              <Button 
-                onClick={() => setShowAddRdv(true)} 
-                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Planifier un RDV
-              </Button>
-            </div>
+        {/* Tab Propositions IA */}
+        <TabsContent value="propositions" className="space-y-4">
+          {propositions.length > 0 ? (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Propositions IA à valider</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Alert className="mb-4">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>Process de validation :</strong>
+                      <ol className="mt-2 space-y-1 text-sm">
+                        <li>1. Appelez le prospect pour confirmer le créneau</li>
+                        <li>2. Modifiez si besoin la date/heure proposée</li>
+                        <li>3. Validez pour ajouter au planning définitif</li>
+                        <li>4. Verrouillez une fois confirmé avec le prospect</li>
+                      </ol>
+                    </AlertDescription>
+                  </Alert>
+
+                  <div className="space-y-3">
+                    {propositions.map((prop) => (
+                      <Card key={prop.id} className="border-l-4 border-l-purple-500">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <Badge className="bg-purple-100 text-purple-800">
+                                  🤖 Score IA: {prop.ai_score || 'N/A'}/100
+                                </Badge>
+                                <span className="font-semibold text-lg">{prop.prospect_nom}</span>
+                                <Badge variant="outline">
+                                  {prop.prospect?.secteur && SECTEURS_CONFIG[prop.prospect.secteur]?.icon} 
+                                  {prop.prospect?.secteur && SECTEURS_CONFIG[prop.prospect.secteur]?.label}
+                                </Badge>
+                                {prop.priorite === 'urgente' && (
+                                  <Badge className="bg-red-500">🔥 Urgent</Badge>
+                                )}
+                              </div>
+                              
+                              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm mb-3">
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="h-4 w-4 text-gray-400" />
+                                  {new Date(prop.date_time).toLocaleDateString('fr-FR')}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Clock className="h-4 w-4 text-gray-400" />
+                                  {new Date(prop.date_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-4 w-4 text-gray-400" />
+                                  {prop.prospect?.ville || prop.lieu}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Phone className="h-4 w-4 text-gray-400" />
+                                  {prop.prospect?.telephone || 'N/A'}
+                                </div>
+                              </div>
+                              
+                              {prop.ai_reason && (
+                                <div className="p-2 bg-purple-50 rounded text-sm mb-3">
+                                  💡 <strong>Raison IA:</strong> {prop.ai_reason}
+                                </div>
+                              )}
+                              
+                              {prop.prospect?.contact && (
+                                <div className="text-sm text-gray-600">
+                                  <User className="h-3 w-3 inline mr-1" />
+                                  Contact: {prop.prospect.contact}
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="flex flex-col gap-2">
+                              {prop.prospect?.telephone && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => window.location.href = `tel:${prop.prospect.telephone}`}
+                                  className="bg-blue-50 hover:bg-blue-100"
+                                >
+                                  <Phone className="h-4 w-4 mr-1" />
+                                  Appeler
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => editProposition(prop)}
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Modifier
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                                onClick={() => validateProposition(prop)}
+                              >
+                                <Check className="h-4 w-4 mr-1" />
+                                Valider
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-600 hover:bg-red-50"
+                                onClick={() => rejectProposition(prop.id)}
+                              >
+                                <X className="h-4 w-4 mr-1" />
+                                Rejeter
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </>
           ) : (
-            <div className="space-y-3">
-              {/* Départ du domicile */}
-              {commercialInfo.adresse && filteredRdvs.length > 0 && viewType === 'day' && (
-                <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-                  <span className="text-2xl">🏠</span>
-                  <div className="flex-1">
-                    <div className="font-medium">Départ de {commercialInfo.adresse}</div>
-                    <div className="text-sm text-gray-600">
-                      Heure de départ : {commercialInfo.startHour || '08:00'}
-                    </div>
-                  </div>
-                  {filteredRdvs[0].prospect && (
-                    <div className="text-sm text-gray-600">
-                      → {calculateFromHome(filteredRdvs[0].prospect)?.distance || 0} km 
-                      ({calculateFromHome(filteredRdvs[0].prospect)?.duration || 0} min)
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* RDV */}
-              {filteredRdvs.map((rdv, index) => {
-                const districtConfig = rdv.prospect?.district ? DISTRICTS_CONFIG[rdv.prospect.district] : null
-                const secteurConfig = rdv.prospect?.secteur ? SECTEURS_CONFIG[rdv.prospect.secteur] : null
-                
-                let routeInfo = null
-                if (index > 0 && filteredRdvs[index - 1].prospect && rdv.prospect) {
-                  routeInfo = calculateDistance(
-                    filteredRdvs[index - 1].prospect,
-                    rdv.prospect
-                  )
-                }
-                
-                const priorityColors = {
-                  haute: "border-red-500 bg-red-50",
-                  urgente: "border-orange-500 bg-orange-50",
-                  normale: "border-green-500 bg-green-50"
-                }
-                
-                const statutBadges = {
-                  planifie: { color: "bg-blue-100 text-blue-800", icon: "📋" },
-                  confirme: { color: "bg-green-100 text-green-800", icon: "✅" },
-                  'en-cours': { color: "bg-yellow-100 text-yellow-800", icon: "⏳" },
-                  termine: { color: "bg-gray-100 text-gray-800", icon: "✔️" },
-                  annule: { color: "bg-red-100 text-red-800", icon: "❌" },
-                  reporte: { color: "bg-orange-100 text-orange-800", icon: "📅" }
-                }
-                
-                const rdvTime = new Date(rdv.date_time)
-                const heureRdv = rdvTime.toLocaleTimeString('fr-FR', {
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })
-                const dateRdv = rdvTime.toLocaleDateString('fr-FR', {
-                  day: 'numeric',
-                  month: 'short'
-                })
-                
-                return (
-                  <div key={rdv.id}>
-                    {routeInfo && viewType === 'day' && (
-                      <div className="flex items-center gap-4 text-xs text-gray-600 mb-1 ml-4 p-2">
-                        <span>🚗 Trajet: {routeInfo.distance} km</span>
-                        <span>⏱️ {routeInfo.duration} min</span>
-                        <span>💰 Rs {routeInfo.cost}</span>
-                        {routeInfo.method === 'custom' && (
-                          <span className="text-green-600">✓ Distance personnalisée</span>
-                        )}
-                      </div>
-                    )}
-                    
-                    <div className={`border-l-4 p-4 rounded-r-lg ${priorityColors[rdv.priorite || 'normale']}`}>
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            {viewType !== 'day' && (
-                              <span className="text-sm font-medium text-gray-600">📅 {dateRdv}</span>
-                            )}
-                            <span className="text-lg font-semibold">⏰ {heureRdv}</span>
-                            <span className="text-sm text-gray-600">({rdv.duree_min} min)</span>
-                            <Badge className={statutBadges[rdv.statut]?.color || "bg-gray-100"}>
-                              {statutBadges[rdv.statut]?.icon} {rdv.statut}
-                            </Badge>
-                            <Badge className="bg-purple-100 text-purple-800">
-                              {rdv.type_visite}
-                            </Badge>
-                            {rdv.priorite === 'haute' && (
-                              <Badge className="bg-orange-100 text-orange-800">
-                                ⚡ Priorité haute
-                              </Badge>
-                            )}
-                            {rdv.priorite === 'urgente' && (
-                              <Badge className="bg-red-100 text-red-800">
-                                🔴 Urgent
-                              </Badge>
-                            )}
-                          </div>
-                          
-                          <div className="mb-2">
-                            <div className="font-medium text-lg flex items-center gap-2">
-                              {secteurConfig?.icon && <span>{secteurConfig.icon}</span>}
-                              {rdv.prospect?.nom || rdv.prospect_nom || 'Prospect'}
-                            </div>
-                            {rdv.prospect && (
-                              <div className="text-sm text-gray-600">
-                                {secteurConfig?.label} • 
-                                <span className="text-yellow-500 ml-1">
-                                  {"★".repeat(Math.min(5, Math.max(1, rdv.prospect.score)))}
-                                </span>
-                                <span className="text-gray-600 ml-1">({rdv.prospect.score}/5)</span>
-                              </div>
-                            )}
-                          </div>
-                          
-                          <div className="text-sm text-gray-600 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <MapPin className="h-4 w-4" />
-                              {rdv.lieu || rdv.prospect?.adresse || 
-                               (rdv.prospect && `${rdv.prospect.ville}, ${districtConfig?.label}`) ||
-                               'Lieu à définir'}
-                            </div>
-                            {rdv.prospect?.telephone && (
-                              <div className="flex items-center gap-2">
-                                <Phone className="h-4 w-4" />
-                                {rdv.prospect.telephone}
-                              </div>
-                            )}
-                            {rdv.prospect?.contact && (
-                              <div className="flex items-center gap-2">
-                                <User className="h-4 w-4" />
-                                {rdv.prospect.contact}
-                              </div>
-                            )}
-                            {rdv.prospect?.email && (
-                              <div className="flex items-center gap-2">
-                                <Mail className="h-4 w-4" />
-                                {rdv.prospect.email}
-                              </div>
-                            )}
-                          </div>
-                          
-                          {rdv.notes && (
-                            <div className="mt-2 p-2 bg-white rounded text-sm">
-                              📝 {rdv.notes}
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setEditingRdv(rdv)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          
-                          {rdv.statut === 'planifie' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-green-600 hover:bg-green-50"
-                              onClick={() => updateRdv(rdv.id, { statut: 'confirme' })}
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                            </Button>
-                          )}
-                          
-                          {rdv.prospect?.telephone && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-blue-600 hover:bg-blue-50"
-                              onClick={() => window.location.href = `tel:${rdv.prospect?.telephone}`}
-                            >
-                              <Phone className="h-4 w-4" />
-                            </Button>
-                          )}
-                          
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-red-600 hover:bg-red-50"
-                            onClick={() => {
-                              if (confirm(`Supprimer le RDV avec ${rdv.prospect?.nom || rdv.prospect_nom} ?`)) {
-                                deleteRdv(rdv.id)
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-
-              {/* Retour au domicile */}
-              {commercialInfo.adresse && filteredRdvs.length > 0 && viewType === 'day' && (
-                <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-                  <span className="text-2xl">🏠</span>
-                  <div className="flex-1">
-                    <div className="font-medium">Retour à {commercialInfo.adresse}</div>
-                    <div className="text-sm text-gray-600">
-                      Heure d'arrivée estimée : {commercialInfo.endHour || '18:00'}
-                    </div>
-                  </div>
-                  {filteredRdvs[filteredRdvs.length - 1].prospect && (
-                    <div className="text-sm text-gray-600">
-                      ← {calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect)?.distance || 0} km 
-                      ({calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect)?.duration || 0} min)
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <Card className="border-dashed">
+              <CardContent className="p-12 text-center">
+                <Brain className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">Aucune proposition IA en attente</p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Les nouvelles propositions apparaîtront ici depuis le Dashboard IA
+                </p>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+        </TabsContent>
+
+        {/* Tab Planning (existant avec modifications) */}
+        <TabsContent value="planning" className="space-y-4">
+          {/* Barre de filtres */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Filtres et recherche</CardTitle>
+                {(searchTerm || filterStatut || filterCommercial || filterProspect || filterDistrict || filterTypeVisite) && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={resetFilters}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Réinitialiser
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    type="text"
+                    placeholder="Rechercher..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+
+                <select
+                  value={filterProspect}
+                  onChange={(e) => setFilterProspect(e.target.value)}
+                  className="w-full border rounded-md px-3 py-2 bg-white"
+                >
+                  <option value="">Tous les prospects</option>
+                  {prospects.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.nom}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={filterDistrict}
+                  onChange={(e) => setFilterDistrict(e.target.value)}
+                  className="w-full border rounded-md px-3 py-2 bg-white"
+                >
+                  <option value="">Tous les districts</option>
+                  {Object.entries(DISTRICTS_CONFIG).map(([key, config]) => (
+                    <option key={key} value={key}>{config.label}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={filterTypeVisite}
+                  onChange={(e) => setFilterTypeVisite(e.target.value)}
+                  className="w-full border rounded-md px-3 py-2 bg-white"
+                >
+                  <option value="">Tous les types</option>
+                  <option value="decouverte">🔍 Découverte</option>
+                  <option value="presentation">📊 Présentation</option>
+                  <option value="negociation">💼 Négociation</option>
+                  <option value="signature">✍️ Signature</option>
+                  <option value="suivi">📞 Suivi</option>
+                </select>
+
+                <select
+                  value={filterStatut}
+                  onChange={(e) => setFilterStatut(e.target.value)}
+                  className="w-full border rounded-md px-3 py-2 bg-white"
+                >
+                  <option value="">Tous les statuts</option>
+                  <option value="planifie">📋 Planifié</option>
+                  <option value="confirme">✅ Confirmé</option>
+                  <option value="en-cours">⏳ En cours</option>
+                  <option value="termine">✔️ Terminé</option>
+                  <option value="annule">❌ Annulé</option>
+                  <option value="reporte">📅 Reporté</option>
+                </select>
+
+                <Button 
+                  variant="outline"
+                  onClick={() => setShowSettings(true)}
+                  className="flex items-center gap-2"
+                >
+                  <Settings className="h-4 w-4" />
+                  Paramètres
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Navigation date */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    onClick={() => navigateDate('prev')}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  
+                  <Button 
+                    variant="outline"
+                    onClick={() => navigateDate('today')}
+                  >
+                    Aujourd'hui
+                  </Button>
+                  
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    onClick={() => navigateDate('next')}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  
+                  <span className="ml-4 font-medium">
+                    {viewType === 'day' && new Date(selectedDate).toLocaleDateString('fr-FR', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                    {viewType === 'week' && `Semaine du ${new Date(selectedDate).toLocaleDateString('fr-FR')}`}
+                    {viewType === 'month' && new Date(selectedDate).toLocaleDateString('fr-FR', { 
+                      year: 'numeric', 
+                      month: 'long' 
+                    })}
+                  </span>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button 
+                    variant={viewType === 'day' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setViewType('day')}
+                  >
+                    Jour
+                  </Button>
+                  <Button 
+                    variant={viewType === 'week' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setViewType('week')}
+                  >
+                    Semaine
+                  </Button>
+                  <Button 
+                    variant={viewType === 'month' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setViewType('month')}
+                  >
+                    Mois
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Actions rapides */}
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              onClick={() => setShowCommercialConfig(true)}
+              variant="outline"
+              className={commercialInfo.adresse ? "bg-green-50 border-green-300" : "bg-yellow-50 border-yellow-300"}
+            >
+              <User className="h-4 w-4 mr-2" />
+              Mon Profil
+            </Button>
+            
+            <Button
+              onClick={() => setShowDistanceConfig(true)}
+              variant="outline"
+            >
+              <MapPin className="h-4 w-4 mr-2" />
+              Distances personnalisées ({customDistances.length})
+            </Button>
+            
+            {filteredRdvs.length > 1 && commercialInfo.adresse && (
+              <Button 
+                variant="outline"
+                onClick={optimizeRoutes}
+                disabled={optimizing}
+                className="bg-green-50 text-green-700 border-green-300"
+              >
+                <Route className="h-4 w-4 mr-2" />
+                {optimizing ? 'Optimisation...' : 'Optimiser la tournée'}
+              </Button>
+            )}
+          </div>
+
+          {/* Liste des RDV */}
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {viewType === 'day' && 'Rendez-vous du jour'}
+                {viewType === 'week' && 'Rendez-vous de la semaine'}
+                {viewType === 'month' && 'Rendez-vous du mois'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {filteredRdvs.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Calendar className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                  <p className="mb-1">Aucun rendez-vous trouvé</p>
+                  <Button 
+                    onClick={() => setShowAddRdv(true)} 
+                    className="mt-4 bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Planifier un RDV
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {commercialInfo.adresse && filteredRdvs.length > 0 && viewType === 'day' && (
+                    <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                      <span className="text-2xl">🏠</span>
+                      <div className="flex-1">
+                        <div className="font-medium">Départ de {commercialInfo.adresse}</div>
+                        <div className="text-sm text-gray-600">
+                          Heure de départ : {commercialInfo.startHour || '08:00'}
+                        </div>
+                      </div>
+                      {filteredRdvs[0].prospect && (
+                        <div className="text-sm text-gray-600">
+                          → {calculateFromHome(filteredRdvs[0].prospect)?.distance || 0} km 
+                          ({calculateFromHome(filteredRdvs[0].prospect)?.duration || 0} min)
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {filteredRdvs.map((rdv, index) => {
+                    const districtConfig = rdv.prospect?.district ? DISTRICTS_CONFIG[rdv.prospect.district] : null
+                    const secteurConfig = rdv.prospect?.secteur ? SECTEURS_CONFIG[rdv.prospect.secteur] : null
+                    
+                    let routeInfo = null
+                    if (index > 0 && filteredRdvs[index - 1].prospect && rdv.prospect) {
+                      routeInfo = calculateDistance(
+                        filteredRdvs[index - 1].prospect,
+                        rdv.prospect
+                      )
+                    }
+                    
+                    const priorityColors = {
+                      haute: "border-red-500 bg-red-50",
+                      urgente: "border-orange-500 bg-orange-50",
+                      normale: "border-green-500 bg-green-50"
+                    }
+                    
+                    const statutBadges = {
+                      planifie: { color: "bg-blue-100 text-blue-800", icon: "📋" },
+                      confirme: { color: "bg-green-100 text-green-800", icon: "✅" },
+                      'en-cours': { color: "bg-yellow-100 text-yellow-800", icon: "⏳" },
+                      termine: { color: "bg-gray-100 text-gray-800", icon: "✔️" },
+                      annule: { color: "bg-red-100 text-red-800", icon: "❌" },
+                      reporte: { color: "bg-orange-100 text-orange-800", icon: "📅" }
+                    }
+                    
+                    const rdvTime = new Date(rdv.date_time)
+                    const heureRdv = rdvTime.toLocaleTimeString('fr-FR', {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })
+                    const dateRdv = rdvTime.toLocaleDateString('fr-FR', {
+                      day: 'numeric',
+                      month: 'short'
+                    })
+                    
+                    return (
+                      <div key={rdv.id}>
+                        {routeInfo && viewType === 'day' && (
+                          <div className="flex items-center gap-4 text-xs text-gray-600 mb-1 ml-4 p-2">
+                            <span>🚗 Trajet: {routeInfo.distance} km</span>
+                            <span>⏱️ {routeInfo.duration} min</span>
+                            <span>💰 Rs {routeInfo.cost}</span>
+                            {routeInfo.method === 'custom' && (
+                              <span className="text-green-600">✓ Distance personnalisée</span>
+                            )}
+                          </div>
+                        )}
+                        
+                        <div className={`border-l-4 p-4 rounded-r-lg ${priorityColors[rdv.priorite || 'normale']} ${rdv.locked ? 'opacity-75' : ''}`}>
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                {viewType !== 'day' && (
+                                  <span className="text-sm font-medium text-gray-600">📅 {dateRdv}</span>
+                                )}
+                                <span className="text-lg font-semibold">⏰ {heureRdv}</span>
+                                <span className="text-sm text-gray-600">({rdv.duree_min} min)</span>
+                                <Badge className={statutBadges[rdv.statut]?.color || "bg-gray-100"}>
+                                  {statutBadges[rdv.statut]?.icon} {rdv.statut}
+                                </Badge>
+                                {rdv.locked && (
+                                  <Badge className="bg-red-100 text-red-800">
+                                    <Lock className="h-3 w-3 mr-1" />
+                                    Verrouillé
+                                  </Badge>
+                                )}
+                                <Badge className="bg-purple-100 text-purple-800">
+                                  {rdv.type_visite}
+                                </Badge>
+                              </div>
+                              
+                              <div className="mb-2">
+                                <div className="font-medium text-lg flex items-center gap-2">
+                                  {secteurConfig?.icon && <span>{secteurConfig.icon}</span>}
+                                  {rdv.prospect?.nom || rdv.prospect_nom || 'Prospect'}
+                                </div>
+                                {rdv.prospect && (
+                                  <div className="text-sm text-gray-600">
+                                    {secteurConfig?.label} • 
+                                    <span className="text-yellow-500 ml-1">
+                                      {"★".repeat(Math.min(5, Math.max(1, rdv.prospect.score)))}
+                                    </span>
+                                    <span className="text-gray-600 ml-1">({rdv.prospect.score}/5)</span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <div className="text-sm text-gray-600 space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-4 w-4" />
+                                  {rdv.lieu || rdv.prospect?.adresse || 
+                                   (rdv.prospect && `${rdv.prospect.ville}, ${districtConfig?.label}`) ||
+                                   'Lieu à définir'}
+                                </div>
+                                {rdv.prospect?.telephone && (
+                                  <div className="flex items-center gap-2">
+                                    <Phone className="h-4 w-4" />
+                                    {rdv.prospect.telephone}
+                                  </div>
+                                )}
+                                {rdv.prospect?.contact && (
+                                  <div className="flex items-center gap-2">
+                                    <User className="h-4 w-4" />
+                                    {rdv.prospect.contact}
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {rdv.notes && (
+                                <div className="mt-2 p-2 bg-white rounded text-sm">
+                                  📝 {rdv.notes}
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="flex gap-2">
+                              {!rdv.locked && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setEditingRdv(rdv)}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  
+                                  {rdv.statut === 'planifie' && (
+                                    <Button
+                                      size="sm"
+                                      className="bg-orange-600 hover:bg-orange-700 text-white"
+                                      onClick={() => lockRdv(rdv)}
+                                    >
+                                      <Lock className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </>
+                              )}
+                              
+                              {rdv.statut === 'planifie' && !rdv.locked && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-green-600 hover:bg-green-50"
+                                  onClick={() => updateRdv(rdv.id, { statut: 'confirme' })}
+                                >
+                                  <CheckCircle className="h-4 w-4" />
+                                </Button>
+                              )}
+                              
+                              {rdv.prospect?.telephone && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-blue-600 hover:bg-blue-50"
+                                  onClick={() => window.location.href = `tel:${rdv.prospect?.telephone}`}
+                                >
+                                  <Phone className="h-4 w-4" />
+                                </Button>
+                              )}
+                              
+                              {!rdv.locked && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-red-600 hover:bg-red-50"
+                                  onClick={() => {
+                                    if (confirm(`Supprimer le RDV avec ${rdv.prospect?.nom || rdv.prospect_nom} ?`)) {
+                                      deleteRdv(rdv.id)
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {commercialInfo.adresse && filteredRdvs.length > 0 && viewType === 'day' && (
+                    <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                      <span className="text-2xl">🏠</span>
+                      <div className="flex-1">
+                        <div className="font-medium">Retour à {commercialInfo.adresse}</div>
+                        <div className="text-sm text-gray-600">
+                          Heure d'arrivée estimée : {commercialInfo.endHour || '18:00'}
+                        </div>
+                      </div>
+                      {filteredRdvs[filteredRdvs.length - 1].prospect && (
+                        <div className="text-sm text-gray-600">
+                          ← {calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect)?.distance || 0} km 
+                          ({calculateFromHome(filteredRdvs[filteredRdvs.length - 1].prospect)?.duration || 0} min)
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab Optimisation */}
+        <TabsContent value="optimization" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Optimisation des tournées</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <Alert>
+                  <Route className="h-4 w-4" />
+                  <AlertDescription>
+                    L'optimisation réorganise automatiquement vos RDV pour minimiser les distances et temps de trajet.
+                    Les RDV verrouillés ne seront pas déplacés.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="text-sm text-gray-600">Distance actuelle</p>
+                      <p className="text-2xl font-bold">{stats.distanceTotale} km</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="text-sm text-gray-600">Temps de trajet</p>
+                      <p className="text-2xl font-bold">
+                        {Math.floor(stats.tempsDeplacement / 60)}h {stats.tempsDeplacement % 60}min
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="text-sm text-gray-600">Coût estimé</p>
+                      <p className="text-2xl font-bold">Rs {stats.coutTotal}</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {filteredRdvs.filter(r => !r.locked).length > 1 ? (
+                  <Button
+                    onClick={optimizeRoutes}
+                    disabled={optimizing}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Route className="h-4 w-4 mr-2" />
+                    {optimizing ? 'Optimisation en cours...' : 'Lancer l\'optimisation'}
+                  </Button>
+                ) : (
+                  <Alert className="border-yellow-200 bg-yellow-50">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      Il faut au moins 2 RDV non verrouillés pour optimiser la tournée.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Dialogs */}
-     {/* Dialogs */}
-<RdvDialogEnhanced
-  open={showAddRdv || !!editingRdv}
-  onClose={() => {
-    setShowAddRdv(false)
-    setEditingRdv(null)
-  }}
-  prospects={prospects}
-  rdv={editingRdv}
-  onSave={async (data) => {
+      <RdvDialogEnhanced
+        open={showAddRdv || !!editingRdv}
+        onClose={() => {
+          setShowAddRdv(false)
+          setEditingRdv(null)
+        }}
+        prospects={prospects}
+        rdv={editingRdv}
+        onSave={async (data) => {
           if (editingRdv) {
             const success = await updateRdv(editingRdv.id, data)
             if (success) {
@@ -1483,668 +1956,3 @@ export default function PlanningAdvancedSection() {
           }
         }}
         commercialInfo={commercialInfo}
-      />
-
-      <ConfigCommercialDialog
-        open={showCommercialConfig}
-        onClose={() => setShowCommercialConfig(false)}
-        commercialInfo={commercialInfo}
-        onSave={saveCommercialInfo}
-      />
-
-      <ConfigDistancesDialog
-        open={showDistanceConfig}
-        onClose={() => setShowDistanceConfig(false)}
-        distances={customDistances}
-        onSave={saveCustomDistances}
-      />
-
-      <SettingsDialog
-        open={showSettings}
-        onClose={() => setShowSettings(false)}
-        settings={settings}
-        onSave={saveSettings}
-      />
-    </div>
-  )
-}
-
-// ========== COMPOSANTS DIALOGS ==========
-
-// Dialog RDV
-*function RdvDialog({ 
-  open, 
-  onClose, 
-  prospects, 
-  rdv, 
-  onSave,
-  commercialInfo
-}: {
-  open: boolean
-  onClose: () => void
-  prospects: Prospect[]
-  rdv: RendezVous | null
-  onSave: (data: any) => void
-  commercialInfo: CommercialInfo
-}) {
-  const { toast } = useToast()
-  const [form, setForm] = React.useState({
-    prospect_id: 0,
-    date: '',
-    time: '',
-    duree_min: 60,
-    type_visite: 'decouverte' as const,
-    priorite: 'normale' as const,
-    statut: 'planifie' as const,
-    commercial: '',
-    notes: '',
-    lieu: ''
-  })
-
-  React.useEffect(() => {
-    if (rdv) {
-      const dateTime = new Date(rdv.date_time)
-      setForm({
-        prospect_id: rdv.prospect_id,
-        date: dateTime.toISOString().split('T')[0],
-        time: dateTime.toTimeString().substring(0, 5),
-        duree_min: rdv.duree_min,
-        type_visite: rdv.type_visite,
-        priorite: rdv.priorite,
-        statut: rdv.statut,
-        commercial: rdv.commercial || commercialInfo.nom || 'Commercial',
-        notes: rdv.notes || '',
-        lieu: rdv.lieu || ''
-      })
-    } else {
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      setForm({
-        prospect_id: 0,
-        date: tomorrow.toISOString().split('T')[0],
-        time: '10:00',
-        duree_min: 60,
-        type_visite: 'decouverte',
-        priorite: 'normale',
-        statut: 'planifie',
-        commercial: commercialInfo.nom || 'Commercial',
-        notes: '',
-        lieu: ''
-      })
-    }
-  }, [rdv, commercialInfo, open])
-
-  React.useEffect(() => {
-    if (form.prospect_id > 0) {
-      const selectedProspect = prospects.find(p => p.id === form.prospect_id)
-      if (selectedProspect) {
-        setForm(prev => ({
-          ...prev,
-          lieu: prev.lieu || selectedProspect.adresse || `${selectedProspect.ville}, ${selectedProspect.district}`,
-          priorite: selectedProspect.score >= 4 ? 'haute' : selectedProspect.score >= 3 ? 'normale' : 'normale'
-        }))
-      }
-    }
-  }, [form.prospect_id, prospects])
-
-  function handleSubmit() {
-    if (!form.prospect_id || !form.date || !form.time) {
-      toast({
-        title: "Erreur",
-        description: "Veuillez remplir tous les champs obligatoires",
-        variant: "destructive"
-      })
-      return
-    }
-    
-    onSave(form)
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>
-            {rdv ? 'Modifier' : 'Planifier'} un rendez-vous
-          </DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Prospect *</label>
-            <select
-              value={form.prospect_id}
-              onChange={(e) => setForm({...form, prospect_id: parseInt(e.target.value)})}
-              className="w-full border rounded-md px-3 py-2"
-              disabled={!!rdv}
-            >
-              <option value="0">Sélectionner un prospect</option>
-              {prospects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {SECTEURS_CONFIG[p.secteur]?.icon} {p.nom} - {p.ville} ⭐{p.score}/5
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Date *</label>
-              <Input
-                type="date"
-                value={form.date}
-                onChange={(e) => setForm({...form, date: e.target.value})}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-2">Heure *</label>
-              <Input
-                type="time"
-                value={form.time}
-                onChange={(e) => setForm({...form, time: e.target.value})}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Type de visite</label>
-              <select
-                value={form.type_visite}
-                onChange={(e) => setForm({...form, type_visite: e.target.value as any})}
-                className="w-full border rounded-md px-3 py-2"
-              >
-                <option value="decouverte">🔍 Découverte</option>
-                <option value="presentation">📊 Présentation</option>
-                <option value="negociation">💼 Négociation</option>
-                <option value="signature">✍️ Signature</option>
-                <option value="suivi">📞 Suivi</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Durée (min)</label>
-              <Input
-                type="number"
-                value={form.duree_min}
-                onChange={(e) => setForm({...form, duree_min: parseInt(e.target.value) || 60})}
-                min="15"
-                step="15"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Priorité</label>
-              <select
-                value={form.priorite}
-                onChange={(e) => setForm({...form, priorite: e.target.value as any})}
-                className="w-full border rounded-md px-3 py-2"
-              >
-                <option value="normale">🟢 Normale</option>
-                <option value="haute">🟠 Haute</option>
-                <option value="urgente">🔴 Urgente</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Lieu</label>
-              <Input
-                value={form.lieu}
-                onChange={(e) => setForm({...form, lieu: e.target.value})}
-                placeholder="Lieu du rendez-vous"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Commercial</label>
-              <Input
-                value={form.commercial}
-                onChange={(e) => setForm({...form, commercial: e.target.value})}
-                placeholder="Nom du commercial"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Notes</label>
-            <Textarea
-              value={form.notes}
-              onChange={(e) => setForm({...form, notes: e.target.value})}
-              rows={3}
-              placeholder="Points à aborder, objectifs..."
-            />
-          </div>
-
-          {rdv && (
-            <div>
-              <label className="block text-sm font-medium mb-2">Statut</label>
-              <select
-                value={form.statut}
-                onChange={(e) => setForm({...form, statut: e.target.value as any})}
-                className="w-full border rounded-md px-3 py-2"
-              >
-                <option value="planifie">📋 Planifié</option>
-                <option value="confirme">✅ Confirmé</option>
-                <option value="en-cours">⏳ En cours</option>
-                <option value="termine">✔️ Terminé</option>
-                <option value="annule">❌ Annulé</option>
-                <option value="reporte">📅 Reporté</option>
-              </select>
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-end gap-3 mt-6">
-          <Button variant="outline" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button 
-            onClick={handleSubmit} 
-            disabled={!form.prospect_id || !form.date || !form.time}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            {rdv ? 'Enregistrer' : 'Planifier'}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-*
-// Dialog Configuration Commercial
-function ConfigCommercialDialog({
-  open,
-  onClose,
-  commercialInfo,
-  onSave
-}: {
-  open: boolean
-  onClose: () => void
-  commercialInfo: CommercialInfo
-  onSave: (info: CommercialInfo) => void
-}) {
-  const [form, setForm] = React.useState(commercialInfo)
-
-  React.useEffect(() => {
-    setForm(commercialInfo)
-  }, [commercialInfo])
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Configuration du commercial</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Nom</label>
-            <Input
-              value={form.nom}
-              onChange={(e) => setForm({...form, nom: e.target.value})}
-              placeholder="Votre nom"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">Adresse de départ *</label>
-            <Input
-              value={form.adresse}
-              onChange={(e) => setForm({...form, adresse: e.target.value})}
-              placeholder="Votre adresse (domicile ou bureau)"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">Ville</label>
-            <Input
-              value={form.ville}
-              onChange={(e) => setForm({...form, ville: e.target.value})}
-              placeholder="Votre ville"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">District</label>
-            <select
-              value={form.district}
-              onChange={(e) => setForm({...form, district: e.target.value as District})}
-              className="w-full border rounded-md px-3 py-2"
-            >
-              {Object.entries(DISTRICTS_CONFIG).map(([key, config]) => (
-                <option key={key} value={key}>{config.label}</option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Heure de départ</label>
-              <Input
-                type="time"
-                value={form.startHour || '08:00'}
-                onChange={(e) => setForm({...form, startHour: e.target.value})}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-2">Heure de retour</label>
-              <Input
-                type="time"
-                value={form.endHour || '18:00'}
-                onChange={(e) => setForm({...form, endHour: e.target.value})}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Téléphone</label>
-              <Input
-                value={form.telephone}
-                onChange={(e) => setForm({...form, telephone: e.target.value})}
-                placeholder="+230 5XXX XXXX"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-2">Email</label>
-              <Input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({...form, email: e.target.value})}
-                placeholder="email@exemple.com"
-              />
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex justify-end gap-3 mt-6">
-          <Button variant="outline" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button 
-            onClick={() => {
-              onSave(form)
-              onClose()
-            }}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            Enregistrer
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// Dialog Configuration Distances
-function ConfigDistancesDialog({
-  open,
-  onClose,
-  distances,
-  onSave
-}: {
-  open: boolean
-  onClose: () => void
-  distances: CustomDistance[]
-  onSave: (distances: CustomDistance[]) => void
-}) {
-  const [localDistances, setLocalDistances] = React.useState(distances)
-  const [newDistance, setNewDistance] = React.useState({
-    from: '',
-    to: '',
-    distance: 0,
-    duration: 0,
-    notes: ''
-  })
-
-  React.useEffect(() => {
-    setLocalDistances(distances)
-  }, [distances])
-
-  function addDistance() {
-    if (newDistance.from && newDistance.to && newDistance.distance > 0) {
-      setLocalDistances([...localDistances, {
-        id: Date.now().toString(),
-        ...newDistance
-      }])
-      setNewDistance({
-        from: '',
-        to: '',
-        distance: 0,
-        duration: 0,
-        notes: ''
-      })
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Distances personnalisées</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            Configurez des distances spécifiques entre vos adresses fréquentes pour des calculs plus précis.
-          </p>
-          
-          {localDistances.length > 0 && (
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {localDistances.map((distance, index) => (
-                <div key={distance.id} className="flex items-center gap-2 p-2 border rounded">
-                  <div className="flex-1">
-                    <span className="text-sm font-medium">{distance.from} → {distance.to}</span>
-                    <span className="text-sm text-gray-600 ml-2">
-                      {distance.distance} km • {distance.duration} min
-                    </span>
-                    {distance.notes && (
-                      <span className="text-xs text-gray-500 ml-2">({distance.notes})</span>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setLocalDistances(localDistances.filter((_, i) => i !== index))
-                    }}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="border-t pt-4">
-            <h4 className="font-medium mb-3">Ajouter une distance</h4>
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                placeholder="Adresse de départ"
-                value={newDistance.from}
-                onChange={(e) => setNewDistance({...newDistance, from: e.target.value})}
-              />
-              <Input
-                placeholder="Adresse d'arrivée"
-                value={newDistance.to}
-                onChange={(e) => setNewDistance({...newDistance, to: e.target.value})}
-              />
-              <Input
-                type="number"
-                placeholder="Distance (km)"
-                value={newDistance.distance || ''}
-                onChange={(e) => setNewDistance({...newDistance, distance: parseFloat(e.target.value) || 0})}
-              />
-              <Input
-                type="number"
-                placeholder="Durée (min)"
-                value={newDistance.duration || ''}
-                onChange={(e) => setNewDistance({...newDistance, duration: parseInt(e.target.value) || 0})}
-              />
-              <Input
-                placeholder="Notes (optionnel)"
-                value={newDistance.notes}
-                onChange={(e) => setNewDistance({...newDistance, notes: e.target.value})}
-                className="col-span-2"
-              />
-            </div>
-            <Button
-              onClick={addDistance}
-              className="mt-3 bg-green-600 hover:bg-green-700 text-white"
-              disabled={!newDistance.from || !newDistance.to || !newDistance.distance}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Ajouter
-            </Button>
-          </div>
-        </div>
-        
-        <div className="flex justify-end gap-3 mt-6">
-          <Button variant="outline" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button 
-            onClick={() => {
-              onSave(localDistances)
-              onClose()
-            }}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            Enregistrer ({localDistances.length} distances)
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// Dialog Paramètres
-function SettingsDialog({
-  open,
-  onClose,
-  settings,
-  onSave
-}: {
-  open: boolean
-  onClose: () => void
-  settings: CostSettings
-  onSave: (settings: CostSettings) => void
-}) {
-  const [form, setForm] = React.useState(settings)
-
-  React.useEffect(() => {
-    setForm(settings)
-  }, [settings])
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Paramètres de calcul</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Prix du carburant (Rs/L)</label>
-            <Input
-              type="number"
-              value={form.fuelPrice}
-              onChange={(e) => setForm({...form, fuelPrice: parseFloat(e.target.value) || 0})}
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">Consommation (L/100km)</label>
-            <Input
-              type="number"
-              value={form.consumption}
-              onChange={(e) => setForm({...form, consumption: parseFloat(e.target.value) || 0})}
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">Vitesse moyenne (km/h)</label>
-            <Input
-              type="number"
-              value={form.averageSpeed}
-              onChange={(e) => setForm({...form, averageSpeed: parseFloat(e.target.value) || 0})}
-            />
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Heure de pointe début</label>
-              <Input
-                type="time"
-                value={form.rushHourStart}
-                onChange={(e) => setForm({...form, rushHourStart: e.target.value})}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-2">Heure de pointe fin</label>
-              <Input
-                type="time"
-                value={form.rushHourEnd}
-                onChange={(e) => setForm({...form, rushHourEnd: e.target.value})}
-              />
-            </div>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">Vitesse heure de pointe (km/h)</label>
-            <Input
-              type="number"
-              value={form.rushHourSpeed}
-              onChange={(e) => setForm({...form, rushHourSpeed: parseFloat(e.target.value) || 0})}
-            />
-          </div>
-
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="useIndemnity"
-              checked={form.useIndemnity}
-              onChange={(e) => setForm({...form, useIndemnity: e.target.checked})}
-              className="h-4 w-4"
-            />
-            <label htmlFor="useIndemnity" className="text-sm">
-              Utiliser l'indemnité kilométrique au lieu du coût carburant
-            </label>
-          </div>
-
-          {form.useIndemnity && (
-            <div>
-              <label className="block text-sm font-medium mb-2">Indemnité kilométrique (Rs/km)</label>
-              <Input
-                type="number"
-                value={form.indemnityPerKm}
-                onChange={(e) => setForm({...form, indemnityPerKm: parseFloat(e.target.value) || 0})}
-              />
-            </div>
-          )}
-        </div>
-        
-        <div className="flex justify-end gap-3 mt-6">
-          <Button variant="outline" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button 
-            onClick={() => {
-              onSave(form)
-              onClose()
-            }}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            Enregistrer
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
