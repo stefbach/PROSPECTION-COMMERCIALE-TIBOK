@@ -1,5 +1,5 @@
 // app/api/rdv/route.ts
-// Ajout du statut "proposition" pour les RDV non confirmés
+// API complète pour la gestion des RDV et propositions
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -156,7 +156,48 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-// Nouvelle route pour créer des propositions en masse
+// DELETE - Supprimer un RDV
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    
+    if (!id) {
+      return NextResponse.json({ error: 'ID requis' }, { status: 400 })
+    }
+    
+    // Vérifier d'abord si le RDV existe et n'est pas verrouillé
+    const { data: existing } = await supabase
+      .from('rdvs')
+      .select('*')
+      .eq('id', parseInt(id))
+      .single()
+    
+    if (!existing) {
+      return NextResponse.json({ error: 'RDV non trouvé' }, { status: 404 })
+    }
+    
+    if (existing.locked) {
+      return NextResponse.json({ error: 'RDV verrouillé, suppression impossible' }, { status: 403 })
+    }
+    
+    const { error } = await supabase
+      .from('rdvs')
+      .delete()
+      .eq('id', parseInt(id))
+    
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    
+    return NextResponse.json({ message: 'RDV supprimé avec succès' })
+    
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+// PUT - Créer des propositions en masse
 export async function PUT(request: NextRequest) {
   try {
     const { propositions } = await request.json()
