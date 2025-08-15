@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useToast } from '@/hooks/use-toast'
 import RdvDialogEnhanced from '@/components/dialogs/rdv-dialog-enhanced'
 import AIRulesConfig, { useAIRules } from '@/components/dialogs/ai-rules-config'
+import HotelCategoryEditor from '@/components/dialogs/hotel-category-editor'
 import {
   Brain,
   Calendar,
@@ -38,10 +39,10 @@ import {
   Filter,
   ChevronRight,
   Info,
-  Users
+  Users,
+  Edit
 } from 'lucide-react'
-  ChevronRight,
-  Info
+
 // Types
 interface Prospect {
   id: number
@@ -65,6 +66,10 @@ interface Prospect {
   lastInteraction?: string
   interactionCount?: number
   isHotLead?: boolean
+  // Nouvelles propriétés pour hôtels
+  categorie_hotel?: '1*' | '2*' | '3*' | '4*' | '5*' | 'boutique' | 'resort' | 'business' | 'eco'
+  nombre_chambres?: number
+  website?: string
 }
 
 interface WeeklyPlanning {
@@ -119,6 +124,8 @@ export function AIDashboard({ commercial }: { commercial: string }) {
   // États pour la gestion des RDV
   const [showRdvDialog, setShowRdvDialog] = React.useState(false)
   const [selectedProspectForRdv, setSelectedProspectForRdv] = React.useState<Prospect | null>(null)
+  const [showHotelCategoryEditor, setShowHotelCategoryEditor] = React.useState(false)
+  const [selectedHotelForEdit, setSelectedHotelForEdit] = React.useState<Prospect | null>(null)
   const [rdvStats, setRdvStats] = React.useState({
     today: 0,
     week: 0,
@@ -638,6 +645,39 @@ export function AIDashboard({ commercial }: { commercial: string }) {
     }
   }
 
+  // Mettre à jour un prospect (incluant catégorie hôtel)
+  async function updateProspect(id: number, updates: Partial<Prospect>) {
+    try {
+      const res = await fetch(`/api/prospects`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...updates })
+      })
+      
+      if (!res.ok) throw new Error('Erreur mise à jour prospect')
+      
+      const updated = await res.json()
+      
+      // Mettre à jour dans l'état local
+      setProspects(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p))
+      
+      toast({
+        title: '✅ Prospect mis à jour',
+        description: 'Les modifications ont été enregistrées'
+      })
+      
+      return updated
+    } catch (error) {
+      console.error('Erreur mise à jour prospect:', error)
+      toast({
+        title: 'Erreur',
+        description: 'Impossible de mettre à jour le prospect',
+        variant: 'destructive'
+      })
+      return null
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header avec métriques principales */}
@@ -990,33 +1030,109 @@ export function AIDashboard({ commercial }: { commercial: string }) {
                                     </span>
                                   </div>
                                   
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                    {data.prospects.slice(0, 4).map((prospect, idx) => (
+                                  {/* Affichage de TOUS les prospects du jour avec scroll si nécessaire */}
+                                  <div className="max-h-64 overflow-y-auto space-y-2 border rounded-lg p-2">
+                                    {data.prospects.map((prospect, idx) => (
                                       <div 
                                         key={idx} 
-                                        className="flex items-center gap-2 text-sm p-2 bg-muted rounded cursor-pointer hover:bg-accent"
+                                        className="flex items-center gap-2 text-sm p-2 bg-muted rounded cursor-pointer hover:bg-accent transition-all"
                                         onClick={() => handleCreateRdv(prospect)}
                                       >
+                                        <span className="font-medium text-gray-500 w-6">{idx + 1}.</span>
                                         <Badge variant="outline" className="text-xs">
                                           {prospect.secteur === 'hotel' ? '🏨' : 
                                            prospect.secteur === 'pharmacie' ? '💊' :
                                            prospect.secteur === 'clinique' ? '🏥' : '🏢'}
                                         </Badge>
-                                        <span className="flex-1 truncate">{prospect.nom}</span>
+                                        <span className="flex-1 truncate font-medium">{prospect.nom}</span>
+                                        {prospect.categorie_hotel && prospect.secteur === 'hotel' && (
+                                          <Badge variant="outline" className="text-xs">
+                                            {prospect.categorie_hotel}
+                                          </Badge>
+                                        )}
                                         {prospect.isHotLead && (
                                           <Badge className="bg-orange-500 text-xs">HOT</Badge>
                                         )}
-                                        <Badge className={prospect.priorite! >= 80 ? 'bg-red-500' : 'bg-blue-500'}>
+                                        <Badge className={`text-xs ${
+                                          prospect.priorite! >= 80 ? 'bg-red-500' : 
+                                          prospect.priorite! >= 60 ? 'bg-orange-500' : 'bg-blue-500'
+                                        }`}>
                                           {prospect.priorite}
                                         </Badge>
                                       </div>
                                     ))}
                                   </div>
                                   
-                                  {data.prospects.length > 4 && (
-                                    <p className="text-xs text-muted-foreground">
-                                      +{data.prospects.length - 4} autres prospects
-                                    </p>
+                                  {/* Bouton pour créer tous les RDV du jour */}
+                                  {data.prospects.length > 0 && (
+                                    <Button
+                                      size="sm"
+                                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                                      onClick={async () => {
+                                        const confirm = window.confirm(
+                                          `Créer ${data.prospects.length} RDV pour ${jour} ?`
+                                        )
+                                        if (confirm) {
+                                          let successCount = 0
+                                          const date = getNextDateForDay(jour)
+                                          let currentTime = parseTimeToMinutes(aiRules.scheduling.startHour)
+                                          
+                                          for (const prospect of data.prospects) {
+                                            const lunchStart = parseTimeToMinutes(aiRules.scheduling.lunchBreakStart)
+                                            const lunchEnd = parseTimeToMinutes(aiRules.scheduling.lunchBreakEnd)
+                                            
+                                            if (currentTime >= lunchStart && currentTime < lunchEnd) {
+                                              currentTime = lunchEnd
+                                            }
+                                            
+                                            const endTime = parseTimeToMinutes(aiRules.scheduling.endHour)
+                                            if (currentTime >= endTime) break
+                                            
+                                            const hours = Math.floor(currentTime / 60)
+                                            const minutes = currentTime % 60
+                                            
+                                            try {
+                                              const rdvData = {
+                                                prospect_id: prospect.id,
+                                                prospect_nom: prospect.nom,
+                                                commercial: commercial || 'Karine MOMUS',
+                                                date_time: `${date}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`,
+                                                duree_min: aiRules.scheduling.appointmentDuration.decouverte,
+                                                type_visite: 'decouverte',
+                                                priorite: prospect.isHotLead ? 'urgente' : prospect.priorite! >= 80 ? 'haute' : 'normale',
+                                                statut: 'planifie',
+                                                lieu: prospect.adresse || `${prospect.ville}`,
+                                                notes: `RDV planifié par IA - Score: ${prospect.priorite}/100${prospect.isHotLead ? ' - 🔥 HOT LEAD' : ''}`,
+                                                prospect: prospect
+                                              }
+                                              
+                                              const res = await fetch('/api/rdv', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify(rdvData)
+                                              })
+                                              
+                                              if (res.ok) successCount++
+                                              
+                                              currentTime += aiRules.scheduling.appointmentDuration.decouverte + 
+                                                            aiRules.scheduling.travelTime + 
+                                                            aiRules.scheduling.bufferTime
+                                            } catch (error) {
+                                              console.error('Erreur création RDV:', error)
+                                            }
+                                          }
+                                          
+                                          await loadRdvStats()
+                                          toast({
+                                            title: '✅ RDV créés',
+                                            description: `${successCount} RDV créés pour ${jour}`
+                                          })
+                                        }
+                                      }}
+                                    >
+                                      <Calendar className="h-4 w-4 mr-1" />
+                                      Créer tous les RDV
+                                    </Button>
                                   )}
                                 </div>
                               ) : (
@@ -1182,6 +1298,16 @@ export function AIDashboard({ commercial }: { commercial: string }) {
                               <div>
                                 <h4 className="font-semibold flex items-center gap-2">
                                   {hotel.nom}
+                                  {hotel.categorie_hotel && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {hotel.categorie_hotel}
+                                    </Badge>
+                                  )}
+                                  {hotel.nombre_chambres && (
+                                    <span className="text-xs text-gray-500">
+                                      ({hotel.nombre_chambres} ch.)
+                                    </span>
+                                  )}
                                   {hotel.isHotLead && (
                                     <Badge className="bg-orange-500 text-xs">🔥 HOT</Badge>
                                   )}
@@ -1230,6 +1356,19 @@ export function AIDashboard({ commercial }: { commercial: string }) {
                                 <Phone className="h-4 w-4" />
                               </Button>
                             )}
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              className="bg-purple-50 hover:bg-purple-100 text-purple-700"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedHotelForEdit(hotel)
+                                setShowHotelCategoryEditor(true)
+                              }}
+                            >
+                              <Edit className="h-4 w-4 mr-1" />
+                              Catégorie
+                            </Button>
                             <Button 
                               size="sm" 
                               className="bg-indigo-600 hover:bg-indigo-700 text-white"
@@ -1359,6 +1498,22 @@ export function AIDashboard({ commercial }: { commercial: string }) {
           setShowRulesConfig(false)
         }}
       />
+
+      {selectedHotelForEdit && (
+        <HotelCategoryEditor
+          open={showHotelCategoryEditor}
+          onClose={() => {
+            setShowHotelCategoryEditor(false)
+            setSelectedHotelForEdit(null)
+          }}
+          hotel={selectedHotelForEdit}
+          onUpdate={async (updates) => {
+            await updateProspect(selectedHotelForEdit.id, updates)
+            setShowHotelCategoryEditor(false)
+            setSelectedHotelForEdit(null)
+          }}
+        />
+      )}
     </div>
   )
 }
