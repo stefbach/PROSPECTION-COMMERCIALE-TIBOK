@@ -1,16 +1,17 @@
-// components/sections/planning-enhanced.tsx
-"use client"
+// components/sections/planning-corrected.tsx
+'use client'
 
-import * as React from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useToast } from "@/hooks/use-toast"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import * as React from 'react'
+import { useData } from '@/hooks/useData'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useToast } from '@/hooks/use-toast'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import RdvDialogEnhanced from '@/components/dialogs/rdv-dialog-enhanced'
 import { 
   Calendar, Clock, Phone, MapPin, User, AlertCircle, CheckCircle, 
@@ -60,7 +61,6 @@ interface RendezVous {
   lieu?: string
   created_at?: string
   updated_at?: string
-  // Nouveaux champs pour les propositions IA
   ai_score?: number
   ai_reason?: string
   proposed_at?: string
@@ -251,15 +251,26 @@ const BASE_DISTANCE_MATRIX: Record<District, Record<District, number>> = {
 }
 
 // ========== COMPOSANT PRINCIPAL ==========
-export default function PlanningAdvancedSection() {
+export default function PlanningCorrected() {
+  // Utiliser le hook de données persistantes
+  const {
+    prospects,
+    rendezVous,
+    propositions,
+    commercialInfo: savedCommercialInfo,
+    loading: loadingData,
+    loadProspects,
+    loadRdvs,
+    createRdv,
+    updateRdv,
+    deleteRdv,
+    setCommercialInfo: saveCommercialInfo
+  } = useData()
+
   // États principaux
   const [loading, setLoading] = React.useState(false)
-  const [loadingRdvs, setLoadingRdvs] = React.useState(true)
-  const [prospects, setProspects] = React.useState<Prospect[]>([])
-  const [rendezVous, setRendezVous] = React.useState<RendezVous[]>([])
-  const [propositions, setPropositions] = React.useState<RendezVous[]>([]) // NOUVEAU
   const [selectedDate, setSelectedDate] = React.useState(new Date().toISOString().split('T')[0])
-  const [commercialInfo, setCommercialInfo] = React.useState<CommercialInfo>(DEFAULT_COMMERCIAL)
+  const [commercialInfo, setCommercialInfo] = React.useState<CommercialInfo>(savedCommercialInfo || DEFAULT_COMMERCIAL)
   const [customDistances, setCustomDistances] = React.useState<CustomDistance[]>([])
   const [settings, setSettings] = React.useState<CostSettings>(DEFAULT_SETTINGS)
   const [viewType, setViewType] = React.useState<'day' | 'week' | 'month'>('day')
@@ -283,19 +294,9 @@ export default function PlanningAdvancedSection() {
   
   const { toast } = useToast()
 
-  // ========== CHARGEMENT DES DONNÉES ==========
-  
-  // Charger les configurations sauvegardées
+  // ========== CHARGEMENT DES CONFIGURATIONS LOCALES ==========
   React.useEffect(() => {
-    const savedCommercial = localStorage.getItem('planning_commercial_info')
-    if (savedCommercial) {
-      try {
-        setCommercialInfo(JSON.parse(savedCommercial))
-      } catch (e) {
-        console.error('Erreur chargement info commercial:', e)
-      }
-    }
-
+    // Charger les distances personnalisées
     const savedDistances = localStorage.getItem('planning_custom_distances')
     if (savedDistances) {
       try {
@@ -305,6 +306,7 @@ export default function PlanningAdvancedSection() {
       }
     }
 
+    // Charger les paramètres de coût
     const savedSettings = localStorage.getItem('planning_cost_settings')
     if (savedSettings) {
       try {
@@ -313,104 +315,68 @@ export default function PlanningAdvancedSection() {
         console.error('Erreur chargement paramètres:', e)
       }
     }
-  }, [])
 
-  // Charger les données au démarrage
-  React.useEffect(() => {
-    loadProspects()
-    loadRdvs()
-  }, [])
+    // Synchroniser commercialInfo
+    if (savedCommercialInfo) {
+      setCommercialInfo(savedCommercialInfo)
+    }
+  }, [savedCommercialInfo])
 
-  // Rafraîchissement automatique toutes les 30 secondes
-  React.useEffect(() => {
-    const interval = setInterval(() => {
-      loadRdvs()
-    }, 30000)
-    
-    return () => clearInterval(interval)
-  }, [])
-
-  // ========== FONCTIONS DE CHARGEMENT ==========
+  // ========== GESTION DES RDV ==========
   
-  async function loadProspects() {
-    try {
-      const res = await fetch('/api/prospects?limit=1000', { cache: 'no-store' })
-      const result = await res.json()
-      const data = result.data || result
-      setProspects(Array.isArray(data) ? data : [])
-    } catch (error) {
-      console.error('Erreur chargement prospects:', error)
-      toast({
-        title: "Erreur",
-        description: "Impossible de charger les prospects",
-        variant: "destructive"
+  // Créer ou modifier un RDV
+  async function handleSaveRdv(data: any) {
+    let success = false
+    
+    if (editingRdv) {
+      // Mode modification
+      success = await updateRdv(editingRdv.id, {
+        ...data,
+        date_time: data.date_time || `${data.date}T${data.time}:00`,
+        updated_at: new Date().toISOString()
+      })
+    } else {
+      // Mode création
+      const prospect = prospects.find(p => p.id === data.prospect_id)
+      
+      success = await createRdv({
+        ...data,
+        prospect_nom: data.prospect_nom || prospect?.nom,
+        commercial: data.commercial || commercialInfo.nom || "Commercial",
+        titre: data.titre || `RDV - ${prospect?.nom}`,
+        date_time: data.date_time || `${data.date}T${data.time}:00`,
+        lieu: data.lieu || prospect?.adresse || `${prospect?.ville}, ${prospect?.district}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
     }
-  }
 
-  async function loadRdvs() {
-    setLoadingRdvs(true)
-    try {
-      // Charger TOUS les RDV incluant les propositions
-      const res = await fetch('/api/rdv?include_propositions=true', { cache: 'no-store' })
-      if (!res.ok) throw new Error('Erreur chargement RDV')
-      
-      const data = await res.json()
-      
-      // Séparer propositions et RDV confirmés
-      const props = data.filter((r: RendezVous) => r.statut === 'proposition')
-      const rdvs = data.filter((r: RendezVous) => r.statut !== 'proposition')
-      
-      setPropositions(props)
-      setRendezVous(rdvs)
-      
-    } catch (error) {
-      console.error('Erreur chargement RDV:', error)
-      toast({
-        title: "Erreur",
-        description: "Impossible de charger les rendez-vous",
-        variant: "destructive"
-      })
-    } finally {
-      setLoadingRdvs(false)
+    if (success) {
+      setEditingRdv(null)
+      setShowAddRdv(false)
     }
+
+    return success
   }
 
-  // ========== GESTION DES PROPOSITIONS (NOUVEAU) ==========
+  // Supprimer un RDV
+  async function handleDeleteRdv(rdvId: number, rdvNom: string) {
+    if (!confirm(`Supprimer le RDV avec ${rdvNom} ?`)) return
+    await deleteRdv(rdvId)
+  }
+
+  // ========== GESTION DES PROPOSITIONS ==========
   
   // Valider une proposition
   async function validateProposition(prop: RendezVous) {
-    try {
-      // Simuler l'appel au prospect
-      const confirmed = await confirmWithProspect(prop)
-      
-      if (confirmed) {
-        const res = await fetch('/api/rdv', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: prop.id,
-            statut: 'planifie',
-            action: 'validate',
-            validated_at: new Date().toISOString(),
-            validated_by: commercialInfo.nom,
-            notes: (prop.notes || '') + '\n✅ Confirmé avec le prospect'
-          })
-        })
-        
-        if (res.ok) {
-          toast({
-            title: '✅ Proposition validée',
-            description: `RDV avec ${prop.prospect_nom} confirmé et ajouté au planning`
-          })
-          loadRdvs()
-        }
-      }
-    } catch (error) {
-      toast({
-        title: 'Erreur',
-        description: 'Impossible de valider la proposition',
-        variant: 'destructive'
+    const confirmed = await confirmWithProspect(prop)
+    
+    if (confirmed) {
+      await updateRdv(prop.id, {
+        statut: 'planifie',
+        validated_at: new Date().toISOString(),
+        validated_by: commercialInfo.nom,
+        notes: (prop.notes || '') + '\n✅ Confirmé avec le prospect'
       })
     }
   }
@@ -418,30 +384,11 @@ export default function PlanningAdvancedSection() {
   // Rejeter une proposition
   async function rejectProposition(propId: number) {
     if (!confirm('Rejeter cette proposition ?')) return
-    
-    try {
-      const res = await fetch(`/api/rdv?id=${propId}`, {
-        method: 'DELETE'
-      })
-      
-      if (res.ok) {
-        toast({
-          title: 'Proposition rejetée',
-          description: 'La proposition a été supprimée'
-        })
-        loadRdvs()
-      }
-    } catch (error) {
-      toast({
-        title: 'Erreur',
-        description: 'Impossible de rejeter la proposition',
-        variant: 'destructive'
-      })
-    }
+    await deleteRdv(propId)
   }
 
   // Modifier une proposition avant validation
-  async function editProposition(prop: RendezVous) {
+  function editProposition(prop: RendezVous) {
     setEditingRdv(prop)
     setShowAddRdv(true)
   }
@@ -467,103 +414,69 @@ export default function PlanningAdvancedSection() {
   async function lockRdv(rdv: RendezVous) {
     if (!confirm(`Verrouiller ce RDV ?\nUne fois verrouillé, il ne pourra plus être modifié.`)) return
     
-    try {
-      const res = await fetch('/api/rdv', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: rdv.id,
-          statut: 'confirme',
-          action: 'lock',
-          locked: true,
-          locked_at: new Date().toISOString(),
-          locked_by: commercialInfo.nom
-        })
-      })
-      
-      if (res.ok) {
-        toast({
-          title: '🔒 RDV verrouillé',
-          description: 'Le RDV ne peut plus être modifié'
-        })
-        loadRdvs()
-      }
-    } catch (error) {
-      toast({
-        title: 'Erreur',
-        description: 'Impossible de verrouiller le RDV',
-        variant: 'destructive'
-      })
-    }
+    await updateRdv(rdv.id, {
+      statut: 'confirme',
+      locked: true,
+      locked_at: new Date().toISOString(),
+      locked_by: commercialInfo.nom
+    })
   }
 
-  // Optimiser les tournées
+  // ========== OPTIMISATION DES TOURNÉES ==========
+  
   async function optimizeRoutes() {
     setOptimizing(true)
     
     try {
-      // Filtrer les RDV du jour/semaine sélectionné
       const rdvsToOptimize = filteredRdvs.filter(r => 
-        r.statut === 'planifie' || r.statut === 'confirme'
+        (r.statut === 'planifie' || r.statut === 'confirme') && !r.locked
       )
       
       if (rdvsToOptimize.length < 2) {
         toast({
           title: 'Optimisation impossible',
-          description: 'Il faut au moins 2 RDV pour optimiser la tournée',
+          description: 'Il faut au moins 2 RDV non verrouillés pour optimiser',
           variant: 'destructive'
         })
         setOptimizing(false)
         return
       }
       
-      // Algorithme d'optimisation (TSP simplifié)
       const optimized = await calculateOptimalRoute(rdvsToOptimize)
       
-      // Mettre à jour l'ordre et les heures
       let currentTime = parseTimeToMinutes(commercialInfo.startHour || '08:00')
       
       for (let i = 0; i < optimized.length; i++) {
         const rdv = optimized[i]
         const date = new Date(rdv.date_time)
         
-        // Calculer la nouvelle heure
         const hours = Math.floor(currentTime / 60)
         const minutes = currentTime % 60
         date.setHours(hours, minutes, 0, 0)
         
-        // Mettre à jour en base
-        await fetch('/api/rdv', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: rdv.id,
-            date_time: date.toISOString(),
-            order_index: i,
-            notes: (rdv.notes || '') + '\n🔄 Optimisé par l\'algorithme de tournée'
-          })
+        await updateRdv(rdv.id, {
+          date_time: date.toISOString(),
+          order_index: i,
+          notes: (rdv.notes || '') + '\n🔄 Optimisé par l\'algorithme'
         })
         
-        // Calculer le temps pour le prochain RDV
-        currentTime += rdv.duree_min + 30 // +30min de trajet moyen
+        currentTime += rdv.duree_min + 30
         
-        // Gérer la pause déjeuner
         if (currentTime >= 12 * 60 && currentTime < 13 * 60) {
           currentTime = 13 * 60
         }
       }
       
-      // Calculer les économies
       const originalDistance = calculateTotalDistance(rdvsToOptimize)
       const optimizedDistance = calculateTotalDistance(optimized)
       const savings = Math.round(((originalDistance - optimizedDistance) / originalDistance) * 100)
       
       toast({
         title: '✅ Tournée optimisée',
-        description: `Économie estimée: ${savings}% de distance et temps de trajet`
+        description: `Économie estimée: ${savings}% de distance`
       })
       
-      loadRdvs()
+      await loadRdvs(true)
       
     } catch (error) {
       toast({
@@ -576,20 +489,16 @@ export default function PlanningAdvancedSection() {
     }
   }
 
-  // Algorithme d'optimisation TSP (simplifié)
   async function calculateOptimalRoute(rdvList: RendezVous[]): Promise<RendezVous[]> {
     if (rdvList.length <= 2) return rdvList
     
-    // Algorithme du plus proche voisin
     const optimized: RendezVous[] = []
     const remaining = [...rdvList]
     
-    // Commencer par le premier RDV
     let current = remaining.shift()!
     optimized.push(current)
     
     while (remaining.length > 0) {
-      // Trouver le RDV le plus proche
       let nearestIndex = 0
       let nearestDistance = Infinity
       
@@ -624,138 +533,11 @@ export default function PlanningAdvancedSection() {
     return total
   }
 
-  // ========== GESTION DES RDV (existant) ==========
-  
-  async function createRdv(data: any) {
-    try {
-      if (!data.prospect_id || data.prospect_id === 0) {
-        toast({
-          title: "Erreur",
-          description: "Veuillez sélectionner un prospect",
-          variant: "destructive"
-        })
-        return false
-      }
-      
-      const prospect = prospects.find(p => p.id === data.prospect_id)
-      if (!prospect) {
-        throw new Error("Prospect non trouvé")
-      }
-
-      const rdvData = {
-        prospect_id: data.prospect_id,
-        prospect_nom: prospect.nom,
-        commercial: data.commercial || commercialInfo.nom || "Commercial",
-        titre: data.titre || `RDV - ${prospect.nom}`,
-        date_time: `${data.date}T${data.time}:00`,
-        duree_min: data.duree_min || 60,
-        type_visite: data.type_visite || 'decouverte',
-        priorite: data.priorite || (prospect.score >= 4 ? 'haute' : prospect.score >= 3 ? 'normale' : 'normale'),
-        statut: data.statut || 'planifie',
-        notes: data.notes || '',
-        lieu: data.lieu || prospect.adresse || `${prospect.ville}, ${prospect.district}`,
-        prospect: {
-          id: prospect.id,
-          nom: prospect.nom,
-          secteur: prospect.secteur,
-          ville: prospect.ville,
-          district: prospect.district,
-          statut: prospect.statut,
-          contact: prospect.contact,
-          telephone: prospect.telephone,
-          email: prospect.email,
-          score: prospect.score,
-          budget: prospect.budget,
-          adresse: prospect.adresse,
-          notes: prospect.notes
-        }
-      }
-
-      const res = await fetch('/api/rdv', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rdvData)
-      })
-
-      if (!res.ok) throw new Error('Erreur création RDV')
-
-      await loadRdvs()
-      
-      toast({
-        title: "✅ RDV créé",
-        description: `Rendez-vous avec ${prospect.nom} planifié le ${new Date(rdvData.date_time).toLocaleDateString('fr-FR')}`
-      })
-      
-      return true
-    } catch (error) {
-      console.error('Erreur création RDV:', error)
-      toast({
-        title: "Erreur",
-        description: "Impossible de créer le rendez-vous",
-        variant: "destructive"
-      })
-      return false
-    }
-  }
-
-  async function updateRdv(rdvId: number, updates: Partial<RendezVous>) {
-    try {
-      const res = await fetch('/api/rdv', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: rdvId, ...updates })
-      })
-
-      if (!res.ok) throw new Error('Erreur mise à jour RDV')
-
-      await loadRdvs()
-      
-      toast({ 
-        title: "✅ RDV modifié",
-        description: "Les modifications ont été enregistrées"
-      })
-      
-      return true
-    } catch (error) {
-      toast({
-        title: "Erreur",
-        description: "Impossible de modifier le rendez-vous",
-        variant: "destructive"
-      })
-      return false
-    }
-  }
-
-  async function deleteRdv(rdvId: number) {
-    try {
-      const res = await fetch(`/api/rdv?id=${rdvId}`, {
-        method: 'DELETE'
-      })
-
-      if (!res.ok) throw new Error('Erreur suppression RDV')
-
-      await loadRdvs()
-      
-      toast({ 
-        title: "RDV supprimé",
-        description: "Le rendez-vous a été supprimé"
-      })
-      
-      return true
-    } catch (error) {
-      toast({
-        title: "Erreur",
-        description: "Impossible de supprimer le rendez-vous",
-        variant: "destructive"
-      })
-      return false
-    }
-  }
-
   // ========== GESTION DES CONFIGURATIONS ==========
   
-  function saveCommercialInfo(info: CommercialInfo) {
+  function saveCommercialInfoLocal(info: CommercialInfo) {
     setCommercialInfo(info)
+    saveCommercialInfo(info)
     localStorage.setItem('planning_commercial_info', JSON.stringify(info))
     toast({
       title: "✅ Informations sauvegardées",
@@ -768,7 +550,7 @@ export default function PlanningAdvancedSection() {
     localStorage.setItem('planning_custom_distances', JSON.stringify(distances))
     toast({
       title: "✅ Distances sauvegardées",
-      description: `${distances.length} distance(s) personnalisée(s) enregistrée(s)`
+      description: `${distances.length} distance(s) personnalisée(s)`
     })
   }
 
@@ -776,8 +558,7 @@ export default function PlanningAdvancedSection() {
     setSettings(newSettings)
     localStorage.setItem('planning_cost_settings', JSON.stringify(newSettings))
     toast({ 
-      title: "✅ Paramètres sauvegardés",
-      description: "Les paramètres de calcul ont été mis à jour"
+      title: "✅ Paramètres sauvegardés"
     })
   }
 
@@ -918,9 +699,7 @@ export default function PlanningAdvancedSection() {
           rdv.commercial?.toLowerCase().includes(searchLower) ||
           rdv.lieu?.toLowerCase().includes(searchLower) ||
           rdv.notes?.toLowerCase().includes(searchLower) ||
-          rdv.titre?.toLowerCase().includes(searchLower) ||
-          rdv.prospect?.contact?.toLowerCase().includes(searchLower) ||
-          rdv.prospect?.telephone?.toLowerCase().includes(searchLower)
+          rdv.titre?.toLowerCase().includes(searchLower)
         )
       })
     }
@@ -995,7 +774,7 @@ export default function PlanningAdvancedSection() {
       termines: filteredRdvs.filter(r => r.statut === 'termine').length,
       annules: filteredRdvs.filter(r => r.statut === 'annule').length,
       reportes: filteredRdvs.filter(r => r.statut === 'reporte').length,
-      propositions: propositions.length // NOUVEAU
+      propositions: propositions.length
     }
     
     const typeStats = {
@@ -1025,7 +804,7 @@ export default function PlanningAdvancedSection() {
 
   // ========== EXPORT DES DONNÉES ==========
   
-  async function exportData(format: 'excel' | 'pdf' | 'csv') {
+  async function exportData(format: 'csv') {
     try {
       toast({
         title: "Export en cours",
@@ -1072,9 +851,267 @@ export default function PlanningAdvancedSection() {
     }
   }
 
+  // ========== DIALOGUES DE CONFIGURATION ==========
+  
+  // Dialogue Configuration Commercial
+  const CommercialConfigDialog = () => (
+    <Dialog open={showCommercialConfig} onOpenChange={setShowCommercialConfig}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Configuration Commercial</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Nom</label>
+            <Input
+              value={commercialInfo.nom}
+              onChange={(e) => setCommercialInfo({ ...commercialInfo, nom: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium">Adresse de départ</label>
+              <Input
+                value={commercialInfo.adresse}
+                onChange={(e) => setCommercialInfo({ ...commercialInfo, adresse: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Ville</label>
+              <Input
+                value={commercialInfo.ville}
+                onChange={(e) => setCommercialInfo({ ...commercialInfo, ville: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium">District</label>
+            <select
+              value={commercialInfo.district}
+              onChange={(e) => setCommercialInfo({ ...commercialInfo, district: e.target.value as District })}
+              className="w-full p-2 border rounded"
+            >
+              {Object.entries(DISTRICTS_CONFIG).map(([key, config]) => (
+                <option key={key} value={key}>{config.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium">Heure de départ</label>
+              <Input
+                type="time"
+                value={commercialInfo.startHour}
+                onChange={(e) => setCommercialInfo({ ...commercialInfo, startHour: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Heure de fin</label>
+              <Input
+                type="time"
+                value={commercialInfo.endHour}
+                onChange={(e) => setCommercialInfo({ ...commercialInfo, endHour: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowCommercialConfig(false)}>
+              Annuler
+            </Button>
+            <Button onClick={() => {
+              saveCommercialInfoLocal(commercialInfo)
+              setShowCommercialConfig(false)
+            }}>
+              Sauvegarder
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+
+  // Dialogue Configuration Distances
+  const DistanceConfigDialog = () => (
+    <Dialog open={showDistanceConfig} onOpenChange={setShowDistanceConfig}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Distances personnalisées</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Définissez des distances personnalisées pour des trajets spécifiques
+            </AlertDescription>
+          </Alert>
+          
+          {customDistances.map((distance, index) => (
+            <Card key={distance.id}>
+              <CardContent className="p-4">
+                <div className="grid grid-cols-4 gap-4">
+                  <Input
+                    placeholder="De..."
+                    value={distance.from}
+                    onChange={(e) => {
+                      const updated = [...customDistances]
+                      updated[index].from = e.target.value
+                      setCustomDistances(updated)
+                    }}
+                  />
+                  <Input
+                    placeholder="Vers..."
+                    value={distance.to}
+                    onChange={(e) => {
+                      const updated = [...customDistances]
+                      updated[index].to = e.target.value
+                      setCustomDistances(updated)
+                    }}
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Distance (km)"
+                    value={distance.distance}
+                    onChange={(e) => {
+                      const updated = [...customDistances]
+                      updated[index].distance = Number(e.target.value)
+                      setCustomDistances(updated)
+                    }}
+                  />
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      placeholder="Durée (min)"
+                      value={distance.duration}
+                      onChange={(e) => {
+                        const updated = [...customDistances]
+                        updated[index].duration = Number(e.target.value)
+                        setCustomDistances(updated)
+                      }}
+                    />
+                    <Button
+                      size="icon"
+                      variant="destructive"
+                      onClick={() => {
+                        setCustomDistances(customDistances.filter((_, i) => i !== index))
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          
+          <Button
+            onClick={() => {
+              setCustomDistances([
+                ...customDistances,
+                {
+                  id: Date.now().toString(),
+                  from: '',
+                  to: '',
+                  distance: 0,
+                  duration: 0
+                }
+              ])
+            }}
+            className="w-full"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Ajouter une distance
+          </Button>
+          
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowDistanceConfig(false)}>
+              Annuler
+            </Button>
+            <Button onClick={() => {
+              saveCustomDistances(customDistances)
+              setShowDistanceConfig(false)
+            }}>
+              Sauvegarder
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+
+  // Dialogue Paramètres
+  const SettingsDialog = () => (
+    <Dialog open={showSettings} onOpenChange={setShowSettings}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Paramètres de calcul</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium">Prix carburant (Rs/L)</label>
+              <Input
+                type="number"
+                value={settings.fuelPrice}
+                onChange={(e) => setSettings({ ...settings, fuelPrice: Number(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Consommation (L/100km)</label>
+              <Input
+                type="number"
+                value={settings.consumption}
+                onChange={(e) => setSettings({ ...settings, consumption: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium">Vitesse moyenne (km/h)</label>
+              <Input
+                type="number"
+                value={settings.averageSpeed}
+                onChange={(e) => setSettings({ ...settings, averageSpeed: Number(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Indemnité kilométrique (Rs/km)</label>
+              <Input
+                type="number"
+                value={settings.indemnityPerKm}
+                onChange={(e) => setSettings({ ...settings, indemnityPerKm: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={settings.useIndemnity}
+              onChange={(e) => setSettings({ ...settings, useIndemnity: e.target.checked })}
+            />
+            <label className="text-sm">Utiliser l'indemnité kilométrique</label>
+          </div>
+          
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowSettings(false)}>
+              Annuler
+            </Button>
+            <Button onClick={() => {
+              saveSettings(settings)
+              setShowSettings(false)
+            }}>
+              Sauvegarder
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+
   // ========== RENDU ==========
   
-  if (loadingRdvs && rendezVous.length === 0) {
+  if (loadingData && rendezVous.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -1100,11 +1137,11 @@ export default function PlanningAdvancedSection() {
         <div className="flex gap-2">
           <Button 
             variant="outline"
-            onClick={() => loadRdvs()}
-            disabled={loadingRdvs}
+            onClick={() => loadRdvs(true)}
+            disabled={loadingData}
             className="flex items-center gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${loadingRdvs ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${loadingData ? 'animate-spin' : ''}`} />
             Actualiser
           </Button>
           
@@ -1172,7 +1209,7 @@ export default function PlanningAdvancedSection() {
         </Card>
       )}
 
-      {/* Statistiques avec propositions */}
+      {/* Statistiques */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-4">
         <Card className="bg-purple-50">
           <CardContent className="p-4">
@@ -1269,7 +1306,7 @@ export default function PlanningAdvancedSection() {
         </Card>
       </div>
 
-      {/* Tabs principales avec propositions */}
+      {/* Tabs principales */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="propositions" className="relative">
@@ -1371,7 +1408,7 @@ export default function PlanningAdvancedSection() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => window.location.href = `tel:${prop.prospect.telephone}`}
+                                  onClick={() => window.location.href = `tel:${prop.prospect?.telephone}`}
                                   className="bg-blue-50 hover:bg-blue-100"
                                 >
                                   <Phone className="h-4 w-4 mr-1" />
@@ -1425,7 +1462,7 @@ export default function PlanningAdvancedSection() {
           )}
         </TabsContent>
 
-        {/* Tab Planning (existant avec modifications) */}
+        {/* Tab Planning */}
         <TabsContent value="planning" className="space-y-4">
           {/* Barre de filtres */}
           <Card>
@@ -1724,8 +1761,8 @@ export default function PlanningAdvancedSection() {
                                 )}
                                 <span className="text-lg font-semibold">⏰ {heureRdv}</span>
                                 <span className="text-sm text-gray-600">({rdv.duree_min} min)</span>
-                                <Badge className={statutBadges[rdv.statut]?.color || "bg-gray-100"}>
-                                  {statutBadges[rdv.statut]?.icon} {rdv.statut}
+                                <Badge className={statutBadges[rdv.statut as keyof typeof statutBadges]?.color || "bg-gray-100"}>
+                                  {statutBadges[rdv.statut as keyof typeof statutBadges]?.icon} {rdv.statut}
                                 </Badge>
                                 {rdv.locked && (
                                   <Badge className="bg-red-100 text-red-800">
@@ -1788,7 +1825,10 @@ export default function PlanningAdvancedSection() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() => setEditingRdv(rdv)}
+                                    onClick={() => {
+                                      setEditingRdv(rdv)
+                                      setShowAddRdv(true)
+                                    }}
                                   >
                                     <Edit className="h-4 w-4" />
                                   </Button>
@@ -1832,11 +1872,7 @@ export default function PlanningAdvancedSection() {
                                   size="sm"
                                   variant="outline"
                                   className="text-red-600 hover:bg-red-50"
-                                  onClick={() => {
-                                    if (confirm(`Supprimer le RDV avec ${rdv.prospect?.nom || rdv.prospect_nom} ?`)) {
-                                      deleteRdv(rdv.id)
-                                    }
-                                  }}
+                                  onClick={() => handleDeleteRdv(rdv.id, rdv.prospect?.nom || rdv.prospect_nom || '')}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -1942,21 +1978,13 @@ export default function PlanningAdvancedSection() {
         }}
         prospects={prospects}
         rdv={editingRdv}
-        onSave={async (data) => {
-          if (editingRdv) {
-            const success = await updateRdv(editingRdv.id, data)
-            if (success) {
-              setEditingRdv(null)
-            }
-          } else {
-            const success = await createRdv(data)
-            if (success) {
-              setShowAddRdv(false)
-            }
-          }
-        }}
+        onSave={handleSaveRdv}
         commercialInfo={commercialInfo}
       />
+
+      <CommercialConfigDialog />
+      <DistanceConfigDialog />
+      <SettingsDialog />
     </div>
   )
 }
