@@ -1,119 +1,192 @@
-import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+// app/api/prospects/route.ts
+import { NextRequest, NextResponse } from 'next/server'
 
-export async function GET(request: Request) {
+// Données mock de prospects pour test
+const mockProspects = [
+  {
+    id: 1,
+    nom: "Hôtel Grand Baie",
+    secteur: "hotel",
+    ville: "Grand Baie",
+    district: "pamplemousses",
+    statut: "qualifie",
+    contact: "Jean Dupont",
+    telephone: "+230 5789 1234",
+    email: "contact@hotelgrandbaie.mu",
+    score: 4,
+    budget: "50000",
+    adresse: "Rue Royale, Grand Baie",
+    notes: "Intéressé par solution complète"
+  },
+  {
+    id: 2,
+    nom: "Pharmacie Centrale",
+    secteur: "pharmacie",
+    ville: "Port Louis",
+    district: "port-louis",
+    statut: "nouveau",
+    contact: "Marie Martin",
+    telephone: "+230 5234 5678",
+    email: "pharmacie.centrale@gmail.com",
+    score: 3,
+    budget: "25000",
+    adresse: "Rue Desforges, Port Louis",
+    notes: "Premier contact établi"
+  },
+  {
+    id: 3,
+    nom: "Clinique Mauricienne",
+    secteur: "clinique",
+    ville: "Curepipe",
+    district: "plaines-wilhems",
+    statut: "proposition",
+    contact: "Dr. Patel",
+    telephone: "+230 5456 7890",
+    email: "info@cliniquemauricienne.mu",
+    score: 5,
+    budget: "75000",
+    adresse: "Avenue Paul et Virginie, Curepipe",
+    notes: "Très intéressé, budget confirmé"
+  },
+  {
+    id: 4,
+    nom: "Restaurant Le Flamboyant",
+    secteur: "restaurant",
+    ville: "Flic en Flac",
+    district: "riviere-noire",
+    statut: "contacte",
+    contact: "Pierre Lebon",
+    telephone: "+230 5678 9012",
+    email: "leflamboyant@resto.mu",
+    score: 3,
+    budget: "15000",
+    adresse: "Coastal Road, Flic en Flac",
+    notes: "A rappeler la semaine prochaine"
+  },
+  {
+    id: 5,
+    nom: "Supermarché Winner's",
+    secteur: "supermarche",
+    ville: "Mahébourg",
+    district: "grand-port",
+    statut: "qualifie",
+    contact: "Sarah Chen",
+    telephone: "+230 5890 1234",
+    email: "admin@winners.mu",
+    score: 4,
+    budget: "35000",
+    adresse: "Route Royale, Mahébourg",
+    notes: "Demande de démonstration prévue"
+  }
+]
+
+let prospects = [...mockProspects]
+let nextId = 6
+
+// GET - Récupérer les prospects
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '50')
-    const search = searchParams.get('search') || ''
+    const limit = searchParams.get('limit')
     
-    // Calculer l'offset pour la pagination
-    const from = (page - 1) * limit
-    const to = from + limit - 1
-
-    console.log(`📥 Chargement prospects: page ${page}, limit ${limit}, from ${from} to ${to}`)
-
-    // Récupérer le nombre total SANS charger toutes les données
-    const { count } = await supabase
-      .from('prospects')
-      .select('*', { count: 'exact', head: true })
-
-    // Récupérer seulement la page demandée
-    let query = supabase
-      .from('prospects')
-      .select('*')
-      .range(from, to)
-      .order('id', { ascending: true })
-
-    // Ajouter la recherche si nécessaire
-    if (search) {
-      query = query.or(`nom.ilike.%${search}%,ville.ilike.%${search}%`)
+    let result = [...prospects]
+    
+    if (limit) {
+      result = result.slice(0, parseInt(limit))
     }
-
-    const { data, error } = await query
-
-    if (error) {
-      console.error('Erreur Supabase:', error)
-      throw error
-    }
-
-    console.log(`✅ ${data?.length || 0} prospects chargés sur ${count} total`)
-
+    
     return NextResponse.json({
-      success: true,
-      data: data || [],
-      pagination: {
-        page: page,
-        limit: limit,
-        total: count || 0,
-        totalPages: Math.ceil((count || 0) / limit),
-        from: from + 1,
-        to: Math.min(to + 1, count || 0)
-      }
+      data: result,
+      success: true
     })
-
+    
   } catch (error: any) {
-    console.error('❌ Erreur API:', error)
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: error?.message || 'Erreur serveur',
-        details: error
-      },
-      { status: 500 }
-    )
+    console.error('Erreur GET /api/prospects:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
 
-// Ajouter un nouveau prospect
-export async function POST(request: Request) {
+// POST - Créer un prospect
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const { data, error } = await supabase
-      .from('prospects')
-      .insert([body])
-      .select()
-      .single()
-
-    if (error) throw error
-
+    const newProspect = {
+      id: nextId++,
+      ...body,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+    
+    prospects.push(newProspect)
+    
     return NextResponse.json({
-      success: true,
-      data: data
+      data: newProspect,
+      success: true
     })
+    
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message },
-      { status: 500 }
-    )
+    console.error('Erreur POST /api/prospects:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
 
-// Mettre à jour un prospect
-export async function PUT(request: Request) {
+// PATCH - Modifier un prospect
+export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, ...updateData } = body
-
-    const { data, error } = await supabase
-      .from('prospects')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single()
-
-    if (error) throw error
-
+    
+    if (!body.id) {
+      return NextResponse.json({ error: 'ID requis' }, { status: 400 })
+    }
+    
+    const index = prospects.findIndex(p => p.id === body.id)
+    if (index === -1) {
+      return NextResponse.json({ error: 'Prospect non trouvé' }, { status: 404 })
+    }
+    
+    const updates = { ...body }
+    delete updates.id
+    updates.updated_at = new Date().toISOString()
+    
+    prospects[index] = { ...prospects[index], ...updates }
+    
     return NextResponse.json({
-      success: true,
-      data: data
+      data: prospects[index],
+      success: true
     })
+    
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message },
-      { status: 500 }
-    )
+    console.error('Erreur PATCH /api/prospects:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+// DELETE - Supprimer un prospect
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    
+    if (!id) {
+      return NextResponse.json({ error: 'ID requis' }, { status: 400 })
+    }
+    
+    const index = prospects.findIndex(p => p.id === parseInt(id))
+    
+    if (index === -1) {
+      return NextResponse.json({ error: 'Prospect non trouvé' }, { status: 404 })
+    }
+    
+    prospects.splice(index, 1)
+    
+    return NextResponse.json({
+      message: 'Prospect supprimé avec succès',
+      success: true
+    })
+    
+  } catch (error: any) {
+    console.error('Erreur DELETE /api/prospects:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
