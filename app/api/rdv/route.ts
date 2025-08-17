@@ -1,64 +1,40 @@
 // app/api/rdv/route.ts
-// API complète pour la gestion des RDV et propositions
-
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-const supabase = createClient(supabaseUrl, supabaseKey)
+// Stockage temporaire en mémoire (remplacer par Supabase en production)
+let rdvs: any[] = []
+let nextId = 1
 
-// GET - Récupérer les RDV avec filtre sur le statut
+// GET - Récupérer les RDV
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const prospect_id = searchParams.get('prospect_id')
-    const statut = searchParams.get('statut')
     const includePropositions = searchParams.get('include_propositions') === 'true'
+    const prospectId = searchParams.get('prospect_id')
+    const statut = searchParams.get('statut')
     
-    let query = supabase.from('rdvs').select('*')
+    let filtered = [...rdvs]
     
-    if (prospect_id) {
-      query = query.eq('prospect_id', parseInt(prospect_id))
+    // Filtrer par prospect_id si fourni
+    if (prospectId) {
+      filtered = filtered.filter(r => r.prospect_id === parseInt(prospectId))
     }
     
     // Filtrer par statut
     if (statut) {
-      query = query.eq('statut', statut)
+      filtered = filtered.filter(r => r.statut === statut)
     } else if (!includePropositions) {
-      // Par défaut, ne pas inclure les propositions sauf demande explicite
-      query = query.neq('statut', 'proposition')
+      // Par défaut, ne pas inclure les propositions
+      filtered = filtered.filter(r => r.statut !== 'proposition')
     }
     
-    const { data: rdvs, error } = await query.order('date_time', { ascending: true })
+    // Trier par date
+    filtered.sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
     
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    
-    // Enrichir avec les données prospects
-    const rdvsWithProspects = await Promise.all(
-      (rdvs || []).map(async (rdv) => {
-        const { data: prospect } = await supabase
-          .from('prospects')
-          .select('*')
-          .eq('id', rdv.prospect_id)
-          .single()
-        
-        return {
-          ...rdv,
-          prospect: prospect || null,
-          prospect_nom: prospect?.nom || rdv.prospect_nom || 'Prospect inconnu',
-          // Ajouter un flag pour identifier les propositions
-          isProposition: rdv.statut === 'proposition',
-          canEdit: rdv.statut === 'proposition' || rdv.statut === 'planifie'
-        }
-      })
-    )
-    
-    return NextResponse.json(rdvsWithProspects)
+    return NextResponse.json(filtered)
     
   } catch (error: any) {
+    console.error('Erreur GET /api/rdv:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
@@ -71,7 +47,8 @@ export async function POST(request: NextRequest) {
     // Déterminer si c'est une proposition IA ou un RDV manuel
     const isProposition = body.source === 'ai' || body.statut === 'proposition'
     
-    const rdvData = {
+    const newRdv = {
+      id: nextId++,
       prospect_id: body.prospect_id,
       prospect_nom: body.prospect_nom || 'Prospect',
       commercial: body.commercial || 'Commercial',
@@ -83,34 +60,27 @@ export async function POST(request: NextRequest) {
       statut: isProposition ? 'proposition' : (body.statut || 'planifie'),
       notes: body.notes || (isProposition ? '🤖 Proposition IA à valider' : ''),
       lieu: body.lieu || '',
-      // Nouveaux champs pour la gestion des propositions
-      ai_score: body.ai_score || null, // Score de pertinence IA
-      ai_reason: body.ai_reason || null, // Raison de la proposition
+      ai_score: body.ai_score || null,
+      ai_reason: body.ai_reason || null,
       proposed_at: isProposition ? new Date().toISOString() : null,
       validated_at: null,
       validated_by: null,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      prospect: body.prospect || null
     }
     
-    const { data: newRDV, error } = await supabase
-      .from('rdvs')
-      .insert([rdvData])
-      .select()
-      .single()
+    rdvs.push(newRdv)
     
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    
-    return NextResponse.json(newRDV)
+    return NextResponse.json(newRdv)
     
   } catch (error: any) {
+    console.error('Erreur POST /api/rdv:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
 
-// PATCH - Valider ou modifier un RDV
+// PATCH - Modifier un RDV
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
@@ -119,39 +89,40 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'ID requis' }, { status: 400 })
     }
     
+    const index = rdvs.findIndex(r => r.id === body.id)
+    if (index === -1) {
+      return NextResponse.json({ error: 'RDV non trouvé' }, { status: 404 })
+    }
+    
+    // Créer l'objet de mise à jour
     const updates: any = { ...body }
     delete updates.id
     
     // Si on valide une proposition
-    if (body.action === 'validate' && body.statut === 'planifie') {
+    if (body.action === 'validate' || (body.statut === 'planifie' && rdvs[index].statut === 'proposition')) {
       updates.validated_at = new Date().toISOString()
-      updates.validated_by = body.commercial || 'Agent'
-      updates.notes = (updates.notes || '') + '\n✅ Validé et confirmé avec le prospect'
+      updates.validated_by = body.validated_by || body.commercial || 'Agent'
+      if (!updates.notes) {
+        updates.notes = rdvs[index].notes
+      }
     }
     
     // Si on verrouille un RDV
-    if (body.action === 'lock' && body.statut === 'confirme') {
+    if (body.action === 'lock' || body.locked === true) {
       updates.locked = true
       updates.locked_at = new Date().toISOString()
-      updates.locked_by = body.commercial || 'Agent'
+      updates.locked_by = body.locked_by || body.commercial || 'Agent'
     }
     
     updates.updated_at = new Date().toISOString()
     
-    const { data: updated, error } = await supabase
-      .from('rdvs')
-      .update(updates)
-      .eq('id', body.id)
-      .select()
-      .single()
+    // Mettre à jour le RDV
+    rdvs[index] = { ...rdvs[index], ...updates }
     
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    
-    return NextResponse.json(updated)
+    return NextResponse.json(rdvs[index])
     
   } catch (error: any) {
+    console.error('Erreur PATCH /api/rdv:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
@@ -166,33 +137,24 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'ID requis' }, { status: 400 })
     }
     
-    // Vérifier d'abord si le RDV existe et n'est pas verrouillé
-    const { data: existing } = await supabase
-      .from('rdvs')
-      .select('*')
-      .eq('id', parseInt(id))
-      .single()
+    const index = rdvs.findIndex(r => r.id === parseInt(id))
     
-    if (!existing) {
+    if (index === -1) {
       return NextResponse.json({ error: 'RDV non trouvé' }, { status: 404 })
     }
     
-    if (existing.locked) {
+    // Vérifier si le RDV est verrouillé
+    if (rdvs[index].locked) {
       return NextResponse.json({ error: 'RDV verrouillé, suppression impossible' }, { status: 403 })
     }
     
-    const { error } = await supabase
-      .from('rdvs')
-      .delete()
-      .eq('id', parseInt(id))
-    
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+    // Supprimer le RDV
+    rdvs.splice(index, 1)
     
     return NextResponse.json({ message: 'RDV supprimé avec succès' })
     
   } catch (error: any) {
+    console.error('Erreur DELETE /api/rdv:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
@@ -200,16 +162,21 @@ export async function DELETE(request: NextRequest) {
 // PUT - Créer des propositions en masse
 export async function PUT(request: NextRequest) {
   try {
-    const { propositions } = await request.json()
+    const body = await request.json()
+    const { propositions } = body
     
     if (!Array.isArray(propositions)) {
-      return NextResponse.json({ error: 'Format invalide' }, { status: 400 })
+      return NextResponse.json({ error: 'Format invalide: propositions doit être un tableau' }, { status: 400 })
     }
     
+    const createdPropositions: any[] = []
+    const errors: string[] = []
+    
     // Créer toutes les propositions
-    const results = await Promise.all(
-      propositions.map(async (prop) => {
-        const rdvData = {
+    for (const prop of propositions) {
+      try {
+        const newProposition = {
+          id: nextId++,
           ...prop,
           statut: 'proposition',
           source: 'ai',
@@ -218,27 +185,22 @@ export async function PUT(request: NextRequest) {
           updated_at: new Date().toISOString()
         }
         
-        const { data, error } = await supabase
-          .from('rdvs')
-          .insert([rdvData])
-          .select()
-          .single()
-        
-        return { data, error }
-      })
-    )
-    
-    const successful = results.filter(r => !r.error).map(r => r.data)
-    const failed = results.filter(r => r.error)
+        rdvs.push(newProposition)
+        createdPropositions.push(newProposition)
+      } catch (error: any) {
+        errors.push(`Erreur création proposition: ${error.message}`)
+      }
+    }
     
     return NextResponse.json({
-      success: successful.length,
-      failed: failed.length,
-      propositions: successful,
-      errors: failed.map(f => f.error?.message)
+      success: createdPropositions.length,
+      failed: errors.length,
+      propositions: createdPropositions,
+      errors: errors
     })
     
   } catch (error: any) {
+    console.error('Erreur PUT /api/rdv:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
